@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Certificate of Analysis – A4 Print Template</title>
+  <style>
+    :root{
+      --brand:#0f766e;
+      --brand-ink:#0b4f4a;
+      --ink:#111827;
+      --muted:#6b7280;
+      --bg:#ffffff;
+      --line:#e5e7eb;
+    }
+    *{box-sizing:border-box}
+    html,body{background:var(--bg);color:var(--ink);font:13px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Tahoma,Arial,sans-serif; margin:0; padding:0;}
+
+```
+body{display:flex; justify-content:center;}
+
+.page{width:210mm; min-height:297mm; margin:5mm auto; padding:8mm 12mm; background:#fff; position:relative; box-shadow:0 0 5px rgba(0,0,0,0.15); overflow:hidden}
+.header{display:flex; align-items:center; gap:14px; border-bottom:2px solid var(--line); padding-bottom:6px;}
+.logo{width:60px; height:60px; border-radius:10px; border:1px solid var(--line); display:grid; place-items:center; font-weight:800; color:var(--brand-ink)}
+.lab-meta{flex:1}
+.lab-name{font-size:18px; font-weight:900; color:var(--brand-ink)}
+.lab-sub{color:var(--muted); font-size:12px}
+.coa-badge{margin-inline-start:auto; text-align:center}
+.badge{display:inline-block; padding:5px 8px; border-radius:999px; background:var(--brand); color:#fff; font-weight:700; font-size:12px}
+
+.title{margin:12px 0 6px; text-align:center}
+.title h1{font-size:18px; margin:0}
+
+.info-block{margin-top:10px; padding:8px; border:1px solid var(--line); border-radius:8px; background:#f9fafb}
+.info-block h2{margin:0 0 6px; font-size:14px; color:var(--brand-ink); border-bottom:1px solid var(--line); padding-bottom:4px}
+.info-grid{display:grid; grid-template-columns:160px 1fr; row-gap:3px; column-gap:8px; font-size:12px}
+.info-label{color:var(--muted)}
+.info-value{font-weight:600}
+
+.section{margin-top:12px}
+.section h2{font-size:14px; color:var(--brand-ink); margin:0 0 6px}
+
+table{width:100%; border-collapse:collapse; font-size:12px}
+th,td{padding:5px 6px; border:1px solid var(--line); text-align:center; vertical-align:middle}
+thead th{background:#f8fafc; color:#0f172a; font-size:12px}
+tbody tr:nth-child(even) td{background:#fcfcfd}
+
+.signatures{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px}
+.sign-card{border:1px dashed var(--line); border-radius:8px; padding:6px; height:65px; display:flex; flex-direction:column; justify-content:space-between; font-size:11px}
+.sign-role{color:var(--muted)}
+
+.footnote{Margin-top:8px; font-size:11px; color:#374151}
+.muted{color:var(--muted)}
+
+.toolbar{position:sticky; top:0; background:#fff; padding:6px 0 10px; display:flex; gap:6px}
+.toolbar button{padding:6px 10px; border-radius:8px; border:1px solid var(--line); background:#f9fafb; cursor:pointer; font-size:12px}
+
+@media print{
+  html,body{background:#fff; margin:0; padding:0}
+  .page{box-shadow:none; margin:0; width:210mm; min-height:297mm; padding:6mm 10mm}
+  .toolbar{display:none}
+  a[href]:after{content:""}
+}
+```
+
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.print()">🖨️ Print</button>
+  </div>
+
+  <div class="page">
+    <header class="header">
+      <div class="logo">LOGO</div>
+      <div class="lab-meta">
+        <div class="lab-name">Sahara Karbala – Molecular Diagnostics (PCR)</div>
+        <div class="lab-sub">Agriculture & Animal Production Laboratory – Karbala, Iraq</div>
+      </div>
+      <div class="coa-badge"><span class="badge">PCR 002 R001</span></div>
+    </header>
+
+```
+<div class="title">
+  <h1>Certificate of Analysis</h1>
+  <div class="muted">Test Report</div>
+</div>
+
+<section class="info-block">
+  <h2>Sample & Farm Information</h2>
+  <div class="info-grid">
+    <div class="info-label">Sample Code:</div><div class="info-value">21667</div>
+    <div class="info-label">Report No.:</div><div class="info-value">P2033 - 2025</div>
+    <div class="info-label">Collection Date:</div><div class="info-value">21.09.2025</div>
+    <div class="info-label">Result Date:</div><div class="info-value">23.09.2025</div>
+    <div class="info-label">Farm:</div><div class="info-value">SAMA Karbala Farms</div>
+    <div class="info-label">Location:</div><div class="info-value">Karbala, Iraq</div>
+    <div class="info-label">Flock / House / Cages:</div><div class="info-value">BRL 17 / C16 / H8</div>
+    <div class="info-label">Age:</div><div class="info-value">27 days</div>
+    <div class="info-label">Sample Types:</div><div class="info-value">Trachea, Proventriculus, Bursa</div>
+    <div class="info-label">Collected By:</div><div class="info-value">Customer</div>
+    <div class="info-label">Extraction:</div><div class="info-value">ID Gene™ MAG FAST</div>
+    <div class="info-label">Detection:</div><div class="info-value">PCR (ELK/ANICON kits)</div>
+  </div>
+</section>
+
+<section class="section">
+  <h2>Test Results</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:20%">Test</th>
+        <th style="width:10%">Method</th>
+        <th>Trachea</th>
+        <th>Proventriculus</th>
+        <th>Bursa</th>
+        <th>Liver</th>
+        <th>Duodenal</th>
+        <th>Trachea</th>
+        <th style="width:10%">Pos. Control</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>PAN AIV Type A</td><td>PCR</td><td>P (Ct: 24)</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>Confirmed</td></tr>
+      <tr><td>PMV-1</td><td>PCR</td><td>P (Ct: 28)</td><td>P (Ct: 20)</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>Confirmed</td></tr>
+      <tr><td>NDV VELO</td><td>PCR</td><td>N</td><td>P (Ct: 22)</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>Confirmed</td></tr>
+      <tr><td>IBV (Universal)</td><td>PCR</td><td>P (Ct: 29)</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>Confirmed</td></tr>
+      <tr><td>IBV VAR O2</td><td>PCR</td><td>P (Ct: 33)</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>Confirmed</td></tr>
+      <tr><td>IBV 4/91</td><td>PCR</td><td>N</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>Confirmed</td></tr>
+      <tr><td>IBV QX</td><td>PCR</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>NA</td><td>Confirmed</td></tr>
+      <tr><td>IBD SCREEN</td><td>PCR</td><td>NA</td><td>NA</td><td>P (Ct: 24)</td><td>NA</td><td>NA</td><td>NA</td><td>Confirmed</td></tr>
+    </tbody>
+  </table>
+  <div class="footnote">
+    <div>Control Results: <strong>Positive Control:</strong> Confirmed • <strong>Negative Control:</strong> Confirmed</div>
+    <div class="muted">This report is not accredited unless signed or stamped. Results represent only the tested samples. Any erasure or modification invalidates this certificate. *N = Negative, P = Positive, NA = Not Applicable</div>
+  </div>
+</section>
+
+<section class="section">
+  <h2>Signatures</h2>
+  <div class="signatures">
+    <div class="sign-card"><div class="sign-role">Tested By</div><div class="muted">Name / Signature:</div></div>
+    <div class="sign-card"><div class="sign-role">Checked By</div><div class="muted">Name / Signature:</div></div>
+    <div class="sign-card"><div class="sign-role">Lab Supervisor</div><div class="muted">Name / Signature:</div></div>
+    <div class="sign-card"><div class="sign-role">Lab Manager</div><div>Mr. Ali Abbas</div><div class="muted">Signature:</div></div>
+  </div>
+</section>
+
+<section class="section">
+  <div style="font-weight:700">CONFIDENTIAL</div>
+  <div class="muted">
+    The laboratory results contained in this report are considered confidential between the company and the client, and should not be shared or disclosed unless required by law without the client's consent.
+  </div>
+</section>
+```
+
+  </div>
+</body>
+</html>

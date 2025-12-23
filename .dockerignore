@@ -1,0 +1,17 @@
+.git
+.gitignore
+*.md
+.env
+.env.local
+node_modules
+__pycache__
+*.pyc
+.vscode
+.idea
+.DS_Store
+*.log
+.replit
+replit.md
+.local
+attached_assets
+FastLIMS

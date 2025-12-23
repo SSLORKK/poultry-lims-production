@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Professional Print Styles for COA PDF Export */
+@media print {
+  /* Page setup */
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+  
+  /* Hide navigation, buttons, and sidebars */
+  nav, .sidebar, .print\\:hidden, button {
+    display: none !important;
+  }
+  
+  /* Reset body and container */
+  body {
+    background: white !important;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* COA Container */
+  .coa-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+  
+  /* Headers and titles */
+  h1, h2, h3 {
+    color: #1e3a8a !important;
+    page-break-after: avoid;
+  }
+  
+  /* Tables */
+  table {
+    page-break-inside: avoid;
+    border-collapse: collapse !important;
+    width: 100% !important;
+    font-size: 10pt !important;
+  }
+  
+  thead {
+    display: table-header-group;
+  }
+  
+  tr {
+    page-break-inside: avoid;
+  }
+  
+  th {
+    background-color: #dbeafe !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-weight: bold !important;
+    padding: 8px !important;
+    border: 1px solid #374151 !important;
+  }
+  
+  td {
+    padding: 6px !important;
+    border: 1px solid #6b7280 !important;
+  }
+  
+  /* Input fields in print */
+  input[type="text"], 
+  input[type="date"],
+  textarea,
+  select {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 2px !important;
+    font-size: 10pt !important;
+  }
+  
+  /* Grid layouts */
+  .grid {
+    display: grid !important;
+    gap: 8px !important;
+    margin-bottom: 12px !important;
+  }
+  
+  /* Information sections */
+  .info-section {
+    background: #f9fafb !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    padding: 10px !important;
+    margin-bottom: 12px !important;
+    border: 1px solid #d1d5db !important;
+  }
+  
+  /* Force color printing for important elements */
+  .bg-blue-100,
+  .bg-gray-50,
+  .bg-blue-700 {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  /* Page breaks */
+  .page-break-before {
+    page-break-before: always;
+  }
+  
+  .page-break-after {
+    page-break-after: always;
+  }
+  
+  .no-page-break {
+    page-break-inside: avoid;
+  }
+  
+  /* Override hidden class for print:block elements */
+  .hidden.print\:block {
+    display: block !important;
+  }
+}

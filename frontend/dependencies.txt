@@ -1,0 +1,96 @@
+{
+  "version": "1.0.0",
+  "name": "lims-frontend",
+  "dependencies": {
+    "@tanstack/react-query": {
+      "version": "5.90.5",
+      "resolved": "https://registry.npmjs.org/@tanstack/react-query/-/react-query-5.90.5.tgz",
+      "overridden": false
+    },
+    "@types/react-dom": {
+      "version": "19.2.2",
+      "resolved": "https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.2.tgz",
+      "overridden": false
+    },
+    "@types/react": {
+      "version": "19.2.2",
+      "resolved": "https://registry.npmjs.org/@types/react/-/react-19.2.2.tgz",
+      "overridden": false
+    },
+    "@vitejs/plugin-react": {
+      "version": "4.7.0",
+      "resolved": "https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-4.7.0.tgz",
+      "overridden": false
+    },
+    "autoprefixer": {
+      "version": "10.4.21",
+      "resolved": "https://registry.npmjs.org/autoprefixer/-/autoprefixer-10.4.21.tgz",
+      "overridden": false
+    },
+    "axios": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/axios/-/axios-1.12.2.tgz",
+      "overridden": false
+    },
+    "clsx": {
+      "version": "2.1.1",
+      "resolved": "https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz",
+      "overridden": false
+    },
+    "date-fns": {
+      "version": "4.1.0",
+      "resolved": "https://registry.npmjs.org/date-fns/-/date-fns-4.1.0.tgz",
+      "overridden": false
+    },
+    "postcss": {
+      "version": "8.5.6",
+      "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.5.6.tgz",
+      "overridden": false
+    },
+    "react-dom": {
+      "version": "19.2.0",
+      "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.0.tgz",
+      "overridden": false
+    },
+    "react-is": {
+      "version": "19.0.0",
+      "resolved": "https://registry.npmjs.org/react-is/-/react-is-19.0.0.tgz",
+      "overridden": true
+    },
+    "react-router-dom": {
+      "version": "7.9.4",
+      "resolved": "https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.9.4.tgz",
+      "overridden": false
+    },
+    "react": {
+      "version": "19.2.0",
+      "resolved": "https://registry.npmjs.org/react/-/react-19.2.0.tgz",
+      "overridden": false
+    },
+    "recharts": {
+      "version": "3.3.0",
+      "resolved": "https://registry.npmjs.org/recharts/-/recharts-3.3.0.tgz",
+      "overridden": false
+    },
+    "tailwind-merge": {
+      "version": "2.6.0",
+      "resolved": "https://registry.npmjs.org/tailwind-merge/-/tailwind-merge-2.6.0.tgz",
+      "overridden": false
+    },
+    "tailwindcss": {
+      "version": "3.4.18",
+      "resolved": "https://registry.npmjs.org/tailwindcss/-/tailwindcss-3.4.18.tgz",
+      "overridden": false
+    },
+    "typescript": {
+      "version": "5.9.3",
+      "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+      "overridden": false
+    },
+    "vite": {
+      "version": "7.1.10",
+      "resolved": "https://registry.npmjs.org/vite/-/vite-7.1.10.tgz",
+      "overridden": false
+    }
+  }
+}
