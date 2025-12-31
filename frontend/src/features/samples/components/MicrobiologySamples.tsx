@@ -3,6 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { apiClient } from '../../../services/apiClient';
 import { NotesDialog } from '../../../components/NotesDialog';
 import { usePermissions } from '../../../hooks/usePermissions';
+import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import { ApiErrorDisplay } from '../../../components/common/ApiErrorDisplay';
 import * as XLSX from 'xlsx-js-style';
 
@@ -29,13 +30,17 @@ interface UnitRow {
   fumigation: string;
   indexList: string;
   coaStatus: string | null;
+  visibleSubSamples: number;  // Sub samples count based on visible indexes
+  visibleTestsCount: number;  // Tests count based on visible indexes per disease
 }
 
 export const MicrobiologySamples = () => {
   const navigate = useNavigate();
   const { canWrite, canRead, isLoading: permissionsLoading } = usePermissions();
+  const { user } = useCurrentUser();
   const hasWriteAccess = canWrite('Microbiology Samples');
   const hasReadAccess = canRead('Microbiology Samples');
+  const isAdmin = user?.role === 'admin';
 
   // Check permission - redirect if no access
   if (!permissionsLoading && !hasReadAccess) {
@@ -56,8 +61,23 @@ export const MicrobiologySamples = () => {
   });
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState<number[]>([]);
+  // Load persisted selected unit from localStorage
+  const getPersistedSelectedUnitId = () => {
+    try {
+      return parseInt(localStorage.getItem('microbiology_selected_unit') || '0') || null;
+    } catch { return null; }
+  };
   const [selectedRow, setSelectedRow] = useState<UnitRow | null>(null);
+  const [persistedUnitId] = useState<number | null>(getPersistedSelectedUnitId());
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+
+  // Persist selected unit to localStorage when changed
+  useEffect(() => {
+    if (selectedRow?.unitId) {
+      localStorage.setItem('microbiology_selected_unit', String(selectedRow.unitId));
+    }
+  }, [selectedRow]);
+
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
@@ -74,23 +94,56 @@ export const MicrobiologySamples = () => {
     history: []
   });
 
-  // Multi-select filter states
-  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
-  const [selectedFarms, setSelectedFarms] = useState<string[]>([]);
-  const [selectedFlocks, setSelectedFlocks] = useState<string[]>([]);
-  const [selectedAges, setSelectedAges] = useState<string[]>([]);
-  const [selectedSampleTypes, setSelectedSampleTypes] = useState<string[]>([]);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-  const [selectedHouses, setSelectedHouses] = useState<string[]>([]);
-  const [selectedCycles, setSelectedCycles] = useState<string[]>([]);
-  const [selectedDiseases, setSelectedDiseases] = useState<string[]>([]);
-  const [selectedBatchNos, setSelectedBatchNos] = useState<string[]>([]);
-  const [selectedFumigations, setSelectedFumigations] = useState<string[]>([]);
+  // COA data with hidden indexes per unit
+  const [coaHiddenIndexes, setCoaHiddenIndexes] = useState<{ [unitId: number]: { [disease: string]: string[] } }>({});
+
+  // Load persisted filters from localStorage
+  const loadPersistedFilters = () => {
+    try {
+      const saved = localStorage.getItem('microbiology_filters');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  };
+  const persistedFilters = loadPersistedFilters();
+
+  // Multi-select filter states (initialized from localStorage)
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>(persistedFilters?.companies || []);
+  const [selectedFarms, setSelectedFarms] = useState<string[]>(persistedFilters?.farms || []);
+  const [selectedFlocks, setSelectedFlocks] = useState<string[]>(persistedFilters?.flocks || []);
+  const [selectedAges, setSelectedAges] = useState<string[]>(persistedFilters?.ages || []);
+  const [selectedSampleTypes, setSelectedSampleTypes] = useState<string[]>(persistedFilters?.sampleTypes || []);
+  const [selectedSources, setSelectedSources] = useState<string[]>(persistedFilters?.sources || []);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(persistedFilters?.statuses || []);
+  const [selectedHouses, setSelectedHouses] = useState<string[]>(persistedFilters?.houses || []);
+  const [selectedCycles, setSelectedCycles] = useState<string[]>(persistedFilters?.cycles || []);
+  const [selectedDiseases, setSelectedDiseases] = useState<string[]>(persistedFilters?.diseases || []);
+  const [selectedBatchNos, setSelectedBatchNos] = useState<string[]>(persistedFilters?.batchNos || []);
+  const [selectedFumigations, setSelectedFumigations] = useState<string[]>(persistedFilters?.fumigations || []);
 
   // Date range filter
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>(persistedFilters?.startDate || '');
+  const [endDate, setEndDate] = useState<string>(persistedFilters?.endDate || '');
+
+  // Persist filters to localStorage when they change
+  useEffect(() => {
+    const filters = {
+      companies: selectedCompanies,
+      farms: selectedFarms,
+      flocks: selectedFlocks,
+      ages: selectedAges,
+      sampleTypes: selectedSampleTypes,
+      sources: selectedSources,
+      statuses: selectedStatuses,
+      houses: selectedHouses,
+      cycles: selectedCycles,
+      diseases: selectedDiseases,
+      batchNos: selectedBatchNos,
+      fumigations: selectedFumigations,
+      startDate,
+      endDate
+    };
+    localStorage.setItem('microbiology_filters', JSON.stringify(filters));
+  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate]);
 
   const fetchAvailableYears = async () => {
     try {
@@ -147,7 +200,20 @@ export const MicrobiologySamples = () => {
       }
     } catch (err: any) {
       console.error('Failed to load samples:', err);
-      setError(err.response?.data?.detail || 'Failed to load samples');
+      const errorData = err.response?.data;
+      let errorMessage = 'Failed to load Microbiology samples';
+      
+      if (errorData) {
+        if (errorData.message) {
+          errorMessage = `${errorData.error_type || 'Error'}: ${errorData.message}`;
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        }
+      } else if (err.code === 'ERR_NETWORK') {
+        errorMessage = 'Cannot connect to server. Please check your connection.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
       setInitialLoading(false);
@@ -175,14 +241,58 @@ export const MicrobiologySamples = () => {
     fetchEditedEntities();
   }, [samples]);
 
-  // Function to show edit history
-  const showEditHistory = async (entityType: 'sample' | 'unit', entityId: number, code: string) => {
+  // Fetch COA hidden indexes for all microbiology units
+  useEffect(() => {
+    const fetchCoaHiddenIndexes = async () => {
+      const microbiologyUnitIds: number[] = [];
+      samples.forEach((sample) => {
+        sample.units?.forEach((unit: any) => {
+          if (unit.department_id === 3) {
+            microbiologyUnitIds.push(unit.id);
+          }
+        });
+      });
+
+      if (microbiologyUnitIds.length === 0) return;
+
+      try {
+        const response = await apiClient.get(`/microbiology-coa/batch/?unit_ids=${microbiologyUnitIds.join(',')}`);
+        const hiddenIndexesMap: { [unitId: number]: { [disease: string]: string[] } } = {};
+        
+        for (const [unitId, coaData] of Object.entries(response.data)) {
+          const coa = coaData as any;
+          if (coa && coa.hidden_indexes) {
+            hiddenIndexesMap[parseInt(unitId)] = coa.hidden_indexes;
+          }
+        }
+        
+        setCoaHiddenIndexes(hiddenIndexesMap);
+      } catch (err) {
+        console.error('Failed to fetch COA hidden indexes:', err);
+      }
+    };
+
+    if (samples.length > 0) {
+      fetchCoaHiddenIndexes();
+    }
+  }, [samples]);
+
+  // Function to show combined edit history for sample and all its units
+  const showEditHistory = async (sampleId: number, unitId: number, sampleCode: string) => {
     try {
-      const response = await apiClient.get(`/edit-history/${entityType}/${entityId}`);
+      const [sampleHistory, unitHistory] = await Promise.all([
+        apiClient.get(`/edit-history/sample/${sampleId}`).then(res => res.data).catch(() => []),
+        apiClient.get(`/edit-history/unit/${unitId}`).then(res => res.data).catch(() => [])
+      ]);
+      
+      const allHistory = [...sampleHistory, ...unitHistory].sort(
+        (a, b) => new Date(b.edited_at).getTime() - new Date(a.edited_at).getTime()
+      );
+      
       setEditHistoryDialog({
         open: true,
-        code,
-        history: response.data
+        code: sampleCode,
+        history: allHistory
       });
     } catch (err) {
       console.error('Failed to fetch edit history:', err);
@@ -218,13 +328,62 @@ export const MicrobiologySamples = () => {
     fetchSamples();
   }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
 
+  // Auto-refresh data every 30 seconds without showing loading state
+  useEffect(() => {
+    const autoRefresh = setInterval(async () => {
+      try {
+        const params: any = {
+          year: selectedYear,
+          department_id: 3,
+          skip: (page - 1) * 100,
+          limit: 100
+        };
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (selectedCompanies.length > 0) params.company = selectedCompanies;
+        if (selectedFarms.length > 0) params.farm = selectedFarms;
+        if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+        if (selectedAges.length > 0) params.age = selectedAges;
+        if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+
+        const response = await apiClient.get('/samples/', { params });
+        setSamples(response.data);
+      } catch (err) {
+        console.error('Auto-refresh failed:', err);
+      }
+    }, 30000);
+
+    return () => clearInterval(autoRefresh);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
+
   const unitRows: UnitRow[] = useMemo(() => {
     const rows: UnitRow[] = [];
     samples.forEach((sample) => {
       sample.units?.forEach((unit: any) => {
         if (unit.department_id === 3) {
-          const diseases = unit.microbiology_data?.diseases_list?.join(', ') || '-';
-          const indexList = unit.microbiology_data?.index_list?.join(', ') || '-';
+          const diseasesList = unit.microbiology_data?.diseases_list || [];
+          const diseases = diseasesList.join(', ') || '-';
+          const fullIndexList = unit.microbiology_data?.index_list || [];
+          const indexList = fullIndexList.join(', ') || '-';
+
+          // Get hidden indexes for this unit
+          const unitHiddenIndexes = coaHiddenIndexes[unit.id] || {};
+
+          // Calculate visible sub samples (indexes not hidden for any disease)
+          // Get all unique hidden indexes across all diseases
+          const allHiddenIndexes = new Set<string>();
+          Object.values(unitHiddenIndexes).forEach((hiddenList: string[]) => {
+            hiddenList.forEach(idx => allHiddenIndexes.add(idx));
+          });
+          const visibleIndexes = fullIndexList.filter((idx: string) => !allHiddenIndexes.has(idx));
+          const visibleSubSamples = visibleIndexes.length;
+
+          // Calculate visible tests count (sum of visible indexes per disease)
+          let visibleTestsCount = 0;
+          diseasesList.forEach((disease: string) => {
+            const diseaseHiddenIndexes = unitHiddenIndexes[disease] || [];
+            const visibleForDisease = fullIndexList.filter((idx: string) => !diseaseHiddenIndexes.includes(idx));
+            visibleTestsCount += visibleForDisease.length;
+          });
 
           rows.push({
             sampleId: sample.id,
@@ -249,12 +408,23 @@ export const MicrobiologySamples = () => {
             fumigation: unit.microbiology_data?.fumigation || '-',
             indexList,
             coaStatus: unit.coa_status || null,
+            visibleSubSamples,
+            visibleTestsCount,
           });
         }
       });
     });
-    return rows;
-  }, [samples]);
+    // Sort by unit code A-Z (ascending alphabetically)
+    return rows.sort((a, b) => a.unitCode.localeCompare(b.unitCode));
+  }, [samples, coaHiddenIndexes]);
+
+  // Auto-select persisted unit when data loads
+  useEffect(() => {
+    if (persistedUnitId && !selectedRow && unitRows.length > 0) {
+      const row = unitRows.find(r => r.unitId === persistedUnitId);
+      if (row) setSelectedRow(row);
+    }
+  }, [unitRows, persistedUnitId]);
 
   // Extract unique values for filter dropdowns
   const uniqueCompanies = useMemo(() => {
@@ -492,10 +662,17 @@ export const MicrobiologySamples = () => {
         'Index List': row.indexList,
         'Status': row.status,
         'No. Samples': 1,
-        'No. Sub Samples': row.samplesNumber ?? '-',
-        'No. of Tests': row.samplesNumber && row.samplesNumber > 0 && row.diseases && row.diseases !== '-'
-          ? row.samplesNumber * (row.diseases.split(', ').filter(d => d.trim()).length)
-          : 0,
+        'No. Sub Samples': row.visibleSubSamples > 0 ? row.visibleSubSamples : (row.samplesNumber ?? '-'),
+        'No. of Tests': row.visibleTestsCount > 0 ? row.visibleTestsCount : (
+          row.diseases && row.diseases !== '-'
+            ? row.diseases.split(', ').filter(d => d.trim()).reduce((sum: number) => {
+                const indexCount = row.indexList && row.indexList !== '-' 
+                  ? row.indexList.split(', ').length 
+                  : (row.samplesNumber || 0);
+                return sum + indexCount;
+              }, 0)
+            : 0
+        ),
         'Notes': row.notes || '-'
       }));
 
@@ -507,7 +684,7 @@ export const MicrobiologySamples = () => {
       XLSX.writeFile(wb, fileName);
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export data');
+      addToast('error', 'Failed to export data. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -563,7 +740,7 @@ export const MicrobiologySamples = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export data');
+      addToast('error', 'Failed to export data. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -631,20 +808,34 @@ export const MicrobiologySamples = () => {
   }
 
   return (
-    <div className="p-6">
-      {/* Header with Title, Search, Year, and Buttons on same line */}
-      <div className="mb-6 border-b border-gray-200 pb-4">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold text-purple-700">Microbiology Samples</h2>
-
-          <div className="flex items-center gap-3 flex-1 max-w-2xl">
+    <div className="p-3 sm:p-4 lg:p-6 pb-20 lg:pb-6">
+      {/* Header - Mobile Responsive */}
+      <div className="mb-4 lg:mb-6 border-b border-gray-200 pb-4">
+        {/* Title row */}
+        <div className="flex items-center justify-between mb-3 lg:mb-0">
+          <h2 className="text-xl sm:text-2xl font-bold text-purple-700">Microbiology Samples</h2>
+          {/* Mobile: Show filter button here */}
+          <button
+            onClick={() => setFilterPanelOpen(!filterPanelOpen)}
+            className="lg:hidden p-2 rounded-lg bg-purple-100 hover:bg-purple-200"
+          >
+            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+          </button>
+        </div>
+        
+        {/* Search and controls row */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {/* Search and Year */}
+          <div className="flex items-center gap-2 flex-1">
             <div className="flex-1 relative">
               <input
                 type="text"
                 placeholder="🔍 Search..."
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               />
               {loading && (
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
@@ -659,7 +850,7 @@ export const MicrobiologySamples = () => {
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="px-2 sm:px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent min-w-[80px]"
             >
               {availableYears.map((year) => (
                 <option key={year} value={year}>
@@ -669,7 +860,8 @@ export const MicrobiologySamples = () => {
             </select>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Export Dropdown */}
             <div className="relative" ref={exportDropdownRef}>
               <button
@@ -1273,17 +1465,18 @@ export const MicrobiologySamples = () => {
               </svg>
               Edit
             </button>
-            <button
-              onClick={() => hasWriteAccess && handleDelete(selectedRow.unitId, selectedRow.unitCode)}
-              disabled={!hasWriteAccess}
-              className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 ${hasWriteAccess ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
-              title={!hasWriteAccess ? 'No write permission' : 'Delete unit'}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Delete
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => handleDelete(selectedRow.unitId, selectedRow.unitCode)}
+                className="px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 bg-red-600 text-white hover:bg-red-700"
+                title="Delete unit"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete
+              </button>
+            )}
             <button
               onClick={() => hasWriteAccess && handleCOAClick(selectedRow.unitId)}
               disabled={!hasWriteAccess}
@@ -1291,7 +1484,7 @@ export const MicrobiologySamples = () => {
                 !hasWriteAccess 
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : selectedRow.coaStatus === 'completed' 
-                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                    ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
                     : selectedRow.coaStatus === 'need_approval'
                       ? 'bg-blue-600 text-white hover:bg-blue-700'
                       : selectedRow.coaStatus === 'postponed'
@@ -1376,6 +1569,7 @@ export const MicrobiologySamples = () => {
               <thead className="sticky top-0 z-10 bg-purple-100 shadow-md">
                 <tr>
                   <th className="border border-gray-300 px-1 py-3 w-8 text-center font-semibold text-gray-700" title="Edit History"></th>
+                  <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Status</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Sample Code</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Unit Code</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Date Received</th>
@@ -1391,7 +1585,6 @@ export const MicrobiologySamples = () => {
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Batch No</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Fumigation</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Index List</th>
-                  <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Status</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">No. Samples</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">No. Sub Samples</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">No. of Tests</th>
@@ -1404,7 +1597,7 @@ export const MicrobiologySamples = () => {
                     key={`${row.sampleId}-${row.unitId}`}
                     onClick={() => setSelectedRow(row)}
                     className={`cursor-pointer transition-colors ${selectedRow?.unitId === row.unitId
-                      ? 'bg-purple-50 border-l-4 border-l-purple-600'
+                      ? 'bg-purple-200 border-l-4 border-l-purple-600 ring-2 ring-purple-400 ring-inset'
                       : 'hover:bg-gray-50 border-l-4 border-l-transparent'
                       }`}
                     tabIndex={0}
@@ -1417,40 +1610,44 @@ export const MicrobiologySamples = () => {
                       }
                     }}
                   >
-                    {editedSampleIds.has(row.sampleId) && (
-                      <td className="border border-gray-300 px-1 py-2 w-8">
+                    {/* Consolidated Edit History Icon */}
+                    <td className="border border-gray-300 px-1 py-2 w-8">
+                      {(editedSampleIds.has(row.sampleId) || editedUnitIds.has(row.unitId)) && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); showEditHistory('sample', row.sampleId, row.sampleCode); }}
-                          className="flex items-center justify-center w-6 h-6 bg-orange-500 hover:bg-orange-600 rounded transition-colors"
-                          title="This sample has been edited - click to view history"
+                          onClick={(e) => { e.stopPropagation(); showEditHistory(row.sampleId, row.unitId, row.sampleCode); }}
+                          className="flex items-center justify-center w-6 h-6 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 rounded shadow-sm transition-all"
+                          title="View all edit history for this sample and unit"
                         >
                           <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
                           </svg>
                         </button>
-                      </td>
-                    )}
-                    {!editedSampleIds.has(row.sampleId) && (
-                      <td className="border border-gray-300 px-1 py-2 w-8"></td>
-                    )}
+                      )}
+                    </td>
+                    <td className="border border-gray-300 px-2 py-2">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block w-fit ${
+                          row.status?.toLowerCase() === 'completed' || row.status?.toLowerCase() === 'complete'
+                            ? 'bg-green-100 text-green-800 border border-green-200'
+                            : row.status?.toLowerCase() === 'postponed' || row.status?.toLowerCase() === 'hold'
+                              ? 'bg-orange-100 text-orange-800 border border-orange-200'
+                              : row.status?.toLowerCase() === 'need approval' || row.status?.toLowerCase() === 'pending approval'
+                                ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                : row.status?.toLowerCase() === 'rejected'
+                                  ? 'bg-red-100 text-red-800 border border-red-200'
+                                  : row.status?.toLowerCase() === 'in_progress' || row.status?.toLowerCase() === 'in progress'
+                                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                                    : 'bg-gray-100 text-gray-800 border border-gray-200'
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
                     <td className="border border-gray-300 px-3 py-2 font-medium text-purple-600">
                       {row.sampleCode}
                     </td>
                     <td className="border border-gray-300 px-3 py-2 font-semibold text-purple-700">
-                      <div className="flex items-center gap-1">
-                        {row.unitCode}
-                        {editedUnitIds.has(row.unitId) && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); showEditHistory('unit', row.unitId, row.unitCode); }}
-                            className="ml-1 text-amber-500 hover:text-amber-600 transition-colors"
-                            title="This unit has been edited - click to view history"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
+                      {row.unitCode}
                     </td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-600">{formatDate(row.dateReceived)}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.company}</td>
@@ -1475,36 +1672,24 @@ export const MicrobiologySamples = () => {
                       )}
                       {(!row.indexList || row.indexList === '-') && '-'}
                     </td>
-                    <td className="border border-gray-300 px-2 py-2">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          row.status?.toLowerCase() === 'completed' || row.status?.toLowerCase() === 'complete'
-                            ? 'bg-green-100 text-green-800 border border-green-200'
-                            : row.status?.toLowerCase() === 'postponed' || row.status?.toLowerCase() === 'hold'
-                              ? 'bg-orange-100 text-orange-800 border border-orange-200'
-                              : row.status?.toLowerCase() === 'need approval' || row.status?.toLowerCase() === 'pending approval'
-                                ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                                : row.status?.toLowerCase() === 'rejected'
-                                  ? 'bg-red-100 text-red-800 border border-red-200'
-                                  : row.status?.toLowerCase() === 'in_progress' || row.status?.toLowerCase() === 'in progress'
-                                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                                    : 'bg-gray-100 text-gray-800 border border-gray-200'
-                        }`}
-                      >
-                        {row.status}
-                      </span>
-                    </td>
                     <td className="border border-gray-300 px-2 py-2 text-center font-semibold">
                       1
                     </td>
                     <td className="border border-gray-300 px-2 py-2 text-center">
-                      {row.samplesNumber ?? '-'}
+                      {row.visibleSubSamples > 0 ? row.visibleSubSamples : (row.samplesNumber ?? '-')}
                     </td>
                     <td className="border border-gray-300 px-2 py-2 text-center font-semibold text-purple-700">
-                      {row.samplesNumber && row.samplesNumber > 0 && row.diseases && row.diseases !== '-'
-                        ? row.samplesNumber * (row.diseases.split(', ').filter(d => d.trim()).length)
-                        : 0
-                      }
+                      {/* No. of Tests = sum of visible indexes per disease */}
+                      {row.visibleTestsCount > 0 ? row.visibleTestsCount : (
+                        row.diseases && row.diseases !== '-'
+                          ? row.diseases.split(', ').filter(d => d.trim()).reduce((sum) => {
+                              const indexCount = row.indexList && row.indexList !== '-' 
+                                ? row.indexList.split(', ').length 
+                                : (row.samplesNumber || 0);
+                              return sum + indexCount;
+                            }, 0)
+                          : 0
+                      )}
                     </td>
                     <td className="border border-gray-300 px-2 py-2" onClick={(e) => e.stopPropagation()}>
                       {row.notes && (
@@ -1654,26 +1839,232 @@ export const MicrobiologySamples = () => {
               {editHistoryDialog.history.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No edit history found</p>
               ) : (
-                <div className="space-y-3">
-                  {editHistoryDialog.history.map((edit: any, idx: number) => (
-                    <div key={idx} className="bg-gray-50 rounded-lg p-3 border-l-4 border-amber-400">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-gray-800 capitalize">{edit.field_name.replace(/_/g, ' ')}</span>
-                        <span className="text-xs text-gray-500">{new Date(edit.edited_at).toLocaleString()}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="bg-red-50 rounded p-2">
-                          <p className="text-xs text-red-600 font-medium mb-1">Before</p>
-                          <p className="text-red-800 break-words">{edit.old_value || '-'}</p>
+                <div className="space-y-4">
+                  {editHistoryDialog.history.map((edit: any, idx: number) => {
+                    // Helper to parse Python-style dict strings (single quotes) to JSON
+                    const parsePythonList = (value: string): any[] => {
+                      if (!value) return [];
+                      try {
+                        const parsed = JSON.parse(value);
+                        return Array.isArray(parsed) ? parsed.map((d: any) => typeof d === 'string' ? { disease: d } : d) : [];
+                      } catch {
+                        try {
+                          const jsonStr = value
+                            .replace(/'/g, '"')
+                            .replace(/None/g, 'null')
+                            .replace(/True/g, 'true')
+                            .replace(/False/g, 'false');
+                          const parsed = JSON.parse(jsonStr);
+                          return Array.isArray(parsed) ? parsed.map((d: any) => typeof d === 'string' ? { disease: d } : d) : [];
+                        } catch {
+                          return [];
+                        }
+                      }
+                    };
+
+                    // Check if value looks like a list/array
+                    const isListValue = (val: string): boolean => {
+                      if (!val) return false;
+                      const trimmed = val.trim();
+                      return trimmed.startsWith('[') && trimmed.endsWith(']');
+                    };
+                    
+                    // Microbiology diseases_list - simple string arrays displayed as cards
+                    if (edit.field_name === 'microbiology_diseases_list') {
+                      const oldDiseases = parsePythonList(edit.old_value);
+                      const newDiseases = parsePythonList(edit.new_value);
+                      
+                      return (
+                        <div key={idx} className="border rounded-lg overflow-hidden">
+                          <div className="bg-amber-50 px-3 py-2 border-b flex justify-between items-center">
+                            <span className="font-semibold text-amber-800">Diseases List Change</span>
+                            <span className="text-xs text-gray-500">{edit.edited_by} • {new Date(edit.edited_at).toLocaleString()}</span>
+                          </div>
+                          <div className="grid grid-cols-2 divide-x divide-gray-300">
+                            {/* Before Section */}
+                            <div className="bg-red-50">
+                              <div className="px-3 py-2 bg-red-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-red-700 text-sm">Before</span>
+                              </div>
+                              <div className="p-2">
+                                {oldDiseases.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No diseases</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {oldDiseases.map((d: any, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-red-100/50 rounded text-red-700 text-sm">
+                                        {d?.disease || (typeof d === 'string' ? d : '-')}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {/* After Section */}
+                            <div className="bg-green-50">
+                              <div className="px-3 py-2 bg-green-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-green-700 text-sm">After</span>
+                              </div>
+                              <div className="p-2">
+                                {newDiseases.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No diseases</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {newDiseases.map((d: any, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-green-100/50 rounded text-green-700 text-sm">
+                                        {d?.disease || (typeof d === 'string' ? d : '-')}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <div className="bg-green-50 rounded p-2">
-                          <p className="text-xs text-green-600 font-medium mb-1">After</p>
-                          <p className="text-green-800 break-words">{edit.new_value || '-'}</p>
+                      );
+                    }
+
+                    // Index list - displayed as cards
+                    if (edit.field_name === 'microbiology_index_list') {
+                      const parseIndexList = (val: string): string[] => {
+                        if (!val) return [];
+                        try {
+                          const parsed = JSON.parse(val.replace(/'/g, '"'));
+                          return Array.isArray(parsed) ? parsed : [];
+                        } catch {
+                          const cleaned = val.replace(/^\[|\]$/g, '').replace(/'/g, '');
+                          return cleaned.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+                        }
+                      };
+                      const oldItems = parseIndexList(edit.old_value);
+                      const newItems = parseIndexList(edit.new_value);
+                      
+                      return (
+                        <div key={idx} className="border rounded-lg overflow-hidden">
+                          <div className="bg-amber-50 px-3 py-2 border-b flex justify-between items-center">
+                            <span className="font-semibold text-amber-800">Index List Change</span>
+                            <span className="text-xs text-gray-500">{edit.edited_by} • {new Date(edit.edited_at).toLocaleString()}</span>
+                          </div>
+                          <div className="grid grid-cols-2 divide-x divide-gray-300">
+                            {/* Before Section */}
+                            <div className="bg-red-50">
+                              <div className="px-3 py-2 bg-red-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-red-700 text-sm">Before</span>
+                              </div>
+                              <div className="p-2">
+                                {oldItems.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No items</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {oldItems.map((item: string, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-red-100/50 rounded text-red-700 text-sm">
+                                        {item}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {/* After Section */}
+                            <div className="bg-green-50">
+                              <div className="px-3 py-2 bg-green-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-green-700 text-sm">After</span>
+                              </div>
+                              <div className="p-2">
+                                {newItems.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No items</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {newItems.map((item: string, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-green-100/50 rounded text-green-700 text-sm">
+                                        {item}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Generic list/array field - auto-detect
+                    if (isListValue(edit.old_value) || isListValue(edit.new_value)) {
+                      const oldItems = parsePythonList(edit.old_value);
+                      const newItems = parsePythonList(edit.new_value);
+                      const fieldLabel = edit.field_name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+                      
+                      return (
+                        <div key={idx} className="border rounded-lg overflow-hidden">
+                          <div className="bg-amber-50 px-3 py-2 border-b flex justify-between items-center">
+                            <span className="font-semibold text-amber-800">{fieldLabel} Change</span>
+                            <span className="text-xs text-gray-500">{edit.edited_by} • {new Date(edit.edited_at).toLocaleString()}</span>
+                          </div>
+                          <div className="grid grid-cols-2 divide-x divide-gray-300">
+                            {/* Before Section */}
+                            <div className="bg-red-50">
+                              <div className="px-3 py-2 bg-red-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-red-700 text-sm">Before</span>
+                              </div>
+                              <div className="p-2">
+                                {oldItems.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No items</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {oldItems.map((item: any, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-red-100/50 rounded text-red-700 text-sm">
+                                        {typeof item === 'object' ? (item?.disease || JSON.stringify(item)) : String(item)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {/* After Section */}
+                            <div className="bg-green-50">
+                              <div className="px-3 py-2 bg-green-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-green-700 text-sm">After</span>
+                              </div>
+                              <div className="p-2">
+                                {newItems.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No items</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {newItems.map((item: any, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-green-100/50 rounded text-green-700 text-sm">
+                                        {typeof item === 'object' ? (item?.disease || JSON.stringify(item)) : String(item)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // Regular field display - compact card style
+                    return (
+                      <div key={idx} className="border rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 px-3 py-2 border-b flex justify-between items-center">
+                          <span className="font-semibold text-gray-800 capitalize">{edit.field_name.replace(/_/g, ' ')}</span>
+                          <span className="text-xs text-gray-500">{edit.edited_by} • {new Date(edit.edited_at).toLocaleString()}</span>
+                        </div>
+                        <div className="grid grid-cols-2 divide-x divide-gray-200">
+                          <div className="p-3 bg-red-50">
+                            <div className="text-xs font-medium text-red-600 mb-1">Before</div>
+                            <div className="text-sm text-red-700 break-words">{edit.old_value || '-'}</div>
+                          </div>
+                          <div className="p-3 bg-green-50">
+                            <div className="text-xs font-medium text-green-600 mb-1">After</div>
+                            <div className="text-sm text-green-700 break-words">{edit.new_value || '-'}</div>
+                          </div>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">Edited by: <span className="font-medium">{edit.edited_by}</span></p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

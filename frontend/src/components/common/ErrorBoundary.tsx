@@ -10,6 +10,7 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  isSessionError: boolean;
 }
 
 class ErrorBoundary extends Component<Props, State> {
@@ -18,12 +19,20 @@ class ErrorBoundary extends Component<Props, State> {
     this.state = {
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
+      isSessionError: false
     };
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
-    return { hasError: true, error };
+    // Check if this is a session/auth related error (React error #300 often occurs after long idle)
+    const errorMessage = error?.message || '';
+    const isSessionError = errorMessage.includes('#300') || 
+                          errorMessage.includes('#301') ||
+                          errorMessage.includes('#418') ||
+                          errorMessage.includes('#423') ||
+                          errorMessage.includes('Minified React error');
+    return { hasError: true, error, isSessionError };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
@@ -35,13 +44,89 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   handleRetry = (): void => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
+    this.setState({ hasError: false, error: null, errorInfo: null, isSessionError: false });
+  };
+
+  handleLoginAgain = (): void => {
+    // Clear all auth data and redirect to login
+    localStorage.removeItem('token');
+    sessionStorage.clear();
+    window.location.href = '/login';
+  };
+
+  handleFullReload = (): void => {
+    // Clear cache and do a hard reload
+    localStorage.removeItem('token');
+    sessionStorage.clear();
+    window.location.href = '/login?session_expired=true';
   };
 
   render(): ReactNode {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;
+      }
+
+      // Session timeout error - show login prompt
+      if (this.state.isSessionError) {
+        return (
+          <div className="min-h-[400px] flex items-center justify-center p-8">
+            <div className="max-w-lg w-full">
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+                {/* Session Expired Header */}
+                <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-8 text-center">
+                  <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-white mb-2">Session Expired</h2>
+                  <p className="text-amber-100 text-sm">
+                    Your session has expired due to inactivity. Please log in again.
+                  </p>
+                </div>
+
+                {/* Session Info */}
+                <div className="p-6">
+                  <div className="bg-amber-50 border border-amber-100 rounded-lg p-4 mb-6">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0">
+                        <svg className="w-5 h-5 text-amber-500 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-amber-800">Session Timeout</h4>
+                        <p className="text-sm text-amber-700 mt-1">
+                          For security reasons, your session has expired after a period of inactivity. 
+                          Please log in again to continue working.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col gap-3">
+                    <button
+                      onClick={this.handleLoginAgain}
+                      className="w-full inline-flex items-center justify-center px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all shadow-sm"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                      </svg>
+                      Log In Again
+                    </button>
+                  </div>
+
+                  {/* Help Text */}
+                  <p className="text-center text-gray-500 text-xs mt-4">
+                    Your work has been saved. Log in to continue where you left off.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
       }
 
       return (
@@ -98,13 +183,13 @@ class ErrorBoundary extends Component<Props, State> {
                     Try Again
                   </button>
                   <button
-                    onClick={() => window.location.reload()}
+                    onClick={this.handleLoginAgain}
                     className="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-all"
                   >
                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
                     </svg>
-                    Reload Page
+                    Log In Again
                   </button>
                 </div>
 

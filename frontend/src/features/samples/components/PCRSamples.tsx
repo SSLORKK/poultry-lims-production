@@ -3,6 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { apiClient } from '../../../services/apiClient';
 import { NotesDialog } from '../../../components/NotesDialog';
 import { usePermissions } from '../../../hooks/usePermissions';
+import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import { ApiErrorDisplay } from '../../../components/common/ApiErrorDisplay';
 import * as XLSX from 'xlsx-js-style';
 
@@ -36,8 +37,10 @@ interface UnitRow {
 export const PCRSamples = () => {
   const navigate = useNavigate();
   const { canWrite, canRead, isLoading: permissionsLoading } = usePermissions();
+  const { user } = useCurrentUser();
   const hasWriteAccess = canWrite('PCR Samples');
   const hasReadAccess = canRead('PCR Samples');
+  const isAdmin = user?.role === 'admin';
 
   // Check permission - redirect if no access
   if (!permissionsLoading && !hasReadAccess) {
@@ -54,7 +57,14 @@ export const PCRSamples = () => {
   });
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState<number[]>([]);
+  // Load persisted selected unit from localStorage
+  const getPersistedSelectedUnitId = () => {
+    try {
+      return parseInt(localStorage.getItem('pcr_selected_unit') || '0') || null;
+    } catch { return null; }
+  };
   const [selectedRow, setSelectedRow] = useState<UnitRow | null>(null);
+  const [persistedUnitId] = useState<number | null>(getPersistedSelectedUnitId());
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -72,24 +82,55 @@ export const PCRSamples = () => {
     history: []
   });
 
-  // Multi-select filter states
-  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
-  const [selectedFarms, setSelectedFarms] = useState<string[]>([]);
-  const [selectedFlocks, setSelectedFlocks] = useState<string[]>([]);
-  const [selectedAges, setSelectedAges] = useState<string[]>([]);
-  const [selectedSampleTypes, setSelectedSampleTypes] = useState<string[]>([]);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-  const [selectedHouses, setSelectedHouses] = useState<string[]>([]);
-  const [selectedCycles, setSelectedCycles] = useState<string[]>([]);
-  const [selectedDiseases, setSelectedDiseases] = useState<string[]>([]);
-  const [selectedKitTypes, setSelectedKitTypes] = useState<string[]>([]);
-  const [selectedTechnicians, setSelectedTechnicians] = useState<string[]>([]);
-  const [selectedExtractionMethods, setSelectedExtractionMethods] = useState<string[]>([]);
+  // Load persisted filters from localStorage
+  const loadPersistedFilters = () => {
+    try {
+      const saved = localStorage.getItem('pcr_filters');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  };
+  const persistedFilters = loadPersistedFilters();
+
+  // Multi-select filter states (initialized from localStorage)
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>(persistedFilters?.companies || []);
+  const [selectedFarms, setSelectedFarms] = useState<string[]>(persistedFilters?.farms || []);
+  const [selectedFlocks, setSelectedFlocks] = useState<string[]>(persistedFilters?.flocks || []);
+  const [selectedAges, setSelectedAges] = useState<string[]>(persistedFilters?.ages || []);
+  const [selectedSampleTypes, setSelectedSampleTypes] = useState<string[]>(persistedFilters?.sampleTypes || []);
+  const [selectedSources, setSelectedSources] = useState<string[]>(persistedFilters?.sources || []);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(persistedFilters?.statuses || []);
+  const [selectedHouses, setSelectedHouses] = useState<string[]>(persistedFilters?.houses || []);
+  const [selectedCycles, setSelectedCycles] = useState<string[]>(persistedFilters?.cycles || []);
+  const [selectedDiseases, setSelectedDiseases] = useState<string[]>(persistedFilters?.diseases || []);
+  const [selectedKitTypes, setSelectedKitTypes] = useState<string[]>(persistedFilters?.kitTypes || []);
+  const [selectedTechnicians, setSelectedTechnicians] = useState<string[]>(persistedFilters?.technicians || []);
+  const [selectedExtractionMethods, setSelectedExtractionMethods] = useState<string[]>(persistedFilters?.extractionMethods || []);
 
   // Date range filter
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>(persistedFilters?.startDate || '');
+  const [endDate, setEndDate] = useState<string>(persistedFilters?.endDate || '');
+
+  // Persist filters to localStorage when they change
+  useEffect(() => {
+    const filters = {
+      companies: selectedCompanies,
+      farms: selectedFarms,
+      flocks: selectedFlocks,
+      ages: selectedAges,
+      sampleTypes: selectedSampleTypes,
+      sources: selectedSources,
+      statuses: selectedStatuses,
+      houses: selectedHouses,
+      cycles: selectedCycles,
+      diseases: selectedDiseases,
+      kitTypes: selectedKitTypes,
+      technicians: selectedTechnicians,
+      extractionMethods: selectedExtractionMethods,
+      startDate,
+      endDate
+    };
+    localStorage.setItem('pcr_filters', JSON.stringify(filters));
+  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate]);
 
   const fetchAvailableYears = async () => {
     try {
@@ -146,7 +187,20 @@ export const PCRSamples = () => {
       }
     } catch (err: any) {
       console.error('Failed to load samples:', err);
-      setError(err.response?.data?.detail || 'Failed to load samples');
+      const errorData = err.response?.data;
+      let errorMessage = 'Failed to load PCR samples';
+      
+      if (errorData) {
+        if (errorData.message) {
+          errorMessage = `${errorData.error_type || 'Error'}: ${errorData.message}`;
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        }
+      } else if (err.code === 'ERR_NETWORK') {
+        errorMessage = 'Cannot connect to server. Please check your connection.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
       setInitialLoading(false);  // After first load, never show skeleton again
@@ -174,14 +228,24 @@ export const PCRSamples = () => {
     fetchEditedEntities();
   }, [samples]);
 
-  // Function to show edit history
-  const showEditHistory = async (entityType: 'sample' | 'unit', entityId: number, code: string) => {
+  // Function to show combined edit history for sample and all its units
+  const showEditHistory = async (sampleId: number, unitId: number, sampleCode: string) => {
     try {
-      const response = await apiClient.get(`/edit-history/${entityType}/${entityId}`);
+      // Fetch both sample and unit history
+      const [sampleHistory, unitHistory] = await Promise.all([
+        apiClient.get(`/edit-history/sample/${sampleId}`).then(res => res.data).catch(() => []),
+        apiClient.get(`/edit-history/unit/${unitId}`).then(res => res.data).catch(() => [])
+      ]);
+      
+      // Combine and sort by date (newest first)
+      const allHistory = [...sampleHistory, ...unitHistory].sort(
+        (a, b) => new Date(b.edited_at).getTime() - new Date(a.edited_at).getTime()
+      );
+      
       setEditHistoryDialog({
         open: true,
-        code,
-        history: response.data
+        code: sampleCode,
+        history: allHistory
       });
     } catch (err) {
       console.error('Failed to fetch edit history:', err);
@@ -217,6 +281,33 @@ export const PCRSamples = () => {
     fetchSamples();
   }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
 
+  // Auto-refresh data every 30 seconds without showing loading state
+  useEffect(() => {
+    const autoRefresh = setInterval(async () => {
+      try {
+        const params: any = {
+          year: selectedYear,
+          department_id: 1,
+          skip: (page - 1) * 100,
+          limit: 100
+        };
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (selectedCompanies.length > 0) params.company = selectedCompanies;
+        if (selectedFarms.length > 0) params.farm = selectedFarms;
+        if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+        if (selectedAges.length > 0) params.age = selectedAges;
+        if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+
+        const response = await apiClient.get('/samples/', { params });
+        setSamples(response.data);
+      } catch (err) {
+        console.error('Auto-refresh failed:', err);
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(autoRefresh);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
+
   const unitRows: UnitRow[] = useMemo(() => {
     const rows: UnitRow[] = [];
     samples.forEach((sample) => {
@@ -236,7 +327,7 @@ export const PCRSamples = () => {
             cycle: sample.cycle || '-',
             house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
             age: unit.age,
-            source: unit.source || '-',
+            source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
             technician: unit.pcr_data?.technician_name || 'N/A',
             notes: unit.notes || '',
             sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
@@ -253,8 +344,24 @@ export const PCRSamples = () => {
         }
       });
     });
-    return rows;
+    // Sort by unit code A-Z (ascending alphabetically)
+    return rows.sort((a, b) => a.unitCode.localeCompare(b.unitCode));
   }, [samples]);
+
+  // Persist selected unit to localStorage when changed
+  useEffect(() => {
+    if (selectedRow?.unitId) {
+      localStorage.setItem('pcr_selected_unit', String(selectedRow.unitId));
+    }
+  }, [selectedRow]);
+
+  // Auto-select persisted unit when data loads
+  useEffect(() => {
+    if (persistedUnitId && !selectedRow && unitRows.length > 0) {
+      const row = unitRows.find(r => r.unitId === persistedUnitId);
+      if (row) setSelectedRow(row);
+    }
+  }, [unitRows, persistedUnitId]);
 
   // Extract unique values for filter dropdowns
   const uniqueCompanies = useMemo(() => {
@@ -311,7 +418,13 @@ export const PCRSamples = () => {
     const sources = new Set<string>();
     samples.forEach((sample) => {
       sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.source) sources.add(unit.source);
+        if (unit.department_id === 1 && unit.source) {
+          if (Array.isArray(unit.source)) {
+            unit.source.forEach((s: string) => sources.add(s));
+          } else {
+            sources.add(unit.source);
+          }
+        }
       });
     });
     return Array.from(sources).sort();
@@ -424,7 +537,11 @@ export const PCRSamples = () => {
 
     // Apply frontend-only multi-select filters
     if (selectedSources.length > 0) {
-      filtered = filtered.filter((row) => selectedSources.includes(row.source));
+      filtered = filtered.filter((row) => {
+        // Handle both array and string sources
+        const rowSources = row.source.split(', ').map(s => s.trim());
+        return selectedSources.some(selected => rowSources.includes(selected));
+      });
     }
     if (selectedStatuses.length > 0) {
       filtered = filtered.filter((row) => selectedStatuses.includes(row.status));
@@ -507,8 +624,8 @@ export const PCRSamples = () => {
         'Extraction Method': row.extractionMethod,
         'Technician': row.technicianName,
         'Status': row.status,
-        'No. Samples': row.extraction ?? '-',
-        'No. Sub Samples': row.samplesNumber ?? '-',
+        'No. Samples': 1,  // Each PCR code = 1 sample
+        'No. Sub Samples': row.extraction ?? '-',  // Sub-samples = extraction value
         'Total Tests': row.detection ?? '-',
         'Notes': row.notes || '-'
       }));
@@ -521,7 +638,7 @@ export const PCRSamples = () => {
       XLSX.writeFile(wb, fileName);
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export data');
+      addToast('error', 'Failed to export data. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -554,8 +671,8 @@ export const PCRSamples = () => {
           `"${row.extractionMethod}"`,
           `"${row.technicianName}"`,
           `"${row.status}"`,
-          `"${row.extraction ?? '-'}"`,
-          `"${row.samplesNumber ?? '-'}"`,
+          `"1"`,  // Each PCR code = 1 sample
+          `"${row.extraction ?? '-'}"`,  // Sub-samples = extraction value
           `"${row.detection ?? '-'}"`,
           `"${(row.notes || '-').replace(/"/g, '""')}"`
         ].join(','))
@@ -575,7 +692,7 @@ export const PCRSamples = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export data');
+      addToast('error', 'Failed to export data. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -644,20 +761,34 @@ export const PCRSamples = () => {
   }
 
   return (
-    <div className="p-6">
-      {/* Header with Title, Search, Year, and Buttons on same line */}
-      <div className="mb-6 border-b border-gray-200 pb-4">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold text-blue-700">PCR Samples</h2>
-
-          <div className="flex items-center gap-3 flex-1 max-w-2xl">
+    <div className="p-3 sm:p-4 lg:p-6 pb-20 lg:pb-6">
+      {/* Header - Mobile Responsive */}
+      <div className="mb-4 lg:mb-6 border-b border-gray-200 pb-4">
+        {/* Title row */}
+        <div className="flex items-center justify-between mb-3 lg:mb-0">
+          <h2 className="text-xl sm:text-2xl font-bold text-blue-700">PCR Samples</h2>
+          {/* Mobile: Show filter button here */}
+          <button
+            onClick={() => setFilterPanelOpen(!filterPanelOpen)}
+            className="lg:hidden p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
+          >
+            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+          </button>
+        </div>
+        
+        {/* Search and controls row */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {/* Search and Year */}
+          <div className="flex items-center gap-2 flex-1">
             <div className="flex-1 relative">
               <input
                 type="text"
                 placeholder="🔍 Search..."
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
               {loading && (
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
@@ -672,7 +803,7 @@ export const PCRSamples = () => {
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-2 sm:px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[80px]"
             >
               {availableYears.map((year) => (
                 <option key={year} value={year}>
@@ -682,7 +813,8 @@ export const PCRSamples = () => {
             </select>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Export Dropdown */}
             <div className="relative" ref={exportDropdownRef}>
               <button
@@ -1573,22 +1705,23 @@ export const PCRSamples = () => {
               </svg>
               Edit
             </button>
-            <button
-              onClick={() => hasWriteAccess && handleDelete(selectedRow.unitId, selectedRow.unitCode)}
-              disabled={!hasWriteAccess}
-              className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 ${hasWriteAccess ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
-              title={!hasWriteAccess ? 'No write permission' : 'Delete unit'}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Delete
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => handleDelete(selectedRow.unitId, selectedRow.unitCode)}
+                className="px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 bg-red-600 text-white hover:bg-red-700"
+                title="Delete unit"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete
+              </button>
+            )}
             <button
               onClick={() => handleCOAClick(selectedRow.unitId)}
               className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 ${
                 selectedRow.coaStatus === 'completed'
-                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  ? 'bg-yellow-500 text-white hover:bg-yellow-600'
                   : selectedRow.coaStatus === 'need_approval'
                     ? 'bg-blue-600 text-white hover:bg-blue-700'
                     : selectedRow.coaStatus === 'postponed'
@@ -1669,6 +1802,7 @@ export const PCRSamples = () => {
               <thead className="sticky top-0 z-10 bg-blue-100 shadow-md">
                 <tr>
                   <th className="border border-gray-300 px-1 py-3 w-8 text-center font-semibold text-gray-700" title="Edit History"></th>
+                  <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Status</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Sample Code</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Unit Code</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Date Received</th>
@@ -1684,7 +1818,6 @@ export const PCRSamples = () => {
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Kit Type</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Extraction</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Technician</th>
-                  <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Status</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">No. Samples</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">No. Sub Samples</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Total Tests</th>
@@ -1697,7 +1830,7 @@ export const PCRSamples = () => {
                     key={`${row.sampleId}-${row.unitId}`}
                     onClick={() => setSelectedRow(row)}
                     className={`cursor-pointer transition-all duration-150 ${selectedRow?.unitId === row.unitId
-                      ? 'bg-blue-50 border-l-4 border-l-blue-500'
+                      ? 'bg-blue-200 border-l-4 border-l-blue-600 ring-2 ring-blue-400 ring-inset'
                       : 'hover:bg-gray-50 hover:shadow-sm border-l-4 border-l-transparent'
                       }`}
                     tabIndex={0}
@@ -1710,57 +1843,23 @@ export const PCRSamples = () => {
                       }
                     }}
                   >
-                    {editedSampleIds.has(row.sampleId) && (
-                      <td className="border border-gray-300 px-1 py-2.5 w-8">
+                    {/* Consolidated Edit History Icon */}
+                    <td className="border border-gray-300 px-1 py-2.5 w-8">
+                      {(editedSampleIds.has(row.sampleId) || editedUnitIds.has(row.unitId)) && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); showEditHistory('sample', row.sampleId, row.sampleCode); }}
-                          className="flex items-center justify-center w-6 h-6 bg-orange-500 hover:bg-orange-600 rounded transition-colors"
-                          title="This sample has been edited - click to view history"
+                          onClick={(e) => { e.stopPropagation(); showEditHistory(row.sampleId, row.unitId, row.sampleCode); }}
+                          className="flex items-center justify-center w-6 h-6 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 rounded shadow-sm transition-all"
+                          title="View all edit history for this sample and unit"
                         >
                           <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
                           </svg>
                         </button>
-                      </td>
-                    )}
-                    {!editedSampleIds.has(row.sampleId) && (
-                      <td className="border border-gray-300 px-1 py-2.5 w-8"></td>
-                    )}
-                    <td className="border border-gray-300 px-3 py-2.5 font-semibold text-blue-600">
-                      {row.sampleCode}
+                      )}
                     </td>
-                    <td className="border border-gray-300 px-3 py-2.5 font-semibold text-blue-700">
-                      <div className="flex items-center gap-1">
-                        {row.unitCode}
-                        {editedUnitIds.has(row.unitId) && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); showEditHistory('unit', row.unitId, row.unitCode); }}
-                            className="ml-1 text-amber-500 hover:text-amber-600 transition-colors"
-                            title="This unit has been edited - click to view history"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{formatDate(row.dateReceived)}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-700">{row.company}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.farm}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.flock}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.cycle}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.house}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.age ?? '-'}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.source}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.sampleType}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-xs text-gray-600">{row.diseases}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.kitType}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.extractionMethod}</td>
-                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.technicianName}</td>
                     <td className="border border-gray-300 px-3 py-2.5">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block w-fit ${
                           row.status?.toLowerCase() === 'completed' || row.status?.toLowerCase() === 'complete'
                             ? 'bg-green-100 text-green-800 border border-green-200'
                             : row.status?.toLowerCase() === 'postponed' || row.status?.toLowerCase() === 'hold'
@@ -1777,11 +1876,30 @@ export const PCRSamples = () => {
                         {row.status}
                       </span>
                     </td>
+                    <td className="border border-gray-300 px-3 py-2.5 font-semibold text-blue-600">
+                      {row.sampleCode}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2.5 font-semibold text-blue-700">
+                      {row.unitCode}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{formatDate(row.dateReceived)}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-700">{row.company}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.farm}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.flock}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.cycle}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.house}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.age ?? '-'}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.source}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.sampleType}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-xs text-gray-600">{row.diseases}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.kitType}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.extractionMethod}</td>
+                    <td className="border border-gray-300 px-3 py-2.5 text-gray-600">{row.technicianName}</td>
                     <td className="border border-gray-300 px-3 py-2.5 text-center text-gray-700 font-semibold">
-                      {row.extraction ?? '-'}
+                      1
                     </td>
                     <td className="border border-gray-300 px-3 py-2.5 text-center text-gray-700">
-                      {row.samplesNumber ?? '-'}
+                      {row.extraction ?? '-'}
                     </td>
                     <td className="border border-gray-300 px-3 py-2.5 text-center text-gray-700 font-semibold">
                       {row.detection ?? '-'}
@@ -1933,26 +2051,236 @@ export const PCRSamples = () => {
               {editHistoryDialog.history.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No edit history found</p>
               ) : (
-                <div className="space-y-3">
-                  {editHistoryDialog.history.map((edit: any, idx: number) => (
-                    <div key={idx} className="bg-gray-50 rounded-lg p-3 border-l-4 border-amber-400">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-gray-800 capitalize">{edit.field_name.replace(/_/g, ' ')}</span>
-                        <span className="text-xs text-gray-500">{new Date(edit.edited_at).toLocaleString()}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="bg-red-50 rounded p-2">
-                          <p className="text-xs text-red-600 font-medium mb-1">Before</p>
-                          <p className="text-red-800 break-words">{edit.old_value || '-'}</p>
+                <div className="space-y-4">
+                  {editHistoryDialog.history.map((edit: any, idx: number) => {
+                    // Helper to parse Python-style dict strings (single quotes) to JSON
+                    const parsePythonList = (value: string): any[] => {
+                      if (!value) return [];
+                      try {
+                        return JSON.parse(value);
+                      } catch {
+                        try {
+                          // Convert Python repr format to JSON
+                          const jsonStr = value
+                            .replace(/'/g, '"')
+                            .replace(/None/g, 'null')
+                            .replace(/True/g, 'true')
+                            .replace(/False/g, 'false');
+                          return JSON.parse(jsonStr);
+                        } catch {
+                          return [];
+                        }
+                      }
+                    };
+
+                    // Check if value looks like a list/array
+                    const isListValue = (val: string): boolean => {
+                      if (!val) return false;
+                      const trimmed = val.trim();
+                      return trimmed.startsWith('[') && trimmed.endsWith(']');
+                    };
+                    
+                    // Check if this is a diseases_list field with objects (pcr/serology have disease, kit_type, test_count)
+                    if (edit.field_name === 'diseases_list' || edit.field_name === 'pcr_diseases_list' || edit.field_name === 'serology_diseases_list') {
+                      const oldDiseases = parsePythonList(edit.old_value);
+                      const newDiseases = parsePythonList(edit.new_value);
+                      
+                      return (
+                        <div key={idx} className="border rounded-lg overflow-hidden">
+                          <div className="bg-amber-50 px-3 py-2 border-b flex justify-between items-center">
+                            <span className="font-semibold text-amber-800">Diseases List Change</span>
+                            <span className="text-xs text-gray-500">{edit.edited_by} • {new Date(edit.edited_at).toLocaleString()}</span>
+                          </div>
+                          <div className="grid grid-cols-2 divide-x divide-gray-300">
+                            {/* Before Section */}
+                            <div className="bg-red-50">
+                              <div className="px-3 py-2 bg-red-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-red-700 text-sm">Before</span>
+                              </div>
+                              <table className="w-full text-sm">
+                                <thead className="bg-red-100/50">
+                                  <tr>
+                                    <th className="px-2 py-1 text-left text-xs font-medium text-red-800 border-b border-red-200">Disease</th>
+                                    <th className="px-2 py-1 text-left text-xs font-medium text-red-800 border-b border-red-200">Kit Type</th>
+                                    <th className="px-2 py-1 text-center text-xs font-medium text-red-800 border-b border-red-200">Count</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {oldDiseases.length === 0 ? (
+                                    <tr><td colSpan={3} className="px-2 py-2 text-center text-gray-400 text-xs">No diseases</td></tr>
+                                  ) : oldDiseases.map((d: any, i: number) => (
+                                    <tr key={i} className={i % 2 === 0 ? 'bg-red-50' : 'bg-red-100/30'}>
+                                      <td className="px-2 py-1 text-red-700 border-b border-red-100">{d?.disease || '-'}</td>
+                                      <td className="px-2 py-1 text-red-700 border-b border-red-100">{d?.kit_type || '-'}</td>
+                                      <td className="px-2 py-1 text-red-700 border-b border-red-100 text-center">{d?.test_count ?? '-'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            {/* After Section */}
+                            <div className="bg-green-50">
+                              <div className="px-3 py-2 bg-green-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-green-700 text-sm">After</span>
+                              </div>
+                              <table className="w-full text-sm">
+                                <thead className="bg-green-100/50">
+                                  <tr>
+                                    <th className="px-2 py-1 text-left text-xs font-medium text-green-800 border-b border-green-200">Disease</th>
+                                    <th className="px-2 py-1 text-left text-xs font-medium text-green-800 border-b border-green-200">Kit Type</th>
+                                    <th className="px-2 py-1 text-center text-xs font-medium text-green-800 border-b border-green-200">Count</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {newDiseases.length === 0 ? (
+                                    <tr><td colSpan={3} className="px-2 py-2 text-center text-gray-400 text-xs">No diseases</td></tr>
+                                  ) : newDiseases.map((d: any, i: number) => (
+                                    <tr key={i} className={i % 2 === 0 ? 'bg-green-50' : 'bg-green-100/30'}>
+                                      <td className="px-2 py-1 text-green-700 border-b border-green-100">{d?.disease || '-'}</td>
+                                      <td className="px-2 py-1 text-green-700 border-b border-green-100">{d?.kit_type || '-'}</td>
+                                      <td className="px-2 py-1 text-green-700 border-b border-green-100 text-center">{d?.test_count ?? '-'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
                         </div>
-                        <div className="bg-green-50 rounded p-2">
-                          <p className="text-xs text-green-600 font-medium mb-1">After</p>
-                          <p className="text-green-800 break-words">{edit.new_value || '-'}</p>
+                      );
+                    }
+
+                    // Microbiology diseases_list and index_list - simple string arrays
+                    if (edit.field_name === 'microbiology_diseases_list' || edit.field_name === 'microbiology_index_list') {
+                      const oldItems = parsePythonList(edit.old_value);
+                      const newItems = parsePythonList(edit.new_value);
+                      const fieldLabel = edit.field_name === 'microbiology_diseases_list' ? 'Diseases List' : 'Index List';
+                      
+                      return (
+                        <div key={idx} className="border rounded-lg overflow-hidden">
+                          <div className="bg-amber-50 px-3 py-2 border-b flex justify-between items-center">
+                            <span className="font-semibold text-amber-800">{fieldLabel} Change</span>
+                            <span className="text-xs text-gray-500">{edit.edited_by} • {new Date(edit.edited_at).toLocaleString()}</span>
+                          </div>
+                          <div className="grid grid-cols-2 divide-x divide-gray-300">
+                            {/* Before Section */}
+                            <div className="bg-red-50">
+                              <div className="px-3 py-2 bg-red-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-red-700 text-sm">Before</span>
+                              </div>
+                              <div className="p-2">
+                                {oldItems.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No items</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {oldItems.map((item: any, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-red-100/50 rounded text-red-700 text-sm">
+                                        {typeof item === 'string' ? item : JSON.stringify(item)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {/* After Section */}
+                            <div className="bg-green-50">
+                              <div className="px-3 py-2 bg-green-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-green-700 text-sm">After</span>
+                              </div>
+                              <div className="p-2">
+                                {newItems.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No items</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {newItems.map((item: any, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-green-100/50 rounded text-green-700 text-sm">
+                                        {typeof item === 'string' ? item : JSON.stringify(item)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Generic list/array field - auto-detect
+                    if (isListValue(edit.old_value) || isListValue(edit.new_value)) {
+                      const oldItems = parsePythonList(edit.old_value);
+                      const newItems = parsePythonList(edit.new_value);
+                      const fieldLabel = edit.field_name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+                      
+                      return (
+                        <div key={idx} className="border rounded-lg overflow-hidden">
+                          <div className="bg-amber-50 px-3 py-2 border-b flex justify-between items-center">
+                            <span className="font-semibold text-amber-800">{fieldLabel} Change</span>
+                            <span className="text-xs text-gray-500">{edit.edited_by} • {new Date(edit.edited_at).toLocaleString()}</span>
+                          </div>
+                          <div className="grid grid-cols-2 divide-x divide-gray-300">
+                            {/* Before Section */}
+                            <div className="bg-red-50">
+                              <div className="px-3 py-2 bg-red-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-red-700 text-sm">Before</span>
+                              </div>
+                              <div className="p-2">
+                                {oldItems.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No items</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {oldItems.map((item: any, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-red-100/50 rounded text-red-700 text-sm">
+                                        {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {/* After Section */}
+                            <div className="bg-green-50">
+                              <div className="px-3 py-2 bg-green-100 border-b border-gray-200 text-center">
+                                <span className="font-semibold text-green-700 text-sm">After</span>
+                              </div>
+                              <div className="p-2">
+                                {newItems.length === 0 ? (
+                                  <p className="text-center text-gray-400 text-xs py-2">No items</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {newItems.map((item: any, i: number) => (
+                                      <div key={i} className="px-2 py-1 bg-green-100/50 rounded text-green-700 text-sm">
+                                        {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // Regular field display - compact card style
+                    return (
+                      <div key={idx} className="border rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 px-3 py-2 border-b flex justify-between items-center">
+                          <span className="font-semibold text-gray-800 capitalize">{edit.field_name.replace(/_/g, ' ')}</span>
+                          <span className="text-xs text-gray-500">{edit.edited_by} • {new Date(edit.edited_at).toLocaleString()}</span>
+                        </div>
+                        <div className="grid grid-cols-2 divide-x divide-gray-200">
+                          <div className="p-3 bg-red-50">
+                            <div className="text-xs font-medium text-red-600 mb-1">Before</div>
+                            <div className="text-sm text-red-700 break-words">{edit.old_value || '-'}</div>
+                          </div>
+                          <div className="p-3 bg-green-50">
+                            <div className="text-xs font-medium text-green-600 mb-1">After</div>
+                            <div className="text-sm text-green-700 break-words">{edit.new_value || '-'}</div>
+                          </div>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">Edited by: <span className="font-medium">{edit.edited_by}</span></p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

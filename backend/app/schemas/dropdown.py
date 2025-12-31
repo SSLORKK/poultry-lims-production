@@ -23,6 +23,21 @@ class DropdownResponse(DropdownBase):
         from_attributes = True
 
 
+class FarmCreate(BaseModel):
+    name: str
+    company_id: Optional[int] = None
+
+
+class FarmResponse(BaseModel):
+    id: int
+    name: str
+    company_id: Optional[int] = None
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+
 class DepartmentDropdownBase(BaseModel):
     name: str
     department_id: int

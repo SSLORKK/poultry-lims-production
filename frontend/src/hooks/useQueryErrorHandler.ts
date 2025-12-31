@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface QueryErrorHandlerOptions {
@@ -6,21 +6,89 @@ interface QueryErrorHandlerOptions {
   showToast?: boolean;
 }
 
+// Track consecutive 401 errors to distinguish real auth failures from transient issues
+const auth401State = {
+  count: 0,
+  lastTime: 0,
+  threshold: 5, // Require 5 consecutive 401s within 60 seconds (more forgiving)
+  timeWindow: 60000, // 60 seconds
+};
+
+// Check if token is expired by decoding JWT
+const isTokenExpired = (): boolean => {
+  const token = localStorage.getItem('token');
+  if (!token) return true;
+  
+  try {
+    // Decode JWT payload (middle part)
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const exp = payload.exp * 1000; // Convert to milliseconds
+    const now = Date.now();
+    const buffer = 60000; // 1 minute buffer
+    return now >= (exp - buffer);
+  } catch {
+    return true; // If we can't decode, assume expired
+  }
+};
+
+// Reset 401 counter on successful requests
+export const resetAuth401Counter = () => {
+  auth401State.count = 0;
+  auth401State.lastTime = 0;
+};
+
+// Register globally for apiClient to access
+if (typeof window !== 'undefined') {
+  (window as any).__resetAuth401Counter = resetAuth401Counter;
+}
+
 export const useQueryErrorHandler = (options: QueryErrorHandlerOptions = {}) => {
   const queryClient = useQueryClient();
+  const handledRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       if (event?.type === 'updated' && event.query.state.status === 'error') {
         const error = event.query.state.error;
         
-        // Handle 401 errors globally - redirect to login
+        // Handle 401 errors with smart retry logic
         if ((error as any)?.response?.status === 401) {
           const currentPath = window.location.pathname;
-          if (currentPath !== '/login') {
-            localStorage.removeItem('token');
-            window.location.href = '/login';
+          if (currentPath !== '/login' && !handledRef.current) {
+            const now = Date.now();
+            
+            // Check if token is actually expired
+            if (isTokenExpired()) {
+              console.info('Token expired, redirecting to login');
+              handledRef.current = true;
+              localStorage.removeItem('token');
+              localStorage.setItem('session_expired', 'true');
+              window.location.href = '/login';
+              return;
+            }
+            
+            // Reset counter if outside time window
+            if (now - auth401State.lastTime > auth401State.timeWindow) {
+              auth401State.count = 0;
+            }
+            
+            auth401State.count++;
+            auth401State.lastTime = now;
+            
+            // Only logout after multiple consecutive 401s (indicates real auth issue)
+            if (auth401State.count >= auth401State.threshold) {
+              console.warn(`Multiple 401 errors (${auth401State.count}), session likely invalid`);
+              handledRef.current = true;
+              localStorage.removeItem('token');
+              localStorage.setItem('session_expired', 'true');
+              window.location.href = '/login';
+            } else {
+              console.info(`401 error ${auth401State.count}/${auth401State.threshold}, may be transient`);
+            }
           }
+        } else {
+          // Any non-401 response resets the counter (server is working)
+          resetAuth401Counter();
         }
 
         // Call custom error handler if provided

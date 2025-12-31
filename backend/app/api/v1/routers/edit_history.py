@@ -6,6 +6,7 @@ from datetime import datetime
 
 from app.db.session import get_db
 from app.models.edit_history import EditHistory
+from app.models.unit import Unit
 from app.api.v1.deps import get_current_user
 
 router = APIRouter(prefix="/edit-history", tags=["edit-history"])
@@ -76,6 +77,37 @@ def get_edit_history_by_code(
         (EditHistory.sample_code == code) | (EditHistory.unit_code == code)
     ).order_by(EditHistory.edited_at.desc()).all()
     return history
+
+
+@router.get("/sample-complete/{sample_id}", response_model=List[EditHistoryResponse])
+def get_complete_sample_edit_history(
+    sample_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Get complete edit history for a sample and ALL its units across all departments"""
+    # Get all unit IDs for this sample
+    unit_ids = [u.id for u in db.query(Unit.id).filter(Unit.sample_id == sample_id).all()]
+    
+    # Get sample history
+    sample_history = db.query(EditHistory).filter(
+        EditHistory.entity_type == "sample",
+        EditHistory.entity_id == sample_id
+    ).all()
+    
+    # Get all units history
+    units_history = []
+    if unit_ids:
+        units_history = db.query(EditHistory).filter(
+            EditHistory.entity_type == "unit",
+            EditHistory.entity_id.in_(unit_ids)
+        ).all()
+    
+    # Combine and sort by date
+    all_history = sample_history + units_history
+    all_history.sort(key=lambda x: x.edited_at, reverse=True)
+    
+    return all_history
 
 
 @router.get("/has-edits", response_model=dict)

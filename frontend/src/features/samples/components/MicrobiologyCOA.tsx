@@ -34,6 +34,22 @@ interface UnitData {
   };
 }
 
+interface ASTResult {
+  disk: string;
+  mic: string;
+  interpretation: string;
+  r: string;
+  i: string;
+  s: string;
+}
+
+interface ASTData {
+  bacterial_isolate: string;
+  bacteria_family: string;
+  include_in_pdf: boolean;
+  ast_results: ASTResult[];
+}
+
 interface COAData {
   id?: number;
   unit_id: number;
@@ -41,6 +57,8 @@ interface COAData {
   test_portions: { [disease: string]: { [sampleType: string]: string } };
   test_methods: { [disease: string]: string };
   test_report_numbers: { [disease: string]: string };
+  hidden_indexes: { [disease: string]: string[] };
+  ast_data: ASTData | null;
   date_tested: string | null;
   tested_by: string | null;
   reviewed_by: string | null;
@@ -83,6 +101,16 @@ export function MicrobiologyCOA() {
   const [currentDiseaseIndex, setCurrentDiseaseIndex] = useState<number>(0);
   const [postponedReason, setPostponedReason] = useState<string>('');
   const [showPostponedModal, setShowPostponedModal] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
+
+  // Auto-dismiss notification after 4 seconds
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -103,6 +131,34 @@ export function MicrobiologyCOA() {
 
   // Total Count COA Dilution State
   const [totalCountDilution, setTotalCountDilution] = useState<number>(0.11);
+
+  // AST (Antimicrobial Susceptibility Testing) State
+  const [showASTTab, setShowASTTab] = useState<boolean>(false);
+  const [includeASTInPDF, setIncludeASTInPDF] = useState<boolean>(false);
+  const [astBacterialIsolate, setAstBacterialIsolate] = useState<string>('');
+  const [astBacteriaFamily, setAstBacteriaFamily] = useState<string>('Enterobacteriaceae');
+  const [astResults, setAstResults] = useState<ASTResult[]>([]);
+
+  // Hidden indexes per disease (for +/- row toggle)
+  const [hiddenIndexes, setHiddenIndexes] = useState<{ [disease: string]: Set<string> }>({});
+
+  // Toggle index visibility for a disease
+  const toggleIndexVisibility = (disease: string, index: string) => {
+    setHiddenIndexes(prev => {
+      const diseaseSet = new Set(prev[disease] || []);
+      if (diseaseSet.has(index)) {
+        diseaseSet.delete(index);
+      } else {
+        diseaseSet.add(index);
+      }
+      return { ...prev, [disease]: diseaseSet };
+    });
+  };
+
+  // Check if an index is hidden for a disease
+  const isIndexHidden = (disease: string, index: string): boolean => {
+    return hiddenIndexes[disease]?.has(index) || false;
+  };
 
   // Handwritten Signature Images
   const [testedBySignatureImage, setTestedBySignatureImage] = useState<string | null>(null);
@@ -138,6 +194,49 @@ export function MicrobiologyCOA() {
       return failureCount < 3;
     },
   });
+
+  // Query for AST Disks
+  const { data: astDisks = [] } = useQuery<any[]>({
+    queryKey: ['ast-disks'],
+    queryFn: async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
+      const queryApiClient = axios.create({
+        baseURL: '/api/v1',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const response = await queryApiClient.get('/controls/ast-disks');
+      return response.data;
+    },
+    retry: (failureCount, error: any) => {
+      if (error?.response?.status === 401) {
+        return false;
+      }
+      return failureCount < 3;
+    },
+  });
+
+  // Initialize AST results from database when astDisks loads
+  useEffect(() => {
+    if (astDisks.length > 0 && astResults.length === 0) {
+      const initialResults = astDisks.map((disk: any) => ({
+        disk: disk.name,
+        mic: '',
+        interpretation: '',
+        r: disk.r_value || '',
+        i: disk.i_value || '',
+        s: disk.s_value || '',
+      }));
+      setAstResults(initialResults);
+    }
+  }, [astDisks]);
 
   // Query for pathogenic fungi & mold
   const { data: pathogenicFungiMoldTypes = [] } = useQuery<any[]>({
@@ -295,7 +394,7 @@ export function MicrobiologyCOA() {
       // Get current token for PIN verification
       const token = localStorage.getItem('token');
       if (!token) {
-        alert('You are not authenticated. Please log in again.');
+        setNotification({ type: 'error', message: 'Authentication required. Please log in again.' });
         return;
       }
 
@@ -328,7 +427,7 @@ export function MicrobiologyCOA() {
           setLabManagerSignatureImage(response.data.signature_image || null);
         }
       } else {
-        alert('Invalid PIN. Please try again.');
+        setNotification({ type: 'error', message: 'Invalid PIN. Please verify the PIN and try again.' });
         if (field === 'testedBy') {
           setTestedByPIN('');
         } else if (field === 'reviewedBy') {
@@ -343,9 +442,9 @@ export function MicrobiologyCOA() {
       console.error('Failed to verify PIN:', err);
       // Handle authentication errors gracefully
       if (err.response?.status === 401) {
-        alert('Your session may have expired. Please try again or refresh the page.');
+        setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
       } else {
-        alert('Failed to verify PIN. Please check your connection or try again.');
+        setNotification({ type: 'error', message: 'PIN verification failed. Please check your connection and try again.' });
       }
     }
   };
@@ -386,7 +485,37 @@ export function MicrobiologyCOA() {
           setCoaData(coa);
           setTestResults(coa.test_results || {});
           setTestPortions(coa.test_portions || {});
-          setTestMethods(coa.test_methods || {});
+          
+          // Load test methods with defaults for empty values
+          const savedMethods = coa.test_methods || {};
+          const methodsWithDefaults: { [disease: string]: string } = {};
+          unitResponse.data.microbiology_data?.diseases_list?.forEach((disease: string) => {
+            const lowerDisease = disease.toLowerCase();
+            // Use saved method if it exists and is not empty, otherwise use default
+            if (savedMethods[disease] && savedMethods[disease].trim()) {
+              methodsWithDefaults[disease] = savedMethods[disease];
+            } else if (lowerDisease.includes('culture') || lowerDisease.includes('isolation') || lowerDisease.includes('fungi')) {
+              methodsWithDefaults[disease] = 'Clinical Veterinary Microbiology 2nd edition, laboratory manual for the isolation and identification of avian pathogens Manual method 2008.';
+            } else if (lowerDisease.includes('water')) {
+              methodsWithDefaults[disease] = 'Standard method (2018),9215 A, B and C - Part 9000 – ISO 16266: (2006).';
+            } else if (lowerDisease.includes('total count')) {
+              methodsWithDefaults[disease] = 'ISO 4883-1:2013 / Amd.1:2022 (E)';
+            } else if (lowerDisease.includes('salmonella')) {
+              methodsWithDefaults[disease] = 'ISO 6579-1:2017 Amd.1:2020(E)';
+            } else {
+              methodsWithDefaults[disease] = savedMethods[disease] || '';
+            }
+          });
+          setTestMethods(methodsWithDefaults);
+          
+          // Load hidden indexes from database (per disease)
+          if (coa.hidden_indexes) {
+            const loadedHiddenIndexes: { [disease: string]: Set<string> } = {};
+            for (const [disease, indexes] of Object.entries(coa.hidden_indexes)) {
+              loadedHiddenIndexes[disease] = new Set(indexes as string[]);
+            }
+            setHiddenIndexes(loadedHiddenIndexes);
+          }
           
           // Extract actual indices from saved test_results and update unitData's index_list
           // This ensures the form displays the saved data correctly even if index_list was changed
@@ -461,16 +590,69 @@ export function MicrobiologyCOA() {
           setLabManager(coa.lab_manager || '');
           setNotes(coa.notes || '');
           setStatus(coa.status || 'draft');
+          
+          // Fetch signature images for existing COA signatories
+          if (coa.tested_by) {
+            try {
+              const sigResponse = await apiClient.get(`/controls/signatures/by-name/${encodeURIComponent(coa.tested_by)}`);
+              if (sigResponse.data.signature_image) {
+                setTestedBySignatureImage(sigResponse.data.signature_image);
+              }
+            } catch (sigErr) {
+              console.log('No signature found for tested by:', coa.tested_by);
+            }
+          }
+          if (coa.reviewed_by) {
+            try {
+              const sigResponse = await apiClient.get(`/controls/signatures/by-name/${encodeURIComponent(coa.reviewed_by)}`);
+              if (sigResponse.data.signature_image) {
+                setReviewedBySignatureImage(sigResponse.data.signature_image);
+              }
+            } catch (sigErr) {
+              console.log('No signature found for reviewed by:', coa.reviewed_by);
+            }
+          }
+          if (coa.lab_supervisor) {
+            try {
+              const sigResponse = await apiClient.get(`/controls/signatures/by-name/${encodeURIComponent(coa.lab_supervisor)}`);
+              if (sigResponse.data.signature_image) {
+                setLabSupervisorSignatureImage(sigResponse.data.signature_image);
+              }
+            } catch (sigErr) {
+              console.log('No signature found for lab supervisor:', coa.lab_supervisor);
+            }
+          }
+          if (coa.lab_manager) {
+            try {
+              const sigResponse = await apiClient.get(`/controls/signatures/by-name/${encodeURIComponent(coa.lab_manager)}`);
+              if (sigResponse.data.signature_image) {
+                setLabManagerSignatureImage(sigResponse.data.signature_image);
+              }
+            } catch (sigErr) {
+              console.log('No signature found for lab manager:', coa.lab_manager);
+            }
+          }
+          
+          // Load AST data if exists
+          if (coa.ast_data) {
+            setAstBacterialIsolate(coa.ast_data.bacterial_isolate || '');
+            setAstBacteriaFamily(coa.ast_data.bacteria_family || 'Enterobacteriaceae');
+            if (coa.ast_data.include_in_pdf !== undefined) {
+              setIncludeASTInPDF(coa.ast_data.include_in_pdf);
+            }
+            if (coa.ast_data.ast_results && coa.ast_data.ast_results.length > 0) {
+              setAstResults(coa.ast_data.ast_results);
+            }
+            setShowASTTab(true);
+          }
         } else {
           // COA doesn't exist yet, initialize with empty data
           initializeTestResults(unitResponse.data);
-          // Set technician name from registration form as default "Tested By" with current date and signature for new COA
+          // Set technician name from registration form as default "Tested By" and signature for new COA
           const technicianName = unitResponse.data.microbiology_data?.technician_name;
           if (technicianName) {
             setTestedBy(technicianName);
-            // Set current date as default test date
-            const today = new Date().toISOString().split('T')[0];
-            setDateTested(today);
+            // Test date is empty by default - user must select it
             // Try to fetch technician's signature
             try {
               const sigResponse = await apiClient.get(`/controls/signatures/by-name/${encodeURIComponent(technicianName)}`);
@@ -483,8 +665,7 @@ export function MicrobiologyCOA() {
           } else if (user?.full_name) {
             // Fallback to current user if no technician specified
             setTestedBy(user.full_name);
-            const today = new Date().toISOString().split('T')[0];
-            setDateTested(today);
+            // Test date is empty by default - user must select it
             try {
               const sigResponse = await apiClient.get(`/controls/signatures/by-name/${encodeURIComponent(user.full_name)}`);
               if (sigResponse.data.signature_image) {
@@ -499,13 +680,11 @@ export function MicrobiologyCOA() {
         // COA doesn't exist yet or error occurred, initialize with empty data
         if (err.response?.status === 404) {
           initializeTestResults(unitResponse.data);
-          // Set technician name from registration form as default "Tested By" with current date and signature for new COA
+          // Set technician name from registration form as default "Tested By" and signature for new COA
           const technicianName = unitResponse.data.microbiology_data?.technician_name;
           if (technicianName) {
             setTestedBy(technicianName);
-            // Set current date as default test date
-            const today = new Date().toISOString().split('T')[0];
-            setDateTested(today);
+            // Test date is empty by default - user must select it
             // Try to fetch technician's signature
             try {
               const sigResponse = await apiClient.get(`/controls/signatures/by-name/${encodeURIComponent(technicianName)}`);
@@ -518,8 +697,7 @@ export function MicrobiologyCOA() {
           } else if (user?.full_name) {
             // Fallback to current user if no technician specified
             setTestedBy(user.full_name);
-            const today = new Date().toISOString().split('T')[0];
-            setDateTested(today);
+            // Test date is empty by default - user must select it
             try {
               const sigResponse = await apiClient.get(`/controls/signatures/by-name/${encodeURIComponent(user.full_name)}`);
               if (sigResponse.data.signature_image) {
@@ -775,6 +953,25 @@ export function MicrobiologyCOA() {
         return;
       }
 
+      // Validate required signature fields
+      if (!testedBy) {
+        setError('Tested By is required. Please enter the technician PIN.');
+        setSaving(false);
+        return;
+      }
+
+      if (!reviewedBy) {
+        setError('Reviewed By (Head Unit) is required. Please enter the reviewer PIN.');
+        setSaving(false);
+        return;
+      }
+
+      if (!labSupervisor) {
+        setError('Lab Supervisor is required. Please enter the lab supervisor PIN.');
+        setSaving(false);
+        return;
+      }
+
       // Validate microbiology data structure
       const validationErrors = validateMicrobiologyData();
       if (validationErrors.length > 0) {
@@ -795,8 +992,8 @@ export function MicrobiologyCOA() {
       let newStatus = status;
       let newCoaStatus = unitData.coa_status;
 
-      if (user?.role === 'admin') {
-        // Admin approves the COA
+      if (user?.role === 'admin' || user?.role === 'manager') {
+        // Admin or Manager approves the COA
         newStatus = 'completed';
         newCoaStatus = 'completed';
         
@@ -832,6 +1029,20 @@ export function MicrobiologyCOA() {
         },
       });
 
+      // Convert hidden indexes Sets to arrays for JSON serialization
+      const hiddenIndexesForSave: { [disease: string]: string[] } = {};
+      for (const [disease, indexSet] of Object.entries(hiddenIndexes)) {
+        hiddenIndexesForSave[disease] = Array.from(indexSet);
+      }
+
+      // Prepare AST data if enabled
+      const astDataForSave = showASTTab ? {
+        bacterial_isolate: astBacterialIsolate,
+        bacteria_family: astBacteriaFamily,
+        include_in_pdf: includeASTInPDF,
+        ast_results: astResults,
+      } : null;
+
       // Prepare payload with proper data sanitization
       const sanitizedPayload = {
         test_results: testResults,
@@ -839,6 +1050,8 @@ export function MicrobiologyCOA() {
         test_methods: testMethods || {},
         isolate_types: isolateTypes || {},
         test_ranges: testRanges || {},
+        hidden_indexes: hiddenIndexesForSave,
+        ast_data: astDataForSave,
         date_tested: dateTested || null,
         tested_by: testedBy || null,
         reviewed_by: reviewedBy || null,
@@ -863,16 +1076,16 @@ export function MicrobiologyCOA() {
       // Update unit coa_status
       await saveApiClient.patch(`/units/${unitId}`, { coa_status: newCoaStatus });
 
-      // Update parent sample status only if admin approved
-      if (user?.role === 'admin' && newStatus === 'completed') {
+      // Update parent sample status only if admin or manager approved
+      if ((user?.role === 'admin' || user?.role === 'manager') && newStatus === 'completed') {
         await saveApiClient.patch(`/samples/${unitData.sample.id}`, { status: 'completed' });
       }
 
-      const message = user?.role === 'admin'
-        ? 'COA approved successfully!'
-        : 'COA submitted for approval!';
-      alert(message);
-      navigate('/microbiology/samples');
+      const message = (user?.role === 'admin' || user?.role === 'manager')
+        ? 'Certificate of Analysis approved successfully!'
+        : 'Certificate of Analysis submitted for approval!';
+      setNotification({ type: 'success', message });
+      setTimeout(() => navigate('/microbiology/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to save COA:', err);
       
@@ -902,7 +1115,7 @@ export function MicrobiologyCOA() {
         }
       } else {
         setError(err.response?.data?.detail || 'Failed to save COA');
-        alert('Failed to save COA. Please try again.');
+        setNotification({ type: 'error', message: 'Failed to save Certificate of Analysis. Please check your entries and try again.' });
       }
     } finally {
       setSaving(false);
@@ -911,7 +1124,7 @@ export function MicrobiologyCOA() {
 
   const handlePostpone = async () => {
     if (!unitData || !postponedReason.trim()) {
-      alert('Please enter a reason for postponing.');
+      setNotification({ type: 'warning', message: 'Please provide a reason for postponing this COA.' });
       return;
     }
 
@@ -963,12 +1176,12 @@ export function MicrobiologyCOA() {
 
       setShowPostponedModal(false);
       setPostponedReason('');
-      alert('COA postponed successfully!');
-      navigate('/microbiology/samples');
+      setNotification({ type: 'success', message: 'Certificate of Analysis postponed successfully!' });
+      setTimeout(() => navigate('/microbiology/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to postpone COA:', err);
       setError(err.response?.data?.detail || 'Failed to postpone COA');
-      alert('Failed to postpone COA. Please try again.');
+      setNotification({ type: 'error', message: 'Failed to postpone Certificate of Analysis. Please try again.' });
     } finally {
       setSaving(false);
     }
@@ -1018,9 +1231,19 @@ export function MicrobiologyCOA() {
           return `WATER${yearNum}-${seqNum}`;
         } else if (lowerDisease.includes('total count')) {
           return `COUNT${yearNum}-${seqNum}`;
+        } else if (lowerDisease === 'ast') {
+          return `AST${yearNum}-${seqNum}`;
         }
       }
       return unitCode;
+    };
+    
+    // Get AST report number
+    const getASTReportNumber = (): string => {
+      if (seqNum) {
+        return `AST${yearNum}-${seqNum}`;
+      }
+      return `${unitCode}-AST`;
     };
 
     // Smart sizing based on content amount - optimized for A4 page fitting
@@ -1126,22 +1349,80 @@ export function MicrobiologyCOA() {
       return '';
     };
 
-    const generatePagesForDisease = (disease: string, startPageNumber: number, totalPages: number) => {
+    const generatePagesForDisease = (disease: string, diseaseTotalPages: number) => {
       const isSalmonella = disease.toLowerCase().includes('salmonella');
       const isTotalCount = disease.toLowerCase().includes('total count');
       const isWater = disease.toLowerCase().includes('water');
       const isFeedSample = sampleTypes.some((t: string) => t.toLowerCase().includes('feed'));
-      // Max 23 rows for ALL disease types to ensure signatures, warning, and page numbers fit on one page
-      const maxRowsPerPage = 23;
-      const totalPagesForDisease = Math.ceil(indexList.length / maxRowsPerPage);
+      // Filter out hidden indexes for this disease - they should not appear in PDF
+      const visibleIndexList = indexList.filter((index: string) => !hiddenIndexes[disease]?.has(index));
+      
+      // Smart pagination: Calculate available rows based on page content
+      // Each A4 page can fit approximately 45 rows at normal scale
+      // Footer elements take approximately: QC table ~8 rows, signatures ~6 rows, warnings ~3 rows, total label ~1 row
+      const maxRowsPerPage = 45; // Maximum rows per page at normal scale
+      const hasQCTable = isTotalCount || isWater;
+      
+      // Calculate footer space needed (in row equivalents)
+      const footerRowsNeeded = 1 + // Total samples label
+        (hasQCTable ? 8 : 0) + // QC table if needed
+        6 + // Signatures section
+        3 + // Warnings section
+        1;  // Page number margin
+      
+      // Last page can have fewer rows to accommodate footer
+      const maxRowsOnLastPage = maxRowsPerPage - footerRowsNeeded;
+      
+      // Calculate total pages needed with smart distribution
+      const calculatePages = () => {
+        const totalSamples = visibleIndexList.length;
+        
+        // If all samples + footer fit on one page
+        if (totalSamples <= maxRowsOnLastPage) {
+          return 1;
+        }
+        
+        // Calculate how many full pages we need
+        // First pages get maxRowsPerPage, last page gets remaining + footer
+        let remainingSamples = totalSamples;
+        let pagesNeeded = 0;
+        
+        while (remainingSamples > 0) {
+          pagesNeeded++;
+          // Check if remaining samples can fit on this page with footer
+          if (remainingSamples <= maxRowsOnLastPage) {
+            break; // This is the last page
+          }
+          // This is not the last page, so it can have max rows
+          remainingSamples -= maxRowsPerPage;
+        }
+        
+        return pagesNeeded;
+      };
+      
+      const totalPagesForDisease = calculatePages();
       const pages = [];
 
+      // Smart row distribution across pages
+      let processedRows = 0;
       for (let page = 0; page < totalPagesForDisease; page++) {
-        const startIdx = page * maxRowsPerPage;
-        const endIdx = Math.min(startIdx + maxRowsPerPage, indexList.length);
-        const pageIndices = indexList.slice(startIdx, endIdx);
-        const currentPageNumber = startPageNumber + page;
         const isLastPage = page === totalPagesForDisease - 1;
+        
+        // Determine max rows for this page
+        let maxRowsThisPage: number;
+        if (isLastPage) {
+          // Last page needs space for footer elements (signatures, warnings, QC table)
+          maxRowsThisPage = maxRowsOnLastPage;
+        } else {
+          // Non-last pages can have full rows
+          maxRowsThisPage = maxRowsPerPage;
+        }
+        
+        const startIdx = processedRows;
+        const endIdx = Math.min(startIdx + maxRowsThisPage, visibleIndexList.length);
+        const pageIndices = visibleIndexList.slice(startIdx, endIdx);
+        processedRows = endIdx;
+        const currentPageNumber = page + 1; // Page number within this disease (1-indexed)
 
         // Generate table rows for this specific page
         const tableRows = pageIndices.map((index, idx) => {
@@ -1295,7 +1576,7 @@ export function MicrobiologyCOA() {
       </table>
       <div class="footnote">
         ${page === totalPagesForDisease - 1 ? `
-          <div style="margin-top:3px"><strong>Total Samples:</strong> ${indexList.length}</div>
+          <div style="margin-top:3px"><strong>Total Samples:</strong> ${visibleIndexList.length}</div>
         ` : ''}
         ${page === totalPagesForDisease - 1 && (disease.toLowerCase().includes('culture') || disease.toLowerCase().includes('isolation')) && cultureScreenedPathogens.length > 0 ? `
           <div style="margin-top:3px"><strong>Screened Pathogens:</strong> ${cultureScreenedPathogens.map((p: any) => p.name).join(', ')}</div>
@@ -1425,9 +1706,9 @@ export function MicrobiologyCOA() {
       </div>
     </section>` : ''}
 
-    <!-- Page Footer with Pagination -->
+    <!-- Page Footer with Disease-specific Pagination -->
     <div style="position: absolute; bottom: 15px; left: 0; right: 0; text-align: center; font-size: ${9 * scaleFactor}px; color: #6b7280; font-weight: 600;">
-      Page ${currentPageNumber} of ${totalPages}
+      ${disease} - Page ${currentPageNumber} of ${diseaseTotalPages}
     </div>
   </div>
         `);
@@ -1436,23 +1717,248 @@ export function MicrobiologyCOA() {
       return pages;
     };
 
-    // Calculate total pages needed first (23 rows max for all disease types)
+    // Calculate total pages needed with smart pagination (45 rows max per page, fewer on last page for footer)
     let totalPagesNeeded = 0;
-    const maxRowsPerPageCalc = 23;
-    diseases.forEach(() => {
-      const totalPagesForDisease = Math.ceil(indexList.length / maxRowsPerPageCalc);
-      totalPagesNeeded += totalPagesForDisease;
+    const maxRowsPerPageCalc = 45;
+    
+    diseases.forEach((disease) => {
+      const isTotalCountCalc = disease.toLowerCase().includes('total count');
+      const isWaterCalc = disease.toLowerCase().includes('water');
+      const hasQCTableCalc = isTotalCountCalc || isWaterCalc;
+      // Footer space: total label (1) + QC table (8 if present) + signatures (6) + warnings (3) + margin (1)
+      const footerRowsCalc = 1 + (hasQCTableCalc ? 8 : 0) + 6 + 3 + 1;
+      const maxRowsOnLastPageCalc = maxRowsPerPageCalc - footerRowsCalc;
+      
+      const visibleCount = indexList.filter((idx: string) => !hiddenIndexes[disease]?.has(idx)).length;
+      
+      if (visibleCount <= maxRowsOnLastPageCalc) {
+        totalPagesNeeded += 1;
+      } else {
+        // Calculate pages needed
+        let remaining = visibleCount;
+        let pages = 0;
+        while (remaining > 0) {
+          pages++;
+          if (remaining <= maxRowsOnLastPageCalc) break;
+          remaining -= maxRowsPerPageCalc;
+        }
+        totalPagesNeeded += pages;
+      }
     });
 
-    // Generate all pages with proper pagination
+    // Calculate pages per disease for disease-specific pagination
+    const calculatePagesForDisease = (disease: string): number => {
+      const isTotalCountCalc = disease.toLowerCase().includes('total count');
+      const isWaterCalc = disease.toLowerCase().includes('water');
+      const hasQCTableCalc = isTotalCountCalc || isWaterCalc;
+      const footerRowsCalc = 1 + (hasQCTableCalc ? 8 : 0) + 6 + 3 + 1;
+      const maxRowsOnLastPageCalc = maxRowsPerPageCalc - footerRowsCalc;
+      
+      const visibleCount = indexList.filter((idx: string) => !hiddenIndexes[disease]?.has(idx)).length;
+      
+      if (visibleCount <= maxRowsOnLastPageCalc) {
+        return 1;
+      } else {
+        let remaining = visibleCount;
+        let pages = 0;
+        while (remaining > 0) {
+          pages++;
+          if (remaining <= maxRowsOnLastPageCalc) break;
+          remaining -= maxRowsPerPageCalc;
+        }
+        return pages;
+      }
+    };
+
+    // Generate all pages with disease-specific pagination
     let allPages: string[] = [];
-    let currentPageNumber = 1;
 
     diseases.forEach((disease) => {
-      const diseasePages = generatePagesForDisease(disease, currentPageNumber, totalPagesNeeded);
+      const diseaseTotalPages = calculatePagesForDisease(disease);
+      const diseasePages = generatePagesForDisease(disease, diseaseTotalPages);
       allPages = allPages.concat(diseasePages);
-      currentPageNumber += diseasePages.length;
     });
+
+    // Generate AST pages with pagination if checkbox is checked and AST data has entries with interpretation OR MIC values
+    if (includeASTInPDF && astResults.some(r => r.interpretation || r.mic)) {
+      const filteredAstResults = astResults.filter(r => r.interpretation || r.mic);
+      const astRowsPerPage = 25; // Maximum rows per page for AST
+      const astRowsPerLastPage = 18; // Fewer rows on last page to fit footer elements
+      
+      // Calculate total AST pages needed
+      const totalAstResults = filteredAstResults.length;
+      let astTotalPages = 1;
+      if (totalAstResults > astRowsPerLastPage) {
+        let remaining = totalAstResults;
+        astTotalPages = 0;
+        while (remaining > 0) {
+          astTotalPages++;
+          if (remaining <= astRowsPerLastPage) break;
+          remaining -= astRowsPerPage;
+        }
+      }
+
+      // Generate each AST page
+      for (let astPageNum = 0; astPageNum < astTotalPages; astPageNum++) {
+        const isFirstAstPage = astPageNum === 0;
+        const isLastAstPage = astPageNum === astTotalPages - 1;
+        
+        // Calculate which rows to show on this page
+        let startIdx = 0;
+        for (let p = 0; p < astPageNum; p++) {
+          startIdx += astRowsPerPage;
+        }
+        const maxRowsThisPage = isLastAstPage ? astRowsPerLastPage : astRowsPerPage;
+        const endIdx = Math.min(startIdx + maxRowsThisPage, totalAstResults);
+        const pageResults = filteredAstResults.slice(startIdx, endIdx);
+
+        const astPage = `
+        <div class="page">
+          <header class="header">
+            <img src="/logo.png" alt="Lab Logo" class="logo" onerror="this.style.display='none'" />
+            <div style="text-align: center; flex: 1;">
+              <div class="lab-name">SAMA KARBALA CO. - Central Poultry Laboratories</div>
+              <div class="coa-title">Certificate of Analysis</div>
+            </div>
+            <div class="coa-badge">
+              <div class="badge-label">Test Report No.:</div>
+              <div style="font-size: 12px; font-weight: bold;" class="badge-value">${escapeHtml(getASTReportNumber())}</div>
+            </div>
+          </header>
+
+          ${isFirstAstPage ? `
+          <div class="info-block">
+            <h2>Sample Information</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; font-size: 10px;">
+              <div style="display: grid; grid-template-columns: auto 1fr; gap: 2px 8px;">
+                <span class="info-label">Sample Code:</span><span class="info-value">${escapeHtml(unitData.sample.sample_code)}</span>
+                <span class="info-label">Date Received:</span><span class="info-value">${new Date(unitData.sample.date_received).toLocaleDateString()}</span>
+                <span class="info-label">Company:</span><span class="info-value">${escapeHtml(unitData.sample.company)}</span>
+                <span class="info-label">Flock:</span><span class="info-value">${escapeHtml(unitData.sample.flock || 'N/A')}</span>
+                <span class="info-label">House:</span><span class="info-value">${escapeHtml((unitData.house || []).join(', ') || 'N/A')}</span>
+                <span class="info-label">Sample Types:</span><span class="info-value">${escapeHtml((unitData.sample_type || []).join(', ') || '-')}</span>
+              </div>
+              <div style="display: grid; grid-template-columns: auto 1fr; gap: 2px 8px;">
+                <span class="info-label">Unit Code:</span><span class="info-value">${escapeHtml(unitData.unit_code)}</span>
+                <span class="info-label">Test Date:</span><span class="info-value">${dateTested ? new Date(dateTested).toLocaleDateString() : '-'}</span>
+                <span class="info-label">Farm:</span><span class="info-value">${escapeHtml(unitData.sample.farm)}</span>
+                <span class="info-label">Cycle:</span><span class="info-value">${escapeHtml(unitData.sample.cycle || 'N/A')}</span>
+                <span class="info-label">Age:</span><span class="info-value">${escapeHtml(unitData.age || '-')}</span>
+                <span class="info-label">Source:</span><span class="info-value">${escapeHtml(unitData.source || 'N/A')}</span>
+              </div>
+            </div>
+          </div>
+          ` : ''}
+
+          <div class="section">
+            ${isFirstAstPage ? `
+            <div style="font-size: 9px; font-weight: 700; margin-bottom: 8px;">
+              Test Method: CLSI M100 Performance Standards for Antimicrobial Susceptibility Testing, 36th Edition 2026.
+            </div>
+            
+            <div style="margin-bottom: 10px; font-size: 10px;">
+              <strong>Bacterial Isolate:</strong> ${escapeHtml(astBacterialIsolate || '-')}
+            </div>
+
+            <h1 style="text-align: center; font-size: 14px; margin-bottom: 8px;">Antimicrobial Susceptibility Testing Results</h1>
+            ` : `
+            <div style="font-size: 9px; font-weight: 600; margin-bottom: 8px; color: #6b7280;">
+              AST Results (continued) - Page ${astPageNum + 1} of ${astTotalPages}
+            </div>
+            `}
+            
+            <table>
+              <thead>
+                <tr>
+                  <th rowspan="2" style="text-align: left; width: 35%;">AST Disk</th>
+                  <th rowspan="2" style="width: 10%;">MIC</th>
+                  <th rowspan="2" style="width: 15%;">Interpretation</th>
+                  <th colspan="3" style="width: 30%;">${escapeHtml(astBacteriaFamily)}</th>
+                </tr>
+                <tr>
+                  <th style="color: #dc2626;">R</th>
+                  <th style="color: #ca8a04;">I</th>
+                  <th style="color: #16a34a;">S</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${pageResults.map((result, idx) => {
+                  let interpColor = '';
+                  let interpText = result.interpretation || '-';
+                  if (result.interpretation === 'Resistant') { interpColor = 'color: #dc2626; font-weight: bold;'; }
+                  else if (result.interpretation === 'Sensitive') { interpColor = 'color: #16a34a; font-weight: bold;'; }
+                  else if (result.interpretation === 'Intermediate') { interpColor = 'color: #ca8a04; font-weight: bold;'; }
+                  return `
+                    <tr style="background: ${(startIdx + idx) % 2 === 0 ? '#fff' : '#f9fafb'};">
+                      <td style="text-align: left;">${escapeHtml(result.disk)}</td>
+                      <td>${escapeHtml(result.mic || '-')}</td>
+                      <td style="${interpColor}">${interpText}</td>
+                      <td style="color: #dc2626;">${escapeHtml(result.r || '-')}</td>
+                      <td style="color: #ca8a04;">${escapeHtml(result.i || '-')}</td>
+                      <td style="color: #16a34a;">${escapeHtml(result.s || '-')}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          ${isLastAstPage ? `
+          <div class="signatures">
+            <div class="sign-card">
+              <span class="sign-role">Tested By</span>
+              <div class="sign-image-container">
+                ${testedBySignatureImage ? `<img src="${testedBySignatureImage}" alt="Signature" class="sign-image"/>` : '<div class="sign-placeholder"></div>'}
+              </div>
+              <div class="sign-info">${escapeHtml(testedBy || '')}</div>
+            </div>
+            <div class="sign-card">
+              <span class="sign-role">Reviewed By</span>
+              <div class="sign-image-container">
+                ${reviewedBySignatureImage ? `<img src="${reviewedBySignatureImage}" alt="Signature" class="sign-image"/>` : '<div class="sign-placeholder"></div>'}
+              </div>
+              <div class="sign-info">${escapeHtml(reviewedBy || '')}</div>
+            </div>
+            <div class="sign-card">
+              <span class="sign-role">Lab Supervisor</span>
+              <div class="sign-image-container">
+                ${labSupervisorSignatureImage ? `<img src="${labSupervisorSignatureImage}" alt="Signature" class="sign-image"/>` : '<div class="sign-placeholder"></div>'}
+              </div>
+              <div class="sign-info">${escapeHtml(labSupervisor || '')}</div>
+            </div>
+            <div class="sign-card">
+              <span class="sign-role">Lab Manager</span>
+              <div class="sign-image-container">
+                ${labManagerSignatureImage ? `<img src="${labManagerSignatureImage}" alt="Signature" class="sign-image"/>` : '<div class="sign-placeholder"></div>'}
+              </div>
+              <div class="sign-info">${escapeHtml(labManager || '')}</div>
+            </div>
+          </div>
+
+          <div class="warning-section">
+            <div class="muted" style="margin-top: 6px;">
+            
+              <div>R = Resistant | I = Intermediate | S = Sensitive</div>
+            </div>
+            <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #e5e7eb;">
+              <div style="font-size: 7px; color: #374151; margin-bottom: 4px;"><strong>Warning:</strong></div>
+              <div style="font-size: 7px; color: #374151; margin-bottom: 2px;">• This Certificate is not accredited unless it is stamped or signed.</div>
+              <div style="font-size: 7px; color: #374151; margin-bottom: 2px;">• The result represents tested samples only.</div>
+              <div style="font-size: 7px; color: #374151; margin-bottom: 2px;">• Any Abrasion or change revokes this certificate.</div>
+              <div style="font-size: 7px; color: #374151; margin-bottom: 4px;">• The laboratory results contained in this report are considered confidential between the company and clients, and should not be shared or disclosed unless required by law without the client's consent.</div>
+              <div style="font-size: 7px; color: #374151; font-weight: bold;"><strong>CONFIDENTIAL:</strong> Use or transcription of this document® is prohibited unless written authentication granted by Sama Karbala For Agriculture & Animal Production. © 2025 All rights reserved.</div>
+            </div>
+          </div>
+          ` : `
+          <div style="text-align: center; font-size: 9px; color: #6b7280; margin-top: 10px;">
+            Page ${astPageNum + 1} of ${astTotalPages} - Continued on next page...
+          </div>
+          `}
+        </div>
+        `;
+        allPages.push(astPage);
+      }
+    }
 
     return `
 <!DOCTYPE html>
@@ -1479,6 +1985,7 @@ export function MicrobiologyCOA() {
     .lab-meta{flex:1; text-align: center; display: flex; flex-direction: column; justify-content: center;}
     .lab-name{font-size:${15 * scaleFactor}px; font-weight:900; color:var(--brand-ink); line-height:1.1}
     .lab-sub{color:var(--muted); font-size:${10 * scaleFactor}px; margin-top:1px}
+    .coa-title{font-size:${18 * scaleFactor}px; font-weight:700; color:var(--brand-ink); margin-top:2px}
     .coa-badge{margin-inline-start:auto; text-align:right; font-size:${10 * scaleFactor}px}
     .badge-label{color:var(--muted); font-weight:600}
     .badge-value{color:var(--brand-ink); font-weight:800; font-size:${13 * scaleFactor}px}
@@ -1540,14 +2047,121 @@ export function MicrobiologyCOA() {
     `;
   };
 
-  const handlePrint = () => {
+  // Export PDF - opens print dialog with PDF pre-selected for exact styling
+  const handleDirectPDFDownload = () => {
+    if (!unitData) return;
+    
+    // Generate filename for clipboard with all available info:
+    // sample code - unit code - company - farm - flock - houses - source - age - cycle - diseases
+    const sampleCode = unitData.sample?.sample_code || '';
+    const unitCode = unitData.unit_code || '';
+    const company = unitData.sample?.company || '';
+    const farm = unitData.sample?.farm || '';
+    const flock = unitData.sample?.flock || '';
+    const houses = unitData.house && unitData.house.length > 0 ? unitData.house.join(', ') : '';
+    const source = Array.isArray(unitData.source) ? unitData.source.join(', ') : (unitData.source || '');
+    const age = unitData.age || '';
+    const cycle = unitData.sample?.cycle || '';
+    const diseases = unitData.microbiology_data?.diseases_list?.join(', ') || '';
+    
+    // Build filename string with all available parts
+    let filenameParts: string[] = [];
+    if (sampleCode) filenameParts.push(sampleCode);
+    if (unitCode) filenameParts.push(unitCode);
+    if (company) filenameParts.push(company);
+    if (farm) filenameParts.push(farm);
+    if (flock) filenameParts.push(flock);
+    if (houses) filenameParts.push(houses);
+    if (source) filenameParts.push(source);
+    if (age) filenameParts.push(age);
+    if (cycle) filenameParts.push(cycle);
+    if (diseases) filenameParts.push(diseases);
+    
+    const filename = filenameParts.join(' - ');
+    
+    // Copy filename to clipboard with robust fallback
+    const copyToClipboard = async (text: string) => {
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (err) {
+          console.warn('Clipboard API failed, trying fallback');
+        }
+      }
+      
+      // Fallback: Create a temporary textarea element
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+      } catch (err) {
+        console.error('Fallback copy failed:', err);
+        return false;
+      }
+    };
+    
+    copyToClipboard(filename).then((success) => {
+      if (success) {
+        setNotification({ type: 'success', message: `Filename copied: ${filename}` });
+      } else {
+        setNotification({ type: 'warning', message: `Filename: ${filename}` });
+      }
+    });
+    
     const htmlContent = generatePDFTemplate();
     const printWindow = window.open('', '_blank');
     if (printWindow) {
+      // Write content in chunks to prevent blocking
+      printWindow.document.open();
       printWindow.document.write(htmlContent);
       printWindow.document.close();
-      printWindow.focus();
-      // Removed auto-trigger print - user will click Print button when ready
+      
+      // Single print trigger after images load - no duplicate calls
+      let printTriggered = false;
+      const triggerPrint = () => {
+        if (printTriggered) return;
+        printTriggered = true;
+        // Small delay to ensure rendering is complete
+        requestAnimationFrame(() => {
+          printWindow.focus();
+          printWindow.print();
+        });
+      };
+      
+      // Wait for all images to load before printing
+      const images = printWindow.document.querySelectorAll('img');
+      if (images.length === 0) {
+        // No images, trigger print after brief delay for CSS
+        setTimeout(triggerPrint, 300);
+      } else {
+        let loadedCount = 0;
+        const checkAllLoaded = () => {
+          loadedCount++;
+          if (loadedCount >= images.length) {
+            triggerPrint();
+          }
+        };
+        images.forEach((img) => {
+          if (img.complete) {
+            checkAllLoaded();
+          } else {
+            img.onload = checkAllLoaded;
+            img.onerror = checkAllLoaded; // Count errors as loaded to not block
+          }
+        });
+        // Fallback timeout if images take too long
+        setTimeout(triggerPrint, 3000);
+      }
     }
   };
 
@@ -1584,6 +2198,39 @@ export function MicrobiologyCOA() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
+      {/* Toast Notification */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-50 animate-pulse">
+          <div className={`px-5 py-4 rounded-xl shadow-lg flex items-center gap-3 min-w-[320px] max-w-md ${
+            notification.type === 'success' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' :
+            notification.type === 'error' ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white' :
+            'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
+          }`}>
+            {notification.type === 'success' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            {notification.type === 'error' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            {notification.type === 'warning' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            )}
+            <span className="font-medium">{notification.message}</span>
+            <button onClick={() => setNotification(null)} className="ml-auto hover:opacity-80">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto">
         {/* Action Buttons */}
         <div className="flex justify-between items-center mb-6 print:hidden">
@@ -1599,10 +2246,14 @@ export function MicrobiologyCOA() {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={handlePrint}
+              onClick={handleDirectPDFDownload}
               disabled={saving}
-              className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-400"
+              className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400 flex items-center gap-2"
+              title="Download PDF"
             >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
               Export PDF
             </button>
             <button
@@ -1621,7 +2272,7 @@ export function MicrobiologyCOA() {
             >
               {saving
                 ? 'Saving...'
-                : user?.role === 'admin'
+                : (user?.role === 'admin' || user?.role === 'manager')
                   ? 'Approve'
                   : 'Save COA'}
             </button>
@@ -1710,7 +2361,14 @@ export function MicrobiologyCOA() {
               )}
               <div className="flex col-span-3">
                 <span className="font-semibold w-40">Test Method:</span>
-                {currentDisease ? (
+                {showASTTab ? (
+                  <input
+                    type="text"
+                    value="CLSI M100 Performance Standards for Antimicrobial Susceptibility Testing, 36th Edition 2026."
+                    className="flex-1 px-3 py-1 border border-gray-300 rounded bg-green-50 text-green-800 font-medium"
+                    disabled
+                  />
+                ) : currentDisease ? (
                   <input
                     type="text"
                     value={testMethods[currentDisease] || (() => {
@@ -1754,25 +2412,174 @@ export function MicrobiologyCOA() {
             <div className="mb-6">
               <div className="border-b border-gray-200">
                 <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                  {diseases.map((disease, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setCurrentDiseaseIndex(idx)}
-                      className={`${idx === currentDiseaseIndex
-                          ? 'border-purple-500 text-purple-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        }
-                      whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200`}
-                    >
-                      {disease}
-                    </button>
-                  ))}
+                  {diseases.map((disease, idx) => {
+                    // Calculate visible (non-hidden) test count for this disease
+                    const visibleTestCount = unitData.microbiology_data?.index_list?.filter(
+                      (index: string) => !hiddenIndexes[disease]?.has(index)
+                    ).length || 0;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => { setCurrentDiseaseIndex(idx); setShowASTTab(false); }}
+                        className={`${idx === currentDiseaseIndex && !showASTTab
+                            ? 'border-purple-500 text-purple-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          }
+                        whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 flex items-center gap-2`}
+                      >
+                        {disease}
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${idx === currentDiseaseIndex && !showASTTab ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {visibleTestCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {/* AST Tab - Always Last */}
+                  <button
+                    onClick={() => setShowASTTab(true)}
+                    className={`${showASTTab
+                        ? 'border-green-500 text-green-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }
+                    whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 flex items-center gap-2`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    AST
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${showASTTab ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {astResults.filter(r => r.mic).length}
+                    </span>
+                  </button>
                 </nav>
               </div>
             </div>
           )}
 
+          {/* AST Tab Content */}
+          {showASTTab && (
+            <div className="mb-8">
+              {/* Include AST in PDF Checkbox - Before Title */}
+              <div className="mb-4 flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeASTInPDF}
+                    onChange={(e) => setIncludeASTInPDF(e.target.checked)}
+                    className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                    disabled={status === 'finalized'}
+                  />
+                  <span className="text-sm font-medium text-gray-700">Include AST in exported PDF</span>
+                </label>
+              </div>
+              
+              <h2 className="text-xl font-bold text-green-700 mb-4">Antimicrobial Susceptibility Testing (AST)</h2>
+              
+              {/* AST Header Info */}
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-sm">Bacterial Isolate:</label>
+                    <input
+                      type="text"
+                      value={astBacterialIsolate}
+                      onChange={(e) => setAstBacterialIsolate(e.target.value)}
+                      className="w-64 px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
+                      placeholder="Enter isolate"
+                      disabled={status === 'finalized'}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-sm">Bacteria Family:</label>
+                    <select
+                      value={astBacteriaFamily}
+                      onChange={(e) => setAstBacteriaFamily(e.target.value)}
+                      className="px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
+                      disabled={status === 'finalized'}
+                    >
+                      <option value="Enterobacteriaceae">Enterobacteriaceae</option>
+                      <option value="Fastidious M.o.">Fastidious M.o.</option>
+                      <option value="Staphylococcus">Staphylococcus</option>
+                      <option value="Enterococcus">Enterococcus</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* AST Results Table */}
+              <div className="border-2 border-green-200 rounded-lg overflow-hidden shadow-lg">
+                <div className="text-center py-3 bg-green-100 border-b border-green-200">
+                  <h3 className="text-lg font-bold text-green-800">Antimicrobial Susceptibility Testing Results</h3>
+                </div>
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold" rowSpan={2}>AST Disk</th>
+                      <th className="border border-gray-300 px-3 py-2 text-center font-semibold" rowSpan={2}>MIC</th>
+                      <th className="border border-gray-300 px-3 py-2 text-center font-semibold" rowSpan={2}>Interpretation</th>
+                      <th className="border border-gray-300 px-3 py-2 text-center font-semibold" colSpan={3}>{astBacteriaFamily}</th>
+                    </tr>
+                    <tr className="bg-gray-50">
+                      <th className="border border-gray-300 px-2 py-1 text-center font-semibold text-red-600">R</th>
+                      <th className="border border-gray-300 px-2 py-1 text-center font-semibold text-yellow-600">I</th>
+                      <th className="border border-gray-300 px-2 py-1 text-center font-semibold text-green-600">S</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {astResults.map((result, idx) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="border border-gray-300 px-3 py-2 text-sm">
+                          {result.disk}
+                        </td>
+                        <td className="border border-gray-300 px-2 py-1">
+                          <input
+                            type="text"
+                            value={result.mic}
+                            onChange={(e) => {
+                              const newResults = [...astResults];
+                              newResults[idx] = { ...newResults[idx], mic: e.target.value };
+                              setAstResults(newResults);
+                            }}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-center text-sm focus:ring-2 focus:ring-green-500"
+                            placeholder="-"
+                            disabled={status === 'finalized'}
+                          />
+                        </td>
+                        <td className="border border-gray-300 px-2 py-1">
+                          <select
+                            value={result.interpretation || ''}
+                            onChange={(e) => {
+                              const newResults = [...astResults];
+                              newResults[idx] = { ...newResults[idx], interpretation: e.target.value };
+                              setAstResults(newResults);
+                            }}
+                            className={`w-full px-2 py-1 border border-gray-300 rounded text-center text-sm focus:ring-2 focus:ring-green-500 font-semibold ${
+                              result.interpretation === 'Resistant' ? 'bg-red-100 text-red-700' :
+                              result.interpretation === 'Intermediate' ? 'bg-yellow-100 text-yellow-700' :
+                              result.interpretation === 'Sensitive' ? 'bg-green-100 text-green-700' : ''
+                            }`}
+                            disabled={status === 'finalized'}
+                          >
+                            <option value="">-</option>
+                            <option value="Sensitive" className="bg-green-100 text-green-700">Sensitive</option>
+                            <option value="Intermediate" className="bg-yellow-100 text-yellow-700">Intermediate</option>
+                            <option value="Resistant" className="bg-red-100 text-red-700">Resistant</option>
+                          </select>
+                        </td>
+                        <td className="border border-gray-300 px-2 py-1 text-center text-sm text-red-600 font-medium">{result.r || '-'}</td>
+                        <td className="border border-gray-300 px-2 py-1 text-center text-sm text-yellow-600 font-medium">{result.i || '-'}</td>
+                        <td className="border border-gray-300 px-2 py-1 text-center text-sm text-green-600 font-medium">{result.s || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+            </div>
+          )}
+
           {/* Test Results - Current Disease Only */}
+          {!showASTTab && (
           <div className="mb-8">
             <h2 className="text-xl font-bold text-purple-700 mb-4">Test Results</h2>
 
@@ -1921,11 +2728,27 @@ export function MicrobiologyCOA() {
                         const isWater = currentDisease.toLowerCase().includes('water');
                         const result = testResults[currentDisease]?.[index] || 'Not Detected';
                         const portion = testPortions[currentDisease]?.[index] || 'per25g';
+                        const isHidden = isIndexHidden(currentDisease, index);
 
                         return (
-                          <tr key={rowIdx} className="hover:bg-gray-50">
-                            <td className="border border-gray-300 px-4 py-3 font-semibold bg-gray-50 text-center">
-                              {rowIdx + 1}
+                          <tr key={rowIdx} className={`hover:bg-gray-50 ${isHidden ? 'opacity-30 bg-gray-100' : ''}`}>
+                            <td className="border border-gray-300 px-2 py-2 font-semibold bg-gray-50 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleIndexVisibility(currentDisease, index)}
+                                  className={`w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                                    isHidden 
+                                      ? 'bg-green-500 hover:bg-green-600' 
+                                      : 'bg-red-500 hover:bg-red-600'
+                                  }`}
+                                  title={isHidden ? 'Include this index' : 'Exclude this index'}
+                                  disabled={status === 'finalized'}
+                                >
+                                  {isHidden ? '+' : '−'}
+                                </button>
+                                <span>{rowIdx + 1}</span>
+                              </div>
                             </td>
                             <td className="border border-gray-300 px-4 py-3 font-semibold bg-gray-50">
                               {index}
@@ -2447,6 +3270,7 @@ export function MicrobiologyCOA() {
               </div>
             )}
           </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div>

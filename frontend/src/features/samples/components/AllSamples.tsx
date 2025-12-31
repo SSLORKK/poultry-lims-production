@@ -24,6 +24,8 @@ interface UnitRow {
   sampleType: string;
   status: string;
   samplesNumber: number | null;
+  subSamplesNumber: number | null;
+  testsCount: number | null;
   department: string;
   coaStatus: string | null;
 }
@@ -46,20 +48,22 @@ export const AllSamples = () => {
     open: false,
     note: '',
   });
-  const [editedUnitIds, setEditedUnitIds] = useState<Set<number>>(new Set());
-  const [editedSampleIds, setEditedSampleIds] = useState<Set<number>>(new Set());
-  const [editHistoryDialog, setEditHistoryDialog] = useState<{ open: boolean; unitId: number; unitCode: string; history: any[] }>({
-    open: false,
-    unitId: 0,
-    unitCode: '',
-    history: []
-  });
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
+
+  const addToast = (type: 'success' | 'error', message: string) => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  };
+
+  // Suppress unused variable warning - toasts are used in JSX
+  void toasts;
 
   // Multi-select filter states (matching PCRSamples pattern)
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -124,7 +128,26 @@ export const AllSamples = () => {
       setError(null);
     } catch (err: any) {
       console.error('Failed to load samples:', err);
-      setError(err.response?.data?.detail || 'Failed to load samples');
+      // Capture detailed error information
+      const errorData = err.response?.data;
+      let errorMessage = 'Failed to load samples';
+      
+      if (errorData) {
+        if (errorData.message) {
+          errorMessage = `${errorData.error_type || 'Error'}: ${errorData.message}`;
+          if (errorData.location) {
+            errorMessage += ` (${errorData.location})`;
+          }
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        }
+      } else if (err.code === 'ERR_NETWORK') {
+        errorMessage = 'Cannot connect to server. Please check your connection.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
       setInitialLoading(false);  // After first load, never show skeleton again
@@ -142,53 +165,6 @@ export const AllSamples = () => {
   useEffect(() => {
     fetchSamples();
   }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, page, debouncedSearch]);
-
-  // Fetch edited unit and sample IDs
-  useEffect(() => {
-    const fetchEditedEntities = async () => {
-      try {
-        const [unitsResponse, samplesResponse] = await Promise.all([
-          apiClient.get('/edit-history/edited-units'),
-          apiClient.get('/edit-history/edited-samples')
-        ]);
-        setEditedUnitIds(new Set(unitsResponse.data));
-        setEditedSampleIds(new Set(samplesResponse.data));
-      } catch (err) {
-        console.error('Failed to fetch edited entities:', err);
-      }
-    };
-    fetchEditedEntities();
-  }, [samples]);
-
-  // Function to show edit history for a unit
-  const showEditHistory = async (unitId: number, unitCode: string) => {
-    try {
-      const response = await apiClient.get(`/edit-history/unit/${unitId}`);
-      setEditHistoryDialog({
-        open: true,
-        unitId,
-        unitCode,
-        history: response.data
-      });
-    } catch (err) {
-      console.error('Failed to fetch edit history:', err);
-    }
-  };
-
-  // Function to show edit history for a sample
-  const showSampleEditHistory = async (sampleId: number, sampleCode: string) => {
-    try {
-      const response = await apiClient.get(`/edit-history/sample/${sampleId}`);
-      setEditHistoryDialog({
-        open: true,
-        unitId: sampleId,
-        unitCode: sampleCode,
-        history: response.data
-      });
-    } catch (err) {
-      console.error('Failed to fetch sample edit history:', err);
-    }
-  };
 
   // Close export dropdown when clicking outside
   useEffect(() => {
@@ -209,6 +185,40 @@ export const AllSamples = () => {
           unit.department_id === 2 ? 'Serology' :
             unit.department_id === 3 ? 'Microbiology' : 'Unknown';
 
+        // Calculate samples, sub-samples, and tests based on department
+        let samplesCount: number | null = null;
+        let subSamplesCount: number | null = null;
+        let testsCount: number | null = null;
+
+        if (unit.department_id === 1) {
+          // PCR: samples = 1 per unit, sub-samples = extraction, tests = detection
+          samplesCount = 1;
+          subSamplesCount = unit.pcr_data?.extraction || null;
+          testsCount = unit.pcr_data?.detection || null;
+        } else if (unit.department_id === 2) {
+          // Serology: samples = samples_number, sub-samples = null, tests = sum of disease test_counts
+          samplesCount = unit.samples_number || null;
+          subSamplesCount = null;
+          testsCount = unit.serology_data?.tests_count || null;
+        } else if (unit.department_id === 3) {
+          // Microbiology: samples = 1, sub-samples = samples_number, tests = visible indexes per disease
+          samplesCount = 1;
+          subSamplesCount = unit.samples_number || null;
+          // Calculate tests from visible indexes per disease (accounting for hidden indexes)
+          const diseasesList = unit.microbiology_data?.diseases_list || [];
+          const indexList = unit.microbiology_data?.index_list || [];
+          const hiddenIndexes = unit.microbiology_coa?.hidden_indexes || {};
+          let micTests = 0;
+          diseasesList.forEach((disease: string) => {
+            const diseaseHidden = hiddenIndexes[disease] || [];
+            const visibleCount = indexList.length - diseaseHidden.length;
+            micTests += Math.max(0, visibleCount);
+          });
+          testsCount = micTests > 0 ? micTests : (diseasesList.length * indexList.length) || null;
+        } else {
+          samplesCount = unit.samples_number || null;
+        }
+
         rows.push({
           sampleId: sample.id,
           sampleCode: sample.sample_code,
@@ -226,7 +236,9 @@ export const AllSamples = () => {
           notes: unit.notes || '',
           sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
           status: sample.status,
-          samplesNumber: unit.samples_number,
+          samplesNumber: samplesCount,
+          subSamplesNumber: subSamplesCount,
+          testsCount: testsCount,
           department: departmentName,
           coaStatus: unit.coa_status || null,
         });
@@ -405,6 +417,8 @@ export const AllSamples = () => {
         'Sample Type': row.sampleType,
         'Status': row.status,
         'No. Samples': row.samplesNumber ?? '-',
+        'Sub Samples': row.subSamplesNumber ?? '-',
+        'No. Tests': row.testsCount ?? '-',
         'Notes': row.notes || '-'
       }));
 
@@ -416,7 +430,7 @@ export const AllSamples = () => {
       XLSX.writeFile(wb, fileName);
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export data');
+      addToast('error', 'Failed to export data. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -428,7 +442,7 @@ export const AllSamples = () => {
 
     try {
       // Prepare data for CSV export (filtered data)
-      const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Flock', 'Cycle', 'House', 'Age', 'Source', 'Department', 'Sample Type', 'Status', 'No. Samples', 'Notes'];
+      const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Flock', 'Cycle', 'House', 'Age', 'Source', 'Department', 'Sample Type', 'Status', 'No. Samples', 'Sub Samples', 'No. Tests', 'Notes'];
 
       const csvRows = [
         headers.join(','),
@@ -447,6 +461,8 @@ export const AllSamples = () => {
           `"${row.sampleType}"`,
           `"${row.status}"`,
           `"${row.samplesNumber ?? '-'}"`,
+          `"${row.subSamplesNumber ?? '-'}"`,
+          `"${row.testsCount ?? '-'}"`,
           `"${(row.notes || '-').replace(/"/g, '""')}"`
         ].join(','))
       ];
@@ -465,7 +481,7 @@ export const AllSamples = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export data');
+      addToast('error', 'Failed to export data. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -507,21 +523,34 @@ export const AllSamples = () => {
   }
 
   return (
-    <div className="p-8">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        {/* Header with Title, Search, Year, and Action Buttons */}
-        <div className="mb-6 pb-4 border-b border-gray-200">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-3xl font-bold text-gray-700 flex-shrink-0">All Samples</h2>
+    <div className="p-3 sm:p-4 lg:p-6 pb-20 lg:pb-6">
+      <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
+        {/* Header - Mobile Responsive */}
+        <div className="mb-4 lg:mb-6 pb-4 border-b border-gray-200">
+          {/* Title row */}
+          <div className="flex items-center justify-between mb-3 lg:mb-4">
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-700">All Samples</h2>
+            {/* Mobile: Show filter button */}
+            <button
+              onClick={() => setFilterPanelOpen(!filterPanelOpen)}
+              className="lg:hidden p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
+            >
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </button>
+          </div>
 
+          {/* Search and controls row */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             {/* Search Bar */}
-            <div className="flex-1 max-w-md relative">
+            <div className="flex-1 relative">
               <input
                 type="text"
-                placeholder="🔍 Global search..."
+                placeholder="🔍 Search..."
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500 text-sm"
               />
               {loading && (
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
@@ -533,7 +562,7 @@ export const AllSamples = () => {
               )}
             </div>
 
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               {/* Export Dropdown */}
               <div className="relative" ref={exportDropdownRef}>
                 <button
@@ -1251,6 +1280,8 @@ export const AllSamples = () => {
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Sample Type</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Status</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">No. Samples</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Sub Samples</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-semibold">No. Tests</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Note</th>
                   </tr>
                 </thead>
@@ -1261,36 +1292,10 @@ export const AllSamples = () => {
                       className="hover:bg-gray-50 transition-colors"
                     >
                       <td className="border border-gray-300 px-2 py-2 font-semibold text-gray-600">
-                        <div className="flex items-center gap-1">
-                          {editedSampleIds.has(row.sampleId) && (
-                            <button
-                              onClick={() => showSampleEditHistory(row.sampleId, row.sampleCode)}
-                              className="text-amber-500 hover:text-amber-600 transition-colors"
-                              title="This sample has been edited - click to view history"
-                            >
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                              </svg>
-                            </button>
-                          )}
-                          {row.sampleCode}
-                        </div>
+                        {row.sampleCode}
                       </td>
                       <td className="border border-gray-300 px-2 py-2 font-semibold text-gray-700">
-                        <div className="flex items-center gap-1">
-                          {row.unitCode}
-                          {editedUnitIds.has(row.unitId) && (
-                            <button
-                              onClick={() => showEditHistory(row.unitId, row.unitCode)}
-                              className="ml-1 text-amber-500 hover:text-amber-600 transition-colors"
-                              title="This unit has been edited - click to view history"
-                            >
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
+                        {row.unitCode}
                       </td>
                       <td className="border border-gray-300 px-2 py-2">{formatDate(row.dateReceived)}</td>
                       <td className="border border-gray-300 px-2 py-2">{row.company}</td>
@@ -1324,6 +1329,12 @@ export const AllSamples = () => {
                       </td>
                       <td className="border border-gray-300 px-2 py-2 text-center">
                         {row.samplesNumber ?? '-'}
+                      </td>
+                      <td className="border border-gray-300 px-2 py-2 text-center">
+                        {row.subSamplesNumber ?? '-'}
+                      </td>
+                      <td className="border border-gray-300 px-2 py-2 text-center">
+                        {row.testsCount ?? '-'}
                       </td>
                       <td className="border border-gray-300 px-2 py-2">
                         {row.notes && (
@@ -1421,67 +1432,6 @@ export const AllSamples = () => {
         note={noteDialog.note}
         onClose={() => setNoteDialog({ open: false, note: '' })}
       />
-
-      {/* Edit History Dialog */}
-      {editHistoryDialog.open && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">Edit History</h3>
-                  <p className="text-sm text-gray-500">Unit: {editHistoryDialog.unitCode}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setEditHistoryDialog({ open: false, unitId: 0, unitCode: '', history: [] })}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {editHistoryDialog.history.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">No edit history found</p>
-              ) : (
-                <div className="space-y-3">
-                  {editHistoryDialog.history.map((edit: any, idx: number) => (
-                    <div key={idx} className="bg-gray-50 rounded-lg p-3 border-l-4 border-amber-400">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-gray-800 capitalize">{edit.field_name.replace(/_/g, ' ')}</span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(edit.edited_at).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="bg-red-50 rounded p-2">
-                          <p className="text-xs text-red-600 font-medium mb-1">Before</p>
-                          <p className="text-red-800 break-words">{edit.old_value || '-'}</p>
-                        </div>
-                        <div className="bg-green-50 rounded p-2">
-                          <p className="text-xs text-green-600 font-medium mb-1">After</p>
-                          <p className="text-green-800 break-words">{edit.new_value || '-'}</p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Edited by: <span className="font-medium">{edit.edited_by}</span>
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

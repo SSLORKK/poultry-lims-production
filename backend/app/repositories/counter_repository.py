@@ -6,7 +6,7 @@ from app.models.counter import Counter
 # In-memory reservation storage: {user_id: (sample_number, timestamp)}
 # This will be lost on server restart, but that's acceptable for reservations
 SAMPLE_RESERVATIONS: Dict[int, Tuple[int, datetime]] = {}
-RESERVATION_TIMEOUT_MINUTES = 10
+RESERVATION_TIMEOUT_MINUTES = 2  # Expire after 2 minutes of inactivity
 
 
 class CounterRepository:

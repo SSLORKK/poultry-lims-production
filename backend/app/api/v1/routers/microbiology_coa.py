@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.models.microbiology_coa import MicrobiologyCOA
 from app.models.unit import Unit
 from app.models.sample import Sample
+from app.models.edit_history import EditHistory
 from app.repositories.counter_repository import CounterRepository
 from app.api.v1.deps import get_current_user
 from app.models.user import User
@@ -22,6 +23,8 @@ class MicrobiologyCOACreate(BaseModel):
     test_methods: Dict[str, str] | None = None
     isolate_types: Dict[str, Dict[str, str]] | None = None
     test_ranges: Dict[str, Dict[str, str]] | None = None
+    hidden_indexes: Dict[str, List[str]] | None = None
+    ast_data: Dict[str, Any] | None = None
     date_tested: str | None = None
     tested_by: str | None = None
     reviewed_by: str | None = None
@@ -37,6 +40,8 @@ class MicrobiologyCOAUpdate(BaseModel):
     test_methods: Dict[str, str] | None = None
     isolate_types: Dict[str, Dict[str, str]] | None = None
     test_ranges: Dict[str, Dict[str, str]] | None = None
+    hidden_indexes: Dict[str, List[str]] | None = None
+    ast_data: Dict[str, Any] | None = None
     date_tested: str | None = None
     tested_by: str | None = None
     reviewed_by: str | None = None
@@ -58,6 +63,7 @@ def generate_disease_code(disease_name: str) -> str:
         'salmonella': 'Salm',
         'total count': 'Count',
         'count': 'Count',
+        'ast': 'AST',
     }
     
     # Check for known disease codes (order matters - check more specific first)
@@ -114,6 +120,8 @@ def get_microbiology_coas_batch(
             "isolate_types": coa.isolate_types or {},
             "test_ranges": coa.test_ranges or {},
             "test_report_numbers": coa.test_report_numbers or {},
+            "hidden_indexes": coa.hidden_indexes or {},
+            "ast_data": coa.ast_data,
             "date_tested": coa.date_tested,
             "tested_by": coa.tested_by,
             "reviewed_by": coa.reviewed_by,
@@ -154,6 +162,8 @@ def get_microbiology_coa(
             "isolate_types": coa.isolate_types or {},
             "test_ranges": coa.test_ranges or {},
             "test_report_numbers": coa.test_report_numbers or {},
+            "hidden_indexes": coa.hidden_indexes or {},
+            "ast_data": coa.ast_data,
             "date_tested": coa.date_tested,
             "tested_by": coa.tested_by,
             "reviewed_by": coa.reviewed_by,
@@ -207,6 +217,8 @@ def create_microbiology_coa(
         test_methods=coa_data.test_methods,
         isolate_types=coa_data.isolate_types,
         test_ranges=coa_data.test_ranges,
+        hidden_indexes=coa_data.hidden_indexes,
+        ast_data=coa_data.ast_data,
         test_report_numbers=test_report_numbers,
         date_tested=coa_data.date_tested,
         tested_by=coa_data.tested_by,
@@ -234,6 +246,8 @@ def create_microbiology_coa(
         "isolate_types": new_coa.isolate_types or {},
         "test_ranges": new_coa.test_ranges or {},
         "test_report_numbers": new_coa.test_report_numbers,
+        "hidden_indexes": new_coa.hidden_indexes or {},
+        "ast_data": new_coa.ast_data,
         "date_tested": new_coa.date_tested,
         "tested_by": new_coa.tested_by,
         "reviewed_by": new_coa.reviewed_by,
@@ -272,6 +286,48 @@ def update_microbiology_coa(
         coa.isolate_types = coa_data.isolate_types  # type: ignore
     if coa_data.test_ranges is not None:
         coa.test_ranges = coa_data.test_ranges  # type: ignore
+    if coa_data.ast_data is not None:
+        coa.ast_data = coa_data.ast_data  # type: ignore
+    if coa_data.hidden_indexes is not None:
+        # Track hidden_indexes changes for edit history
+        old_hidden_indexes = coa.hidden_indexes or {}
+        new_hidden_indexes = coa_data.hidden_indexes or {}
+        
+        if str(old_hidden_indexes) != str(new_hidden_indexes):
+            # Get unit and sample info for edit history
+            unit = db.query(Unit).filter(Unit.id == coa.unit_id).first()
+            sample = db.query(Sample).filter(Sample.id == unit.sample_id).first() if unit else None
+            
+            # Calculate what indexes were added/removed per disease
+            changes_description = []
+            all_diseases = set(old_hidden_indexes.keys()) | set(new_hidden_indexes.keys())
+            
+            for disease in all_diseases:
+                old_indexes = set(old_hidden_indexes.get(disease, []))
+                new_indexes = set(new_hidden_indexes.get(disease, []))
+                
+                added_hidden = new_indexes - old_indexes
+                removed_hidden = old_indexes - new_indexes
+                
+                if added_hidden:
+                    changes_description.append(f"{disease}: hidden [{', '.join(sorted(added_hidden))}]")
+                if removed_hidden:
+                    changes_description.append(f"{disease}: shown [{', '.join(sorted(removed_hidden))}]")
+            
+            if changes_description:
+                edit_history = EditHistory(
+                    entity_type='unit',
+                    entity_id=coa.unit_id,
+                    field_name='microbiology_hidden_indexes',
+                    old_value=str(old_hidden_indexes) if old_hidden_indexes else '{}',
+                    new_value=str(new_hidden_indexes) if new_hidden_indexes else '{}',
+                    edited_by=current_user.username,
+                    sample_code=sample.sample_code if sample else None,
+                    unit_code=unit.unit_code if unit else None
+                )
+                db.add(edit_history)
+        
+        coa.hidden_indexes = coa_data.hidden_indexes  # type: ignore
     if coa_data.date_tested is not None:
         coa.date_tested = coa_data.date_tested  # type: ignore
     if coa_data.tested_by is not None:
@@ -303,6 +359,8 @@ def update_microbiology_coa(
         "isolate_types": coa.isolate_types or {},
         "test_ranges": coa.test_ranges or {},
         "test_report_numbers": coa.test_report_numbers,
+        "hidden_indexes": coa.hidden_indexes or {},
+        "ast_data": coa.ast_data,
         "date_tested": coa.date_tested,
         "tested_by": coa.tested_by,
         "reviewed_by": coa.reviewed_by,

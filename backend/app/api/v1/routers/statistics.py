@@ -11,6 +11,7 @@ from app.models.department import Department
 from app.models.pcr_data import PCRData
 from app.models.serology_data import SerologyData
 from app.models.microbiology_data import MicrobiologyData
+from app.models.microbiology_coa import MicrobiologyCOA
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
@@ -31,6 +32,7 @@ class DepartmentStatistic(BaseModel):
     sample_count: int = 0
     sub_sample_count: int = 0
     test_count: int = 0
+    wells_count: int = 0
 
 
 class SamplesStatisticsResponse(BaseModel):
@@ -215,8 +217,19 @@ def get_units_statistics(
                     Sample.date_received < last_interval_end.date()
                 )
             ).scalar() or 0
+        elif dept.code == 'PCR':
+            # For PCR: samples = count of PCR units (1 per PCR code)
+            sample_count = db.query(func.count(Unit.id)).join(
+                Sample, Sample.id == Unit.sample_id
+            ).filter(
+                and_(
+                    Unit.department_id == dept.id,
+                    Sample.date_received >= first_interval_start.date(),
+                    Sample.date_received < last_interval_end.date()
+                )
+            ).scalar() or 0
         else:
-            # For other departments: samples = sum of samples_number
+            # For other departments (Serology): samples = sum of samples_number
             sample_count = db.query(func.sum(Unit.samples_number)).join(
                 Sample, Sample.id == Unit.sample_id
             ).filter(
@@ -227,10 +240,24 @@ def get_units_statistics(
                 )
             ).scalar() or 0
         
-        # Calculate sub-sample count for microbiology and PCR (sum of samples_number)
+        # Calculate sub-sample count
         sub_sample_count = 0
-        if dept.code in ['MIC', 'PCR']:
+        if dept.code == 'MIC':
+            # For microbiology: sub-samples = sum of samples_number
             sub_sample_count = db.query(func.sum(Unit.samples_number)).join(
+                Sample, Sample.id == Unit.sample_id
+            ).filter(
+                and_(
+                    Unit.department_id == dept.id,
+                    Sample.date_received >= first_interval_start.date(),
+                    Sample.date_received < last_interval_end.date()
+                )
+            ).scalar() or 0
+        elif dept.code == 'PCR':
+            # For PCR: sub-samples = sum of extraction values
+            sub_sample_count = db.query(func.sum(PCRData.extraction)).join(
+                Unit, Unit.id == PCRData.unit_id
+            ).join(
                 Sample, Sample.id == Unit.sample_id
             ).filter(
                 and_(
@@ -266,12 +293,29 @@ def get_units_statistics(
                     Sample.date_received < last_interval_end.date()
                 )
             ).scalar() or 0
+        
+        # Calculate wells count for Serology
+        wells_count = 0
+        if dept.code == 'SER':
+            wells_count = db.query(func.sum(SerologyData.number_of_wells)).join(
+                Unit, Unit.id == SerologyData.unit_id
+            ).join(
+                Sample, Sample.id == Unit.sample_id
+            ).filter(
+                and_(
+                    Unit.department_id == dept.id,
+                    Sample.date_received >= first_interval_start.date(),
+                    Sample.date_received < last_interval_end.date()
+                )
+            ).scalar() or 0
         elif dept.code == 'MIC':
-            # For microbiology: tests = sum of (diseases_count * samples_number) for each unit
+            # For microbiology: tests = sum of visible indexes per disease (excluding hidden indexes)
             mic_units = db.query(Unit).join(
                 Sample, Sample.id == Unit.sample_id
             ).join(
                 MicrobiologyData, Unit.id == MicrobiologyData.unit_id
+            ).outerjoin(
+                MicrobiologyCOA, Unit.id == MicrobiologyCOA.unit_id
             ).filter(
                 and_(
                     Unit.department_id == dept.id,
@@ -282,9 +326,24 @@ def get_units_statistics(
             
             test_count = 0
             for unit in mic_units:
-                diseases_count = len(unit.microbiology_data.diseases_list or [])
-                samples_number = unit.samples_number or 0
-                test_count += diseases_count * samples_number
+                diseases_list = unit.microbiology_data.diseases_list or []
+                index_list = unit.microbiology_data.index_list or []
+                hidden_indexes = unit.microbiology_coa.hidden_indexes if unit.microbiology_coa else {}
+                
+                for disease in diseases_list:
+                    # Get hidden indexes for this disease
+                    disease_hidden = hidden_indexes.get(disease, []) if hidden_indexes else []
+                    # Calculate visible indexes count
+                    visible_count = len(index_list) - len(disease_hidden)
+                    test_count += max(0, visible_count)
+                
+                # Count AST tests if ast_data is present and has results with interpretation
+                if unit.microbiology_coa and unit.microbiology_coa.ast_data:
+                    ast_data = unit.microbiology_coa.ast_data
+                    ast_results = ast_data.get('ast_results', []) if isinstance(ast_data, dict) else []
+                    # Count as 1 AST test if there are any results with interpretation
+                    if any(r.get('interpretation') for r in ast_results if isinstance(r, dict)):
+                        test_count += 1
         
         for start, end in intervals:
             # Calculate sample count for this period
@@ -327,8 +386,51 @@ def get_units_statistics(
                             Sample.date_received < end.date()
                         )
                     ).scalar() or 0
+            elif dept.code == 'PCR':
+                # For PCR: samples = count of PCR units (1 per PCR code)
+                if period_label == 'day':
+                    count = db.query(func.count(Unit.id)).filter(
+                        and_(
+                            Unit.department_id == dept.id,
+                            Unit.created_at >= start,
+                            Unit.created_at < end
+                        )
+                    ).scalar() or 0
+                else:
+                    count = db.query(func.count(Unit.id)).join(
+                        Sample, Sample.id == Unit.sample_id
+                    ).filter(
+                        and_(
+                            Unit.department_id == dept.id,
+                            Sample.date_received >= start.date(),
+                            Sample.date_received < end.date()
+                        )
+                    ).scalar() or 0
+                # For PCR: sub-samples = sum of extraction values
+                if period_label == 'day':
+                    period_sub_sample_count = db.query(func.sum(PCRData.extraction)).join(
+                        Unit, Unit.id == PCRData.unit_id
+                    ).filter(
+                        and_(
+                            Unit.department_id == dept.id,
+                            Unit.created_at >= start,
+                            Unit.created_at < end
+                        )
+                    ).scalar() or 0
+                else:
+                    period_sub_sample_count = db.query(func.sum(PCRData.extraction)).join(
+                        Unit, Unit.id == PCRData.unit_id
+                    ).join(
+                        Sample, Sample.id == Unit.sample_id
+                    ).filter(
+                        and_(
+                            Unit.department_id == dept.id,
+                            Sample.date_received >= start.date(),
+                            Sample.date_received < end.date()
+                        )
+                    ).scalar() or 0
             else:
-                # For other departments: samples = sum of samples_number
+                # For other departments (Serology): samples = sum of samples_number
                 if period_label == 'day':
                     count = db.query(func.sum(Unit.samples_number)).filter(
                         and_(
@@ -399,10 +501,12 @@ def get_units_statistics(
                         )
                     ).scalar() or 0
             elif dept.code == 'MIC':
-                # For microbiology: tests = sum of (diseases_count * samples_number) for each unit in this period
+                # For microbiology: tests = sum of visible indexes per disease (excluding hidden indexes)
                 if period_label == 'day':
                     mic_units_period = db.query(Unit).join(
                         MicrobiologyData, Unit.id == MicrobiologyData.unit_id
+                    ).outerjoin(
+                        MicrobiologyCOA, Unit.id == MicrobiologyCOA.unit_id
                     ).filter(
                         and_(
                             Unit.department_id == dept.id,
@@ -413,6 +517,8 @@ def get_units_statistics(
                 else:
                     mic_units_period = db.query(Unit).join(
                         MicrobiologyData, Unit.id == MicrobiologyData.unit_id
+                    ).outerjoin(
+                        MicrobiologyCOA, Unit.id == MicrobiologyCOA.unit_id
                     ).join(
                         Sample, Sample.id == Unit.sample_id
                     ).filter(
@@ -425,9 +531,21 @@ def get_units_statistics(
                 
                 test_period_count = 0
                 for unit in mic_units_period:
-                    diseases_count = len(unit.microbiology_data.diseases_list or [])
-                    samples_number = unit.samples_number or 0
-                    test_period_count += diseases_count * samples_number
+                    diseases_list = unit.microbiology_data.diseases_list or []
+                    index_list = unit.microbiology_data.index_list or []
+                    hidden_indexes = unit.microbiology_coa.hidden_indexes if unit.microbiology_coa else {}
+                    
+                    for disease in diseases_list:
+                        disease_hidden = hidden_indexes.get(disease, []) if hidden_indexes else []
+                        visible_count = len(index_list) - len(disease_hidden)
+                        test_period_count += max(0, visible_count)
+                    
+                    # Count AST tests if ast_data is present and has results with interpretation
+                    if unit.microbiology_coa and unit.microbiology_coa.ast_data:
+                        ast_data = unit.microbiology_coa.ast_data
+                        ast_results = ast_data.get('ast_results', []) if isinstance(ast_data, dict) else []
+                        if any(r.get('interpretation') for r in ast_results if isinstance(r, dict)):
+                            test_period_count += 1
             
             data.append(StatisticPoint(
                 date=start.isoformat(),
@@ -444,7 +562,8 @@ def get_units_statistics(
             data=data,
             sample_count=sample_count,
             sub_sample_count=sub_sample_count,
-            test_count=test_count
+            test_count=test_count,
+            wells_count=wells_count
         ))
         total += dept_total
     

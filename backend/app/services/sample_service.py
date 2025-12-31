@@ -42,96 +42,110 @@ class SampleService:
                     detail=f"Department with ID {unit_data.department_id} not found"
                 )
         
-        # Use reserved sample number if exists, otherwise increment normally
-        sample_number = self.counter_repo.increment_sample_counter_with_reservation(user_id)
-        current_year = datetime.now().year
-        year_short = current_year % 100  # Get last 2 digits of year
-        sample_code = f"SMP{year_short:02d}-{sample_number}"
-        
-        # Create sample with sample-level poultry fields only
-        sample = Sample(
-            sample_code=sample_code,
-            year=current_year,
-            date_received=sample_data.date_received,
-            company=sample_data.company,
-            farm=sample_data.farm,
-            cycle=sample_data.cycle,
-            flock=sample_data.flock,
-            status=sample_data.status
-        )
-        
-        self.db.add(sample)
-        self.db.flush()  # Flush to get the sample.id
-        
-        # Create units with unit-specific fields and department codes
-        for unit_data in sample_data.units:
-            # Department is guaranteed to exist (validated earlier)
-            department = self.dept_repo.get_by_id(unit_data.department_id)
-            if not department:
-                continue  # Skip if somehow not found (shouldn't happen)
+        try:
+            # Use reserved sample number if exists, otherwise increment normally
+            sample_number = self.counter_repo.increment_sample_counter_with_reservation(user_id)
+            current_year = datetime.now().year
+            year_short = current_year % 100  # Get last 2 digits of year
+            sample_code = f"SMP{year_short:02d}-{sample_number}"
             
-            # Generate unit code
-            unit_counter = self.counter_repo.increment_unit_counter(unit_data.department_id)
-            unit_code = f"{department.code}-{unit_counter}"
-            
-            # Create unit with unit-specific fields
-            unit = self.unit_repo.create(
-                sample_id=sample.id,  # type: ignore[arg-type]
-                department_id=unit_data.department_id,
-                unit_code=unit_code,
-                house=unit_data.house,
-                age=unit_data.age,
-                source=unit_data.source,
-                sample_type=unit_data.sample_type,
-                samples_number=unit_data.samples_number,
-                notes=unit_data.notes
+            # Create sample with sample-level poultry fields only
+            sample = Sample(
+                sample_code=sample_code,
+                year=current_year,
+                date_received=sample_data.date_received,
+                company=sample_data.company,
+                farm=sample_data.farm,
+                cycle=sample_data.cycle,
+                flock=sample_data.flock,
+                status=sample_data.status
             )
             
-            # Flush to get unit.id for department data
-            self.db.flush()
+            self.db.add(sample)
+            self.db.flush()  # Flush to get the sample.id
             
-            # Create department-specific data linked to this unit
-            if unit_data.pcr_data is not None and str(department.code) == "PCR":
-                # Convert DiseaseKitItem objects to dict for JSON storage
-                diseases_list_json = [item.model_dump() for item in unit_data.pcr_data.diseases_list] if unit_data.pcr_data.diseases_list else []
-                pcr_data = PCRData(
-                    unit_id=unit.id,
-                    diseases_list=diseases_list_json,
-                    kit_type=unit_data.pcr_data.kit_type,
-                    technician_name=unit_data.pcr_data.technician_name,
-                    extraction_method=unit_data.pcr_data.extraction_method,
-                    extraction=unit_data.pcr_data.extraction,
-                    detection=unit_data.pcr_data.detection
+            # Create units with unit-specific fields and department codes
+            for unit_data in sample_data.units:
+                # Department is guaranteed to exist (validated earlier)
+                department = self.dept_repo.get_by_id(unit_data.department_id)
+                if not department:
+                    continue  # Skip if somehow not found (shouldn't happen)
+                
+                # Generate unit code
+                unit_counter = self.counter_repo.increment_unit_counter(unit_data.department_id)
+                unit_code = f"{department.code}-{unit_counter}"
+                
+                # Create unit with unit-specific fields
+                unit = self.unit_repo.create(
+                    sample_id=sample.id,  # type: ignore[arg-type]
+                    department_id=unit_data.department_id,
+                    unit_code=unit_code,
+                    house=unit_data.house,
+                    age=unit_data.age,
+                    source=unit_data.source,
+                    sample_type=unit_data.sample_type,
+                    samples_number=unit_data.samples_number,
+                    notes=unit_data.notes
                 )
-                self.db.add(pcr_data)
+                
+                # Flush to get unit.id for department data
+                self.db.flush()
+                
+                # Create department-specific data linked to this unit
+                if unit_data.pcr_data is not None and str(department.code) == "PCR":
+                    # Convert DiseaseKitItem objects to dict for JSON storage
+                    diseases_list_json = [item.model_dump() for item in unit_data.pcr_data.diseases_list] if unit_data.pcr_data.diseases_list else []
+                    pcr_data = PCRData(
+                        unit_id=unit.id,
+                        diseases_list=diseases_list_json,
+                        kit_type=unit_data.pcr_data.kit_type,
+                        technician_name=unit_data.pcr_data.technician_name,
+                        extraction_method=unit_data.pcr_data.extraction_method,
+                        extraction=unit_data.pcr_data.extraction,
+                        detection=unit_data.pcr_data.detection
+                    )
+                    self.db.add(pcr_data)
+                
+                if unit_data.serology_data is not None and str(department.code) == "SER":
+                    # Convert DiseaseKitItem objects to dict for JSON storage
+                    diseases_list_json = [item.model_dump() for item in unit_data.serology_data.diseases_list] if unit_data.serology_data.diseases_list else []
+                    # Calculate tests_count from diseases_list (sum of test_count from each disease)
+                    calculated_tests_count = sum(
+                        item.test_count or 1 for item in unit_data.serology_data.diseases_list
+                    ) if unit_data.serology_data.diseases_list else 0
+                    serology_data = SerologyData(
+                        unit_id=unit.id,
+                        diseases_list=diseases_list_json,
+                        kit_type=unit_data.serology_data.kit_type,
+                        number_of_wells=unit_data.serology_data.number_of_wells,
+                        tests_count=calculated_tests_count if calculated_tests_count > 0 else unit_data.serology_data.tests_count,
+                        technician_name=unit_data.serology_data.technician_name
+                    )
+                    self.db.add(serology_data)
+                
+                if unit_data.microbiology_data is not None and str(department.code) == "MIC":
+                    microbiology_data = MicrobiologyData(
+                        unit_id=unit.id,
+                        diseases_list=unit_data.microbiology_data.diseases_list,
+                        batch_no=unit_data.microbiology_data.batch_no,
+                        fumigation=unit_data.microbiology_data.fumigation,
+                        index_list=unit_data.microbiology_data.index_list,
+                        technician_name=unit_data.microbiology_data.technician_name
+                    )
+                    self.db.add(microbiology_data)
             
-            if unit_data.serology_data is not None and str(department.code) == "SER":
-                # Convert DiseaseKitItem objects to dict for JSON storage
-                diseases_list_json = [item.model_dump() for item in unit_data.serology_data.diseases_list] if unit_data.serology_data.diseases_list else []
-                serology_data = SerologyData(
-                    unit_id=unit.id,
-                    diseases_list=diseases_list_json,
-                    kit_type=unit_data.serology_data.kit_type,
-                    number_of_wells=unit_data.serology_data.number_of_wells,
-                    tests_count=unit_data.serology_data.tests_count
-                )
-                self.db.add(serology_data)
+            self.db.commit()
+            self.db.refresh(sample)
             
-            if unit_data.microbiology_data is not None and str(department.code) == "MIC":
-                microbiology_data = MicrobiologyData(
-                    unit_id=unit.id,
-                    diseases_list=unit_data.microbiology_data.diseases_list,
-                    batch_no=unit_data.microbiology_data.batch_no,
-                    fumigation=unit_data.microbiology_data.fumigation,
-                    index_list=unit_data.microbiology_data.index_list,
-                    technician_name=unit_data.microbiology_data.technician_name
-                )
-                self.db.add(microbiology_data)
-        
-        self.db.commit()
-        self.db.refresh(sample)
-        
-        return sample
+            return sample
+        except Exception as e:
+            self.db.rollback()
+            import logging
+            logging.error(f"Error creating sample: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create sample: {str(e)}"
+            )
     
     def update_sample(self, sample_id: int, sample_data: SampleUpdate, edited_by: str = None) -> Optional[Sample]:
         sample = self.sample_repo.get_by_id(sample_id)
@@ -319,6 +333,9 @@ class SampleService:
                     
                     if unit_data.serology_data is not None and str(department.code) == "SER":
                         diseases_list_json = [item.model_dump() for item in unit_data.serology_data.diseases_list] if unit_data.serology_data.diseases_list else []
+                        # Preserve technician name if not provided
+                        old_ser_technician = old_serology_data.technician_name if old_serology_data else None
+                        ser_technician_name = unit_data.serology_data.technician_name if unit_data.serology_data.technician_name else old_ser_technician
                         
                         # Track Serology-specific field changes for edit history
                         if edited_by and old_serology_data:
@@ -351,13 +368,25 @@ class SampleService:
                                     edited_by=edited_by, sample_code=sample.sample_code, unit_code=existing_unit.unit_code
                                 )
                                 self.db.add(edit_history)
+                            if str(old_serology_data.technician_name or '') != str(ser_technician_name or ''):
+                                edit_history = EditHistory(
+                                    entity_type='unit', entity_id=existing_unit.id, field_name='serology_technician_name',
+                                    old_value=str(old_serology_data.technician_name or ''), new_value=str(ser_technician_name or ''),
+                                    edited_by=edited_by, sample_code=sample.sample_code, unit_code=existing_unit.unit_code
+                                )
+                                self.db.add(edit_history)
                         
+                        # Calculate tests_count from diseases_list
+                        calculated_tests_count = sum(
+                            item.test_count or 1 for item in unit_data.serology_data.diseases_list
+                        ) if unit_data.serology_data.diseases_list else 0
                         serology_data = SerologyData(
                             unit_id=existing_unit.id,
                             diseases_list=diseases_list_json,
                             kit_type=unit_data.serology_data.kit_type,
                             number_of_wells=unit_data.serology_data.number_of_wells,
-                            tests_count=unit_data.serology_data.tests_count
+                            tests_count=calculated_tests_count if calculated_tests_count > 0 else unit_data.serology_data.tests_count,
+                            technician_name=ser_technician_name
                         )
                         self.db.add(serology_data)
                     
@@ -457,12 +486,17 @@ class SampleService:
                     
                     if unit_data.serology_data is not None and str(department.code) == "SER":
                         diseases_list_json = [item.model_dump() for item in unit_data.serology_data.diseases_list] if unit_data.serology_data.diseases_list else []
+                        # Calculate tests_count from diseases_list
+                        calculated_tests_count = sum(
+                            item.test_count or 1 for item in unit_data.serology_data.diseases_list
+                        ) if unit_data.serology_data.diseases_list else 0
                         serology_data = SerologyData(
                             unit_id=unit.id,
                             diseases_list=diseases_list_json,
                             kit_type=unit_data.serology_data.kit_type,
                             number_of_wells=unit_data.serology_data.number_of_wells,
-                            tests_count=unit_data.serology_data.tests_count
+                            tests_count=calculated_tests_count if calculated_tests_count > 0 else unit_data.serology_data.tests_count,
+                            technician_name=unit_data.serology_data.technician_name
                         )
                         self.db.add(serology_data)
                     

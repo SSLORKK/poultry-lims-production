@@ -1,20 +1,19 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams, Navigate } from "react-router-dom";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useCurrentUser } from "../../../hooks/useCurrentUser";
 import { apiClient } from "../../../services/apiClient";
 import {
   useCompanies,
   useFarms,
   useFlocks,
   useCycles,
-  useStatuses,
   useHouses,
   useSources,
   useSampleTypes,
   useDiseases,
   useKitTypes,
-  useTechnicians,
   useExtractionMethods,
   DropdownItem,
 } from "../../controls/hooks/useControlsData";
@@ -63,7 +62,7 @@ interface UnitData {
   department_id: number;
   house: string[]; // Changed to array for multi-select
   age: string;
-  source: string;
+  source: string[]; // Changed to array for multi-select
   sample_type: string[]; // Changed to array for multi-select
   samples_number: number;
   notes: string;
@@ -86,6 +85,10 @@ interface UnitFieldsFormProps {
     chip: string;
     badge: string;
     gradient: string;
+    text: string;
+    focusRing: string;
+    focusBorder: string;
+    checkbox: string;
   };
 }
 
@@ -102,16 +105,22 @@ function UnitFieldsForm({
   const { data: sampleTypes = [] } = useSampleTypes(departmentId);
   const [houseSearchTerm, setHouseSearchTerm] = useState("");
   const [sampleTypeSearchTerm, setSampleTypeSearchTerm] = useState("");
+  const [sourceSearchTerm, setSourceSearchTerm] = useState("");
   const [isHouseDropdownOpen, setIsHouseDropdownOpen] = useState(false);
   const [isSampleTypeDropdownOpen, setIsSampleTypeDropdownOpen] = useState(false);
+  const [isSourceDropdownOpen, setIsSourceDropdownOpen] = useState(false);
   const houseDropdownRef = useRef<HTMLDivElement>(null);
   const sampleTypeDropdownRef = useRef<HTMLDivElement>(null);
+  const sourceDropdownRef = useRef<HTMLDivElement>(null);
 
   // Check if current department is Serology
   const isSerology = departments.find(d => d.id === departmentId)?.code === 'SER';
 
   // Check if current department is Microbiology
   const isMicrobiology = departments.find(d => d.id === departmentId)?.code === 'MIC';
+
+  // Check if current department is PCR
+  const isPCR = departments.find(d => d.id === departmentId)?.code === 'PCR';
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -121,6 +130,9 @@ function UnitFieldsForm({
       }
       if (sampleTypeDropdownRef.current && !sampleTypeDropdownRef.current.contains(event.target as Node)) {
         setIsSampleTypeDropdownOpen(false);
+      }
+      if (sourceDropdownRef.current && !sourceDropdownRef.current.contains(event.target as Node)) {
+        setIsSourceDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -143,6 +155,14 @@ function UnitFieldsForm({
     updateUnit(globalIndex, { sample_type: newTypes });
   };
 
+  const toggleSource = (sourceName: string) => {
+    const currentSources = unit.source || [];
+    const newSources = currentSources.includes(sourceName)
+      ? currentSources.filter((s) => s !== sourceName)
+      : [...currentSources, sourceName];
+    updateUnit(globalIndex, { source: newSources });
+  };
+
   const filteredHouses = houses.filter(h =>
     h.name.toLowerCase().includes(houseSearchTerm.toLowerCase())
   );
@@ -151,20 +171,24 @@ function UnitFieldsForm({
     st.name.toLowerCase().includes(sampleTypeSearchTerm.toLowerCase())
   );
 
+  const filteredSources = sources.filter(s =>
+    s.name.toLowerCase().includes(sourceSearchTerm.toLowerCase())
+  );
+
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         {/* Houses Multi-Select Dropdown */}
         <div className="space-y-1.5" ref={houseDropdownRef}>
           <label className="block text-sm font-semibold text-gray-700">
-            Houses <span className="text-red-500">*</span>
+            Houses
           </label>
 
           {/* Selected Houses Chips */}
           {(unit.house?.length || 0) > 0 && (
-            <div className="flex flex-wrap gap-1.5 p-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200 shadow-sm">
+            <div className={`flex flex-wrap gap-1.5 p-2 ${colors.bg} rounded-lg border-2 ${colors.border} shadow-sm`}>
               {unit.house?.map((h) => (
-                <span key={h} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 text-white rounded-lg text-xs font-semibold shadow-md hover:shadow-lg transition-all">
+                <span key={h} className={`inline-flex items-center gap-1 px-2.5 py-1 ${colors.chip} text-white rounded-lg text-xs font-semibold shadow-md hover:shadow-lg transition-all`}>
                   {h}
                   <button
                     type="button"
@@ -184,33 +208,33 @@ function UnitFieldsForm({
               type="button"
               onClick={() => setIsHouseDropdownOpen(!isHouseDropdownOpen)}
               className={`w-full border-2 rounded-xl px-4 py-3 text-left flex justify-between items-center transition-all ${(unit.house?.length || 0) > 0
-                ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-400 shadow-md'
+                ? `bg-gradient-to-r from-${colors.bg} to-${colors.bg} border-${colors.border} shadow-md`
                 : 'bg-gray-50 border-gray-300 hover:bg-white hover:border-gray-400'
-                } focus:outline-none focus:ring-4 focus:ring-blue-100`}
+                } focus:outline-none focus:ring-4 focus:ring-${colors.badge.replace('bg-', '')}-100`}
             >
-              <span className={`font-medium ${(unit.house?.length || 0) > 0 ? 'text-blue-900' : 'text-gray-600'
+              <span className={`font-medium ${(unit.house?.length || 0) > 0 ? 'text-gray-900' : 'text-gray-600'
                 }`}>
                 {(unit.house?.length || 0) > 0
                   ? `${unit.house.length} selected`
                   : 'Select houses'}
               </span>
               <svg className={`w-5 h-5 transition-transform duration-200 ${isHouseDropdownOpen ? 'rotate-180' : ''
-                } ${(unit.house?.length || 0) > 0 ? 'text-blue-600' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                } ${(unit.house?.length || 0) > 0 ? colors.text : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
 
             {/* Dropdown Menu */}
             {isHouseDropdownOpen && (
-              <div className="absolute z-[9999] w-full mt-2 bg-white border-2 border-blue-300 rounded-xl shadow-2xl max-h-80 overflow-hidden">
+              <div className={`absolute z-[9999] w-full mt-2 bg-white border-2 ${colors.border} rounded-xl shadow-2xl max-h-80 overflow-hidden`}>
                 {/* Search and Actions */}
-                <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-blue-200">
+                <div className={`p-3 bg-gradient-to-r ${colors.gradient} border-b-2 ${colors.border}`}>
                   <input
                     type="text"
                     placeholder="Search houses..."
                     value={houseSearchTerm}
                     onChange={(e) => setHouseSearchTerm(e.target.value)}
-                    className="w-full border-2 border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+                    className={`w-full border-2 ${colors.border} rounded-lg px-3 py-1.5 text-sm ${colors.focusBorder} ${colors.focusRing} transition-all`}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -228,14 +252,14 @@ function UnitFieldsForm({
                     filteredHouses.map((item) => (
                       <label
                         key={item.id}
-                        className="flex items-center px-4 py-2.5 cursor-pointer hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0"
+                        className={`flex items-center px-4 py-2.5 cursor-pointer hover:${colors.bg} transition-colors border-b border-gray-100 last:border-b-0`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
                           type="checkbox"
                           checked={(unit.house || []).includes(item.name)}
                           onChange={() => toggleHouse(item.name)}
-                          className="mr-3 h-5 w-5 text-blue-600 rounded-md focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                          className={`mr-3 h-5 w-5 ${colors.checkbox} rounded-md focus:ring-2 ${colors.focusRing} cursor-pointer`}
                         />
                         <span className="text-sm font-medium text-gray-700">{item.name}</span>
                       </label>
@@ -261,25 +285,95 @@ function UnitFieldsForm({
           />
         </div>
 
-        <div className="space-y-1.5">
+        {/* Source Multi-Select Dropdown */}
+        <div className="space-y-1.5" ref={sourceDropdownRef}>
           <label className="block text-sm font-semibold text-gray-700">Source</label>
-          <select
-            value={unit.source}
-            onChange={(e) =>
-              updateUnit(globalIndex, { source: e.target.value })
-            }
-            className={`w-full border-2 rounded-xl px-4 py-2.5 transition-all ${unit.source && unit.source !== ''
-              ? `bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md`
-              : 'bg-gray-50 border-gray-300'
-              } focus:bg-white focus:${colors.border} focus:ring-4 focus:ring-${colors.badge.replace('bg-', '')}-100`}
-          >
-            <option value="">Select source...</option>
-            {sources.map((item) => (
-              <option key={item.id} value={item.name}>
-                {item.name}
-              </option>
-            ))}
-          </select>
+
+          {/* Selected Sources Chips */}
+          {(unit.source?.length || 0) > 0 && (
+            <div className={`flex flex-wrap gap-1.5 p-2 ${colors.bg} rounded-lg border-2 ${colors.border} shadow-sm`}>
+              {unit.source?.map((s) => (
+                <span key={s} className={`inline-flex items-center gap-1 px-2.5 py-1 ${colors.chip} text-white rounded-lg text-xs font-semibold shadow-md hover:shadow-lg transition-all`}>
+                  {s}
+                  <button
+                    type="button"
+                    onClick={() => toggleSource(s)}
+                    className="hover:scale-110 transition-transform"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Dropdown Button */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsSourceDropdownOpen(!isSourceDropdownOpen)}
+              className={`w-full border-2 rounded-xl px-4 py-3 text-left flex justify-between items-center transition-all ${(unit.source?.length || 0) > 0
+                ? `${colors.bg} ${colors.border} shadow-md`
+                : 'bg-gray-50 border-gray-300 hover:bg-white hover:border-gray-400'
+                } focus:outline-none focus:ring-4 focus:ring-blue-100`}
+            >
+              <span className={`font-medium ${(unit.source?.length || 0) > 0 ? 'text-gray-900' : 'text-gray-600'
+                }`}>
+                {(unit.source?.length || 0) > 0
+                  ? `${unit.source.length} selected`
+                  : 'Select sources'}
+              </span>
+              <svg className={`w-5 h-5 transition-transform duration-200 ${isSourceDropdownOpen ? 'rotate-180' : ''
+                } text-gray-600`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Dropdown Menu */}
+            {isSourceDropdownOpen && (
+              <div className={`absolute z-[9999] w-full mt-2 bg-white border-2 ${colors.border} rounded-xl shadow-2xl max-h-80 overflow-hidden`}>
+                {/* Search */}
+                <div className={`p-3 ${colors.bg} border-b-2 ${colors.border}`}>
+                  <input
+                    type="text"
+                    placeholder="Search sources..."
+                    value={sourceSearchTerm}
+                    onChange={(e) => setSourceSearchTerm(e.target.value)}
+                    className={`w-full border-2 ${colors.border} rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-100 transition-all`}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+
+                {/* Options List */}
+                <div className="max-h-60 overflow-y-auto">
+                  {filteredSources.length === 0 ? (
+                    <div className="px-4 py-6 text-center">
+                      <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <p className="text-sm text-gray-500 font-medium">No sources found</p>
+                    </div>
+                  ) : (
+                    filteredSources.map((item) => (
+                      <label
+                        key={item.id}
+                        className={`flex items-center px-4 py-2.5 cursor-pointer hover:${colors.bg} transition-colors border-b border-gray-100 last:border-b-0`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={(unit.source || []).includes(item.name)}
+                          onChange={() => toggleSource(item.name)}
+                          className={`mr-3 h-5 w-5 ${colors.checkbox} rounded-md focus:ring-2 ${colors.focusRing} cursor-pointer`}
+                        />
+                        <span className="text-sm font-medium text-gray-700">{item.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="space-y-1.5" ref={sampleTypeDropdownRef}>
@@ -289,9 +383,9 @@ function UnitFieldsForm({
 
           {/* Selected Sample Types Chips */}
           {(unit.sample_type?.length || 0) > 0 && (
-            <div className="flex flex-wrap gap-1.5 p-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-2 border-blue-200 shadow-sm">
+            <div className={`flex flex-wrap gap-1.5 p-2 ${colors.bg} rounded-lg border-2 ${colors.border} shadow-sm`}>
               {unit.sample_type?.map((st) => (
-                <span key={st} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 text-white rounded-lg text-xs font-semibold shadow-md hover:shadow-lg transition-all">
+                <span key={st} className={`inline-flex items-center gap-1 px-2.5 py-1 ${colors.chip} text-white rounded-lg text-xs font-semibold shadow-md hover:shadow-lg transition-all`}>
                   {st}
                   <button
                     type="button"
@@ -311,33 +405,33 @@ function UnitFieldsForm({
               type="button"
               onClick={() => setIsSampleTypeDropdownOpen(!isSampleTypeDropdownOpen)}
               className={`w-full border-2 rounded-xl px-4 py-3 text-left flex justify-between items-center transition-all ${(unit.sample_type?.length || 0) > 0
-                ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-400 shadow-md'
+                ? `bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md`
                 : 'bg-gray-50 border-gray-300 hover:bg-white hover:border-gray-400'
-                } focus:outline-none focus:ring-4 focus:ring-blue-100`}
+                } focus:outline-none focus:ring-4`}
             >
-              <span className={`font-medium ${(unit.sample_type?.length || 0) > 0 ? 'text-blue-900' : 'text-gray-600'
+              <span className={`font-medium ${(unit.sample_type?.length || 0) > 0 ? 'text-gray-900' : 'text-gray-600'
                 }`}>
                 {(unit.sample_type?.length || 0) > 0
                   ? `${unit.sample_type.length} selected`
                   : 'Select sample types'}
               </span>
-              <svg className={`w-5 h-5 transition-transform duration-200 ${isSampleTypeDropdownOpen ? 'rotate-180' : ''
-                } ${(unit.sample_type?.length || 0) > 0 ? 'text-blue-600' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-5 h-5 transition-transform duration-200 ${isSampleTypeDropdownOpen ? 'rotate-180' : ''}
+                } ${(unit.sample_type?.length || 0) > 0 ? colors.text : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
 
             {/* Dropdown Menu */}
             {isSampleTypeDropdownOpen && (
-              <div className="absolute z-[9999] w-full mt-2 bg-white border-2 border-blue-300 rounded-xl shadow-2xl max-h-80 overflow-hidden">
+              <div className={`absolute z-[9999] w-full mt-2 bg-white border-2 ${colors.border} rounded-xl shadow-2xl max-h-80 overflow-hidden`}>
                 {/* Search and Actions */}
-                <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-blue-200">
+                <div className={`p-3 bg-gradient-to-r ${colors.gradient} border-b-2 ${colors.border}`}>
                   <input
                     type="text"
                     placeholder="Search sample types..."
                     value={sampleTypeSearchTerm}
                     onChange={(e) => setSampleTypeSearchTerm(e.target.value)}
-                    className="w-full border-2 border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+                    className={`w-full border-2 ${colors.border} rounded-lg px-3 py-1.5 text-sm ${colors.focusBorder} ${colors.focusRing} transition-all`}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -355,14 +449,14 @@ function UnitFieldsForm({
                     filteredSampleTypes.map((item) => (
                       <label
                         key={item.id}
-                        className="flex items-center px-4 py-2.5 cursor-pointer hover:bg-blue-50 transition-colors border-b border-gray-100 last:border-b-0"
+                        className={`flex items-center px-4 py-2.5 cursor-pointer hover:${colors.bg} transition-colors border-b border-gray-100 last:border-b-0`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
                           type="checkbox"
                           checked={(unit.sample_type || []).includes(item.name)}
                           onChange={() => toggleSampleType(item.name)}
-                          className="mr-3 h-5 w-5 text-blue-600 rounded-md focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                          className={`mr-3 h-5 w-5 ${colors.checkbox} rounded-md focus:ring-2 ${colors.focusRing} cursor-pointer`}
                         />
                         <span className="text-sm font-medium text-gray-700">{item.name}</span>
                       </label>
@@ -374,49 +468,37 @@ function UnitFieldsForm({
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="block text-sm font-semibold text-gray-700">
-            {isMicrobiology ? 'Sub-Samples Count' : 'Samples Count'} <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="number"
-            value={unit.samples_number || ''}
-            onChange={(e) =>
-              updateUnit(globalIndex, { samples_number: e.target.value ? parseInt(e.target.value) : null as unknown as number })
-            }
-            className={`w-full border-2 rounded-xl px-4 py-2.5 transition-all ${unit.samples_number && unit.samples_number > 0
-              ? `bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md`
-              : 'bg-gray-50 border-gray-300'
-              } focus:bg-white focus:${colors.border} focus:ring-4 focus:ring-${colors.badge.replace('bg-', '')}-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-            placeholder={isMicrobiology ? "Enter sub-samples count" : "Enter samples count"}
-            onWheel={(e) => e.currentTarget.blur()}
-          />
-        </div>
-
-        {/* Tests Count field for Serology only */}
-        {isSerology && (
+        {/* Samples Count - Hidden for PCR, shown for Serology and Microbiology */}
+        {!isPCR && (
           <div className="space-y-1.5">
             <label className="block text-sm font-semibold text-gray-700">
-              Tests Count <span className="text-red-500">*</span>
+              {isMicrobiology ? 'Sub-Samples Count' : 'Samples Count'} <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
-              value={unit.serology_data?.tests_count || ''}
+              value={unit.samples_number || ''}
               onChange={(e) =>
-                updateUnit(globalIndex, {
-                  serology_data: {
-                    ...unit.serology_data!,
-                    tests_count: e.target.value ? parseInt(e.target.value) || 0 : undefined,
-                  },
-                })
+                updateUnit(globalIndex, { samples_number: e.target.value ? parseInt(e.target.value) : null as unknown as number })
               }
-              className={`w-full border-2 rounded-xl px-4 py-2.5 transition-all ${unit.serology_data?.tests_count && unit.serology_data.tests_count > 0
+              className={`w-full border-2 rounded-xl px-4 py-2.5 transition-all ${unit.samples_number && unit.samples_number > 0
                 ? `bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md`
                 : 'bg-gray-50 border-gray-300'
                 } focus:bg-white focus:${colors.border} focus:ring-4 focus:ring-${colors.badge.replace('bg-', '')}-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-              placeholder="Enter tests count"
+              placeholder={isMicrobiology ? "Enter sub-samples count" : "Enter samples count"}
               onWheel={(e) => e.currentTarget.blur()}
             />
+          </div>
+        )}
+
+        {/* Tests Count display for Serology - auto-calculated from diseases list */}
+        {isSerology && unit.serology_data?.diseases_list && unit.serology_data.diseases_list.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-gray-700">
+              Total Tests <span className="text-xs text-gray-500">(auto-calculated)</span>
+            </label>
+            <div className={`w-full border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold`}>
+              {unit.serology_data.diseases_list.reduce((sum, d) => sum + (d.test_count || 0), 0)}
+            </div>
           </div>
         )}
       </div>
@@ -435,7 +517,12 @@ interface PCRFieldsProps {
     chip: string;
     badge: string;
     gradient: string;
+    text: string;
+    focusRing: string;
+    focusBorder: string;
+    checkbox: string;
   };
+  setNotification: (notification: { type: 'success' | 'error' | 'warning' | 'info'; message: string } | null) => void;
 }
 
 function PCRFields({
@@ -444,51 +531,94 @@ function PCRFields({
   updateUnit,
   departmentId,
   colors,
+  setNotification,
 }: PCRFieldsProps) {
   const { data: diseases = [] } = useDiseases(departmentId);
   const { data: kitTypes = [] } = useKitTypes(departmentId);
-  const { data: technicians = [] } = useTechnicians();
   const { data: extractionMethods = [] } = useExtractionMethods();
+  const [technicianPIN, setTechnicianPIN] = useState('');
+  const [verifyingPIN, setVerifyingPIN] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Arrow key navigation between fields
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!formRef.current) return;
+    const focusableElements = formRef.current.querySelectorAll<HTMLElement>(
+      'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])'
+    );
+    const focusArray = Array.from(focusableElements);
+    const currentIndex = focusArray.findIndex(el => el === document.activeElement);
+    
+    if (currentIndex === -1) return;
+    
+    if (e.key === 'ArrowDown' || (e.key === 'Enter' && e.target instanceof HTMLInputElement)) {
+      e.preventDefault();
+      const nextIndex = (currentIndex + 1) % focusArray.length;
+      focusArray[nextIndex]?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevIndex = (currentIndex - 1 + focusArray.length) % focusArray.length;
+      focusArray[prevIndex]?.focus();
+    } else if (e.key === 'ArrowRight' && e.target instanceof HTMLInputElement) {
+      const input = e.target as HTMLInputElement;
+      if (input.selectionStart === input.value.length) {
+        e.preventDefault();
+        const nextIndex = (currentIndex + 1) % focusArray.length;
+        focusArray[nextIndex]?.focus();
+      }
+    } else if (e.key === 'ArrowLeft' && e.target instanceof HTMLInputElement) {
+      const input = e.target as HTMLInputElement;
+      if (input.selectionStart === 0) {
+        e.preventDefault();
+        const prevIndex = (currentIndex - 1 + focusArray.length) % focusArray.length;
+        focusArray[prevIndex]?.focus();
+      }
+    }
+  };
+
+  // Load default kit types from localStorage
+  const getDefaultKitTypes = () => {
+    try {
+      const stored = localStorage.getItem('sample_registration_defaults');
+      if (stored) {
+        const defaults = JSON.parse(stored);
+        return defaults.pcr_disease_kit_defaults || {};
+      }
+    } catch (e) {
+      console.error('Error loading defaults:', e);
+    }
+    return {};
+  };
+
+  const verifyTechnicianPIN = async (pin: string) => {
+    if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
+    setVerifyingPIN(true);
+    try {
+      const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
+      if (response.data.is_valid) {
+        updateUnit(globalIndex, {
+          pcr_data: {
+            ...unit.pcr_data!,
+            technician_name: response.data.name,
+          },
+        });
+        setTechnicianPIN('');
+        setNotification({ type: 'success', message: `Technician verified: ${response.data.name}` });
+      } else {
+        setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
+        setTechnicianPIN('');
+      }
+    } catch (error) {
+      console.error('PIN verification failed:', error);
+      setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      setTechnicianPIN('');
+    }
+    setVerifyingPIN(false);
+  };
 
   return (
-    <div className={`border-t-2 ${colors.border} pt-4 mt-4 space-y-4`}>
+    <div ref={formRef} onKeyDown={handleKeyDown} className={`border-t-2 ${colors.border} pt-4 mt-4 space-y-4`}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-1.5">
-          <label className="block text-sm font-semibold text-gray-700">
-            Technician <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={unit.pcr_data?.technician_name || ""}
-            onChange={(e) =>
-              updateUnit(globalIndex, {
-                pcr_data: {
-                  ...unit.pcr_data!,
-                  technician_name: e.target.value,
-                },
-              })
-            }
-            className={`w-full border-2 rounded-xl px-4 py-2.5 transition-all ${unit.pcr_data?.technician_name && unit.pcr_data.technician_name !== ''
-              ? `bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md`
-              : 'bg-gray-50 border-gray-300'
-              } focus:bg-white focus:${colors.border} focus:ring-4 focus:ring-${colors.badge.replace('bg-', '')}-100`}
-          >
-            <option value="">Select technician...</option>
-            {technicians.map((item) => (
-              <option key={item.id} value={item.name}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          {(!unit.pcr_data?.technician_name || unit.pcr_data.technician_name === "") && (
-            <p className="text-xs text-red-600 flex items-center gap-1">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Technician required
-            </p>
-          )}
-        </div>
-
         <div className="space-y-1.5">
           <label className="block text-sm font-semibold text-gray-700">
             Extraction Method <span className="text-red-500">*</span>
@@ -541,45 +671,72 @@ function PCRFields({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <label className="block text-sm font-semibold text-gray-700">
-            Detection <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="number"
-            value={unit.pcr_data?.detection || ""}
-            onChange={(e) =>
-              updateUnit(globalIndex, {
-                pcr_data: {
-                  ...unit.pcr_data!,
-                  detection: e.target.value ? parseInt(e.target.value) : undefined,
-                },
-              })
-            }
-            className={`w-full border-2 rounded-xl px-4 py-2.5 transition-all ${unit.pcr_data?.detection
-              ? `bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md`
-              : 'bg-gray-50 border-gray-300'
-              } focus:bg-white focus:${colors.border} focus:ring-4 focus:ring-${colors.badge.replace('bg-', '')}-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-            placeholder="Enter detection number"
-            onWheel={(e) => e.currentTarget.blur()}
-          />
-        </div>
       </div>
 
       <DiseaseKitSelector
         availableDiseases={diseases}
         availableKitTypes={kitTypes}
         selectedDiseases={unit.pcr_data?.diseases_list || []}
-        onChange={(diseases) =>
+        onChange={(diseases) => {
+          // Calculate total test count from all selected diseases
+          const totalTestCount = diseases.reduce((sum, d) => sum + (d.test_count || 1), 0);
           updateUnit(globalIndex, {
-            pcr_data: { ...unit.pcr_data!, diseases_list: diseases },
-          })
-        }
+            pcr_data: { 
+              ...unit.pcr_data!, 
+              diseases_list: diseases,
+              detection: totalTestCount > 0 ? totalTestCount : undefined
+            },
+          });
+        }}
         departmentName="PCR"
+        defaultKitTypes={getDefaultKitTypes()}
       />
       {(!unit.pcr_data?.diseases_list || unit.pcr_data.diseases_list.length === 0) && (
         <p className="text-xs text-red-600 mt-1">At least one disease required</p>
       )}
+
+      {/* Technician field - last field */}
+      <div className="space-y-1.5 mt-4">
+        <label className="block text-sm font-semibold text-gray-700">
+          Technician <span className="text-red-500">*</span>
+        </label>
+        {unit.pcr_data?.technician_name ? (
+          <div className="flex items-center gap-2">
+            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold`}>
+              {unit.pcr_data.technician_name}
+            </span>
+            <button
+              type="button"
+              onClick={() => updateUnit(globalIndex, { pcr_data: { ...unit.pcr_data!, technician_name: '' } })}
+              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={technicianPIN}
+              onChange={(e) => setTechnicianPIN(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && verifyTechnicianPIN(technicianPIN)}
+              placeholder="Enter PIN to verify"
+              className={`flex-1 border-2 ${colors.border} rounded-xl px-4 py-2.5 focus:ring-2 ${colors.focusRing}`}
+              maxLength={8}
+              disabled={verifyingPIN}
+            />
+            {verifyingPIN && <span className="text-sm text-gray-500">Verifying...</span>}
+          </div>
+        )}
+        {(!unit.pcr_data?.technician_name || unit.pcr_data.technician_name === "") && (
+          <p className="text-xs text-red-600 flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Enter PIN to verify technician
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -595,7 +752,12 @@ interface SerologyFieldsProps {
     chip: string;
     badge: string;
     gradient: string;
+    text: string;
+    focusRing: string;
+    focusBorder: string;
+    checkbox: string;
   };
+  setNotification: (notification: { type: 'success' | 'error' | 'warning' | 'info'; message: string } | null) => void;
 }
 
 function SerologyFields({
@@ -604,46 +766,55 @@ function SerologyFields({
   updateUnit,
   departmentId,
   colors,
+  setNotification,
 }: SerologyFieldsProps) {
   const { data: diseases = [] } = useDiseases(departmentId);
   const { data: kitTypes = [] } = useKitTypes(departmentId);
-  const { data: technicians = [] } = useTechnicians();
+  const [technicianPIN, setTechnicianPIN] = useState('');
+  const [verifyingPIN, setVerifyingPIN] = useState(false);
+
+  // Load default kit types from localStorage
+  const getDefaultKitTypes = () => {
+    try {
+      const stored = localStorage.getItem('sample_registration_defaults');
+      if (stored) {
+        const defaults = JSON.parse(stored);
+        return defaults.serology_disease_kit_defaults || {};
+      }
+    } catch (e) {
+      console.error('Error loading defaults:', e);
+    }
+    return {};
+  };
+
+  const verifyTechnicianPIN = async (pin: string) => {
+    if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
+    setVerifyingPIN(true);
+    try {
+      const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
+      if (response.data.is_valid) {
+        updateUnit(globalIndex, {
+          serology_data: {
+            ...unit.serology_data!,
+            technician_name: response.data.name,
+          },
+        });
+        setTechnicianPIN('');
+        setNotification({ type: 'success', message: `Technician verified: ${response.data.name}` });
+      } else {
+        setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
+        setTechnicianPIN('');
+      }
+    } catch (error) {
+      console.error('PIN verification failed:', error);
+      setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      setTechnicianPIN('');
+    }
+    setVerifyingPIN(false);
+  };
 
   return (
     <div className={`border-t-2 ${colors.border} pt-4 mt-4 space-y-4`}>
-      <div className="space-y-1.5">
-        <label className="block text-sm font-semibold text-gray-700">
-          Technician <span className="text-red-500">*</span>
-        </label>
-        <select
-          value={unit.serology_data?.technician_name || ""}
-          onChange={(e) =>
-            updateUnit(globalIndex, {
-              serology_data: {
-                ...unit.serology_data!,
-                technician_name: e.target.value,
-              },
-            })
-          }
-          className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 bg-gray-50 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
-        >
-          <option value="">Select technician...</option>
-          {technicians.map((item) => (
-            <option key={item.id} value={item.name}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-        {(!unit.serology_data?.technician_name || unit.serology_data.technician_name === "") && (
-          <p className="text-xs text-red-600 flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Technician required
-          </p>
-        )}
-      </div>
-
       <DiseaseKitSelector
         availableDiseases={diseases}
         availableKitTypes={kitTypes}
@@ -654,6 +825,7 @@ function SerologyFields({
           })
         }
         departmentName="Serology"
+        defaultKitTypes={getDefaultKitTypes()}
       />
       {(!unit.serology_data?.diseases_list || unit.serology_data.diseases_list.length === 0) && (
         <p className="text-xs text-red-600 mt-1">At least one disease required</p>
@@ -687,6 +859,49 @@ function SerologyFields({
           </p>
         )}
       </div>
+
+      {/* Technician field - last field */}
+      <div className="space-y-1.5 mt-4">
+        <label className="block text-sm font-semibold text-gray-700">
+          Technician <span className="text-red-500">*</span>
+        </label>
+        {unit.serology_data?.technician_name ? (
+          <div className="flex items-center gap-2">
+            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold`}>
+              {unit.serology_data.technician_name}
+            </span>
+            <button
+              type="button"
+              onClick={() => updateUnit(globalIndex, { serology_data: { ...unit.serology_data!, technician_name: '' } })}
+              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={technicianPIN}
+              onChange={(e) => setTechnicianPIN(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && verifyTechnicianPIN(technicianPIN)}
+              placeholder="Enter PIN to verify"
+              className={`flex-1 border-2 ${colors.border} rounded-xl px-4 py-2.5 focus:ring-2 ${colors.focusRing}`}
+              maxLength={8}
+              disabled={verifyingPIN}
+            />
+            {verifyingPIN && <span className="text-sm text-gray-500">Verifying...</span>}
+          </div>
+        )}
+        {(!unit.serology_data?.technician_name || unit.serology_data.technician_name === "") && (
+          <p className="text-xs text-red-600 flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Enter PIN to verify technician
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -702,7 +917,12 @@ interface MicrobiologyFieldsProps {
     chip: string;
     badge: string;
     gradient: string;
+    text: string;
+    focusRing: string;
+    focusBorder: string;
+    checkbox: string;
   };
+  setNotification: (notification: { type: 'success' | 'error' | 'warning' | 'info'; message: string } | null) => void;
 }
 
 function MicrobiologyFields({
@@ -711,14 +931,42 @@ function MicrobiologyFields({
   updateUnit,
   departmentId,
   colors,
+  setNotification,
 }: MicrobiologyFieldsProps) {
   const { data: diseases = [] } = useDiseases(departmentId);
-  const { data: technicians = [] } = useTechnicians();
   const [bulkLocations, setBulkLocations] = useState("");
   const [isDiseaseDropdownOpen, setIsDiseaseDropdownOpen] = useState(false);
   const diseaseDropdownRef = useRef<HTMLDivElement>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [technicianPIN, setTechnicianPIN] = useState('');
+  const [verifyingPIN, setVerifyingPIN] = useState(false);
+
+  const verifyTechnicianPIN = async (pin: string) => {
+    if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
+    setVerifyingPIN(true);
+    try {
+      const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
+      if (response.data.is_valid) {
+        updateUnit(globalIndex, {
+          microbiology_data: {
+            ...unit.microbiology_data!,
+            technician_name: response.data.name,
+          },
+        });
+        setTechnicianPIN('');
+        setNotification({ type: 'success', message: `Technician verified: ${response.data.name}` });
+      } else {
+        setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
+        setTechnicianPIN('');
+      }
+    } catch (error) {
+      console.error('PIN verification failed:', error);
+      setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      setTechnicianPIN('');
+    }
+    setVerifyingPIN(false);
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -771,6 +1019,41 @@ function MicrobiologyFields({
         index_list: currentLocations.filter((loc) => loc !== location),
       },
     });
+  };
+
+  // Drag and drop state for reordering locations
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, idx: number) => {
+    setDraggedIndex(idx);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === dropIdx) {
+      setDraggedIndex(null);
+      return;
+    }
+    const currentLocations = [...(unit.microbiology_data?.index_list || [])];
+    const [draggedItem] = currentLocations.splice(draggedIndex, 1);
+    currentLocations.splice(dropIdx, 0, draggedItem);
+    updateUnit(globalIndex, {
+      microbiology_data: {
+        ...unit.microbiology_data!,
+        index_list: currentLocations,
+      },
+    });
+    setDraggedIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   const startEditLocation = (idx: number, location: string) => {
@@ -890,39 +1173,6 @@ function MicrobiologyFields({
       </div>
 
       <div className="space-y-1.5">
-        <label className="block text-sm font-semibold text-gray-700">
-          Technician <span className="text-red-500">*</span>
-        </label>
-        <select
-          value={unit.microbiology_data?.technician_name || ""}
-          onChange={(e) =>
-            updateUnit(globalIndex, {
-              microbiology_data: {
-                ...unit.microbiology_data!,
-                technician_name: e.target.value,
-              },
-            })
-          }
-          className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 bg-gray-50 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
-        >
-          <option value="">Select technician...</option>
-          {technicians.map((item) => (
-            <option key={item.id} value={item.name}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-        {(!unit.microbiology_data?.technician_name || unit.microbiology_data.technician_name === "") && (
-          <p className="text-xs text-red-600 flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Technician required
-          </p>
-        )}
-      </div>
-
-      <div className="space-y-1.5">
         <label className="block text-sm font-semibold text-gray-700">Batch No.</label>
         <input
           type="text"
@@ -996,7 +1246,14 @@ function MicrobiologyFields({
               {unit.microbiology_data?.index_list?.map((location, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between py-2 px-3 hover:bg-gray-50 rounded-lg transition-colors"
+                  draggable={editingIndex !== idx}
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, idx)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center justify-between py-2 px-3 hover:bg-gray-50 rounded-lg transition-colors cursor-move ${
+                    draggedIndex === idx ? 'opacity-50 bg-purple-100' : ''
+                  }`}
                 >
                   {editingIndex === idx ? (
                     <div className="flex items-center gap-2 flex-1 mr-2">
@@ -1028,9 +1285,12 @@ function MicrobiologyFields({
                     </div>
                   ) : (
                     <>
-                      <span className="text-sm font-medium text-gray-700">
-                        {idx + 1}. {location}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400 cursor-grab" title="Drag to reorder">⋮⋮</span>
+                        <span className="text-sm font-medium text-gray-700">
+                          {idx + 1}. {location}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -1058,15 +1318,59 @@ function MicrobiologyFields({
           <p className="text-xs text-red-600 mt-1">At least one location required</p>
         )}
       </div>
+
+      {/* Technician field - last field */}
+      <div className="space-y-1.5 mt-4">
+        <label className="block text-sm font-semibold text-gray-700">
+          Technician <span className="text-red-500">*</span>
+        </label>
+        {unit.microbiology_data?.technician_name ? (
+          <div className="flex items-center gap-2">
+            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold`}>
+              {unit.microbiology_data.technician_name}
+            </span>
+            <button
+              type="button"
+              onClick={() => updateUnit(globalIndex, { microbiology_data: { ...unit.microbiology_data!, technician_name: '' } })}
+              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={technicianPIN}
+              onChange={(e) => setTechnicianPIN(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && verifyTechnicianPIN(technicianPIN)}
+              placeholder="Enter PIN to verify"
+              className={`flex-1 border-2 ${colors.border} rounded-xl px-4 py-2.5 focus:ring-2 ${colors.focusRing}`}
+              maxLength={8}
+              disabled={verifyingPIN}
+            />
+            {verifyingPIN && <span className="text-sm text-gray-500">Verifying...</span>}
+          </div>
+        )}
+        {(!unit.microbiology_data?.technician_name || unit.microbiology_data.technician_name === "") && (
+          <p className="text-xs text-red-600 flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Enter PIN to verify technician
+          </p>
+        )}
+      </div>
     </div>
   );
 }
 
-export default function UnifiedSampleRegistration() {
+export const UnifiedSampleRegistration = () => {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
   const { canRead, isLoading: permissionsLoading } = usePermissions();
+  const { user, isLoading: userLoading } = useCurrentUser();
   const hasReadAccess = canRead('Register Sample');
 
   // Check permission - redirect if no access
@@ -1077,6 +1381,10 @@ export default function UnifiedSampleRegistration() {
   // Detect edit mode from URL query parameter
   const editSampleId = searchParams.get("edit");
   const isEditMode = !!editSampleId;
+  
+  // Detect duplicate mode from URL query parameter
+  const duplicateSampleId = searchParams.get("duplicate");
+  const isDuplicateMode = !!duplicateSampleId;
 
   // UI state
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
@@ -1085,22 +1393,137 @@ export default function UnifiedSampleRegistration() {
     units: { [key: number]: boolean };
   }>({ sampleInfo: false, units: {} });
 
+  // Load persisted draft from localStorage (user-specific)
+  const loadDraft = () => {
+    if (isEditMode || isDuplicateMode || !user?.id) return null;
+    try {
+      const draftKey = `sample_registration_draft_user_${user.id}`;
+      const draft = localStorage.getItem(draftKey);
+      return draft ? JSON.parse(draft) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const draft = !userLoading ? loadDraft() : null;
+
   // Shared sample-level fields
-  const [dateReceived, setDateReceived] = useState("");
-  const [company, setCompany] = useState("");
-  const [farm, setFarm] = useState("");
-  const [cycle, setCycle] = useState("");
-  const [flock, setFlock] = useState("");
-  const [status, setStatus] = useState("In Progress");
+  const [dateReceived, setDateReceived] = useState(draft?.dateReceived || "");
+  const [company, setCompany] = useState(draft?.company || "");
+  const [farm, setFarm] = useState<string[]>(draft?.farm || []);
+  const [cycle, setCycle] = useState(draft?.cycle || "");
+  const [flock, setFlock] = useState(draft?.flock || "");
+  const [status, setStatus] = useState(draft?.status || "In Progress");
 
   // Units array - each unit has its own fields
-  const [units, setUnits] = useState<UnitData[]>([]);
+  const [units, setUnits] = useState<UnitData[]>(draft?.units || []);
   
   // Edit history dialog state
   const [editHistoryDialog, setEditHistoryDialog] = useState<{ open: boolean; history: any[] }>({
     open: false,
     history: []
   });
+
+  // Searchable dropdown states for sample info fields
+  const [companySearch, setCompanySearch] = useState('');
+  const [farmSearch, setFarmSearch] = useState('');
+  const [cycleSearch, setCycleSearch] = useState('');
+  const [flockSearch, setFlockSearch] = useState('');
+  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
+  const [isFarmDropdownOpen, setIsFarmDropdownOpen] = useState(false);
+  const [isCycleDropdownOpen, setIsCycleDropdownOpen] = useState(false);
+  const [isFlockDropdownOpen, setIsFlockDropdownOpen] = useState(false);
+  const companyDropdownRef = useRef<HTMLDivElement>(null);
+  const farmDropdownRef = useRef<HTMLDivElement>(null);
+  const cycleDropdownRef = useRef<HTMLDivElement>(null);
+  const flockDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close sample info dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (companyDropdownRef.current && !companyDropdownRef.current.contains(event.target as Node)) {
+        setIsCompanyDropdownOpen(false);
+      }
+      if (farmDropdownRef.current && !farmDropdownRef.current.contains(event.target as Node)) {
+        setIsFarmDropdownOpen(false);
+      }
+      if (cycleDropdownRef.current && !cycleDropdownRef.current.contains(event.target as Node)) {
+        setIsCycleDropdownOpen(false);
+      }
+      if (flockDropdownRef.current && !flockDropdownRef.current.contains(event.target as Node)) {
+        setIsFlockDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+  
+  // Notification state for professional toast messages
+  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning' | 'info'; message: string } | null>(null);
+  
+  // Defaults panel state and values (persisted in localStorage)
+  const [showDefaultsPanel, setShowDefaultsPanel] = useState(false);
+  
+  // Load defaults from localStorage
+  const loadDefaults = () => {
+    try {
+      const stored = localStorage.getItem('sample_registration_defaults');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error('Error loading defaults:', e);
+    }
+    return {
+      pcr_extraction_method: '',
+      pcr_disease_kit_defaults: {} as Record<string, string>, // disease name -> default kit type
+      serology_disease_kit_defaults: {} as Record<string, string>, // disease name -> default kit type
+      serology_wells: '',
+    };
+  };
+  
+  const [fieldDefaults, setFieldDefaults] = useState(loadDefaults);
+  
+  // Save defaults to localStorage whenever they change
+  const saveDefaults = (newDefaults: typeof fieldDefaults) => {
+    setFieldDefaults(newDefaults);
+    localStorage.setItem('sample_registration_defaults', JSON.stringify(newDefaults));
+    setNotification({ type: 'success', message: 'Default values saved!' });
+  };
+  
+  // Auto-hide notification after 4 seconds
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
+  // Persist form data to localStorage (only in create mode, user-specific)
+  useEffect(() => {
+    if (!isEditMode && user?.id && (dateReceived || company || farm || cycle || flock || units.length > 0)) {
+      const draftKey = `sample_registration_draft_user_${user.id}`;
+      const draftData = {
+        dateReceived,
+        company,
+        farm,
+        cycle,
+        flock,
+        status,
+        units,
+        savedAt: new Date().toISOString()
+      };
+      localStorage.setItem(draftKey, JSON.stringify(draftData));
+    }
+  }, [dateReceived, company, farm, cycle, flock, status, units, isEditMode, user?.id]);
+
+  // Clear draft after successful submission (user-specific)
+  const clearDraft = () => {
+    if (user?.id) {
+      const draftKey = `sample_registration_draft_user_${user.id}`;
+      localStorage.removeItem(draftKey);
+    }
+  };
 
   // Toggle unit expansion
   const toggleUnitExpansion = (globalIndex: number) => {
@@ -1122,7 +1545,7 @@ export default function UnifiedSampleRegistration() {
 
   // Check if unit is complete
   const checkUnitComplete = (unit: UnitData, globalIndex: number) => {
-    const hasHouses = unit.house && unit.house.length > 0;
+    // House is optional - not required for completion
     const hasSampleTypes = unit.sample_type && unit.sample_type.length > 0;
     const deptInfo = getDepartmentInfo(unit.department_id);
 
@@ -1135,7 +1558,7 @@ export default function UnifiedSampleRegistration() {
       deptComplete = !!(unit.microbiology_data.diseases_list && unit.microbiology_data.diseases_list.length > 0 && unit.microbiology_data.index_list && unit.microbiology_data.index_list.length > 0);
     }
 
-    const isComplete = hasHouses && hasSampleTypes && deptComplete;
+    const isComplete = hasSampleTypes && deptComplete;
     setCompletedFields(prev => ({
       ...prev,
       units: { ...prev.units, [globalIndex]: isComplete }
@@ -1164,17 +1587,88 @@ export default function UnifiedSampleRegistration() {
     },
   );
 
+  // Fetch sample data for duplication
+  const { data: duplicateSample, isLoading: isLoadingDuplicateSample } = useQuery(
+    {
+      queryKey: ["sample-duplicate", duplicateSampleId],
+      queryFn: async () => {
+        const response = await apiClient.get(`/samples/${duplicateSampleId}`);
+        return response.data;
+      },
+      enabled: isDuplicateMode,
+    },
+  );
+
   // Fetch dropdown data from Controls
   const { data: companies = [] } = useCompanies();
   const { data: allFarms = [] } = useFarms();
   const { data: flocks = [] } = useFlocks();
   const { data: cycles = [] } = useCycles();
-  const { data: statuses = [] } = useStatuses();
   const { data: houses = [] } = useHouses();
   const { data: sources = [] } = useSources();
+  const { data: extractionMethodsData = [] } = useExtractionMethods();
 
-  // Filter farms by selected company (if farms have company association)
-  const farms = allFarms; // TODO: Add company filter when backend supports it
+  // Get department IDs for PCR and Serology
+  const pcrDeptId = departments.find(d => d.code === 'PCR')?.id;
+  const serDeptId = departments.find(d => d.code === 'SER')?.id;
+  
+  // Fetch diseases and kit types for Quick Defaults panel
+  const { data: pcrDiseasesData = [] } = useDiseases(pcrDeptId);
+  const { data: pcrKitTypesData = [] } = useKitTypes(pcrDeptId);
+  const { data: serologyDiseasesData = [] } = useDiseases(serDeptId);
+  const { data: serologyKitTypesData = [] } = useKitTypes(serDeptId);
+
+  // Filter farms by selected company - ONLY show farms belonging to selected company
+  const farms: DropdownItem[] = useMemo(() => {
+    if (!company || company.length === 0) {
+      return []; // Show no farms if no company selected
+    }
+    // Get company IDs from selected company names
+    const selectedCompanyIds = companies
+      .filter((c: DropdownItem) => company.includes(c.name))
+      .map((c: DropdownItem) => c.id);
+    // Filter farms by company_id - ONLY farms that belong to selected companies
+    return allFarms.filter((f: DropdownItem) => 
+      f.company_id !== null && 
+      f.company_id !== undefined && 
+      selectedCompanyIds.includes(f.company_id)
+    );
+  }, [allFarms, company, companies]);
+
+  // Helper function to format field names in a human-readable way
+  const formatFieldName = (fieldName: string): string => {
+    const fieldMappings: { [key: string]: string } = {
+      'company': 'Company',
+      'farm': 'Farm',
+      'flock': 'Flock',
+      'cycle': 'Cycle',
+      'date_received': 'Date Received',
+      'status': 'Status',
+      'house': 'House',
+      'age': 'Age',
+      'source': 'Source',
+      'sample_type': 'Sample Type',
+      'samples_number': 'Number of Samples',
+      'notes': 'Notes',
+      'pcr_diseases_list': 'PCR Diseases',
+      'pcr_kit_type': 'PCR Kit Type',
+      'pcr_technician_name': 'PCR Technician',
+      'pcr_extraction_method': 'PCR Extraction Method',
+      'pcr_extraction': 'PCR Extraction Count',
+      'pcr_detection': 'PCR Detection Count',
+      'serology_diseases_list': 'Serology Diseases',
+      'serology_kit_type': 'Serology Kit Type',
+      'serology_number_of_wells': 'Serology Wells Count',
+      'serology_tests_count': 'Serology Tests Count',
+      'microbiology_diseases_list': 'Microbiology Diseases',
+      'microbiology_index_list': 'Microbiology Index List',
+      'microbiology_batch_no': 'Microbiology Batch Number',
+      'microbiology_fumigation': 'Microbiology Fumigation',
+      'microbiology_technician_name': 'Microbiology Technician',
+      'microbiology_hidden_indexes': 'Microbiology Hidden Rows',
+    };
+    return fieldMappings[fieldName] || fieldName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
 
   // Function to fetch and show detailed edit history
   const showDetailedEditHistory = async () => {
@@ -1223,7 +1717,7 @@ export default function UnifiedSampleRegistration() {
       // Set sample-level fields
       setDateReceived(existingSample.date_received || "");
       setCompany(existingSample.company || "");
-      setFarm(existingSample.farm || "");
+      setFarm(Array.isArray(existingSample.farm) ? existingSample.farm : (existingSample.farm ? [existingSample.farm] : []));
       setCycle(existingSample.cycle || "");
       setFlock(existingSample.flock || "");
       setStatus(existingSample.status || "");
@@ -1237,7 +1731,7 @@ export default function UnifiedSampleRegistration() {
             department_id: unit.department_id,
             house: unit.house || [],
             age: unit.age?.toString() || "",
-            source: unit.source || "",
+            source: Array.isArray(unit.source) ? unit.source : (unit.source ? [unit.source] : []),
             sample_type: unit.sample_type || [],
             samples_number: unit.samples_number || null as unknown as number,
             notes: unit.notes || "",
@@ -1256,11 +1750,15 @@ export default function UnifiedSampleRegistration() {
           }
 
           if (unit.serology_data) {
+            // Auto-calculate tests_count from diseases_list (sum of test_count from each disease)
+            const calculatedTestsCount = (unit.serology_data.diseases_list || []).reduce(
+              (sum: number, d: DiseaseKitItem) => sum + (d.test_count || 0), 0
+            );
             unitData.serology_data = {
               diseases_list: unit.serology_data.diseases_list || [],
               kit_type: unit.serology_data.kit_type || "",
               number_of_wells: unit.serology_data.number_of_wells || 0,
-              tests_count: unit.serology_data.tests_count !== undefined ? unit.serology_data.tests_count : null,
+              tests_count: calculatedTestsCount > 0 ? calculatedTestsCount : null,
             };
           }
 
@@ -1288,6 +1786,78 @@ export default function UnifiedSampleRegistration() {
       });
     }
   }, [isEditMode, existingSample, departments]);
+
+  // Pre-fill form when duplicating a sample (without IDs - creates new sample)
+  useEffect(() => {
+    if (isDuplicateMode && duplicateSample && departments.length > 0) {
+      // Set sample-level fields (use today's date for new sample)
+      setDateReceived(new Date().toISOString().split('T')[0]);
+      setCompany(duplicateSample.company || "");
+      setFarm(Array.isArray(duplicateSample.farm) ? duplicateSample.farm : (duplicateSample.farm ? [duplicateSample.farm] : []));
+      setCycle(duplicateSample.cycle || "");
+      setFlock(duplicateSample.flock || "");
+      setStatus("In Progress"); // New sample starts as In Progress
+
+      // Transform units from API response to form format (without IDs)
+      const transformedUnits: UnitData[] = duplicateSample.units.map(
+        (unit: any) => {
+          const unitData: UnitData = {
+            // No id - this is a new unit
+            department_id: unit.department_id,
+            house: unit.house || [],
+            age: unit.age?.toString() || "",
+            source: Array.isArray(unit.source) ? unit.source : (unit.source ? [unit.source] : []),
+            sample_type: unit.sample_type || [],
+            samples_number: unit.samples_number || null as unknown as number,
+            notes: "", // Clear notes for new sample
+          };
+
+          // Add department-specific data
+          if (unit.pcr_data) {
+            unitData.pcr_data = {
+              diseases_list: unit.pcr_data.diseases_list || [],
+              kit_type: unit.pcr_data.kit_type || "",
+              technician_name: unit.pcr_data.technician_name || "",
+              extraction_method: unit.pcr_data.extraction_method || "",
+              extraction: unit.pcr_data.extraction || undefined,
+              detection: unit.pcr_data.detection || undefined,
+            };
+          }
+
+          if (unit.serology_data) {
+            const calculatedTestsCount = (unit.serology_data.diseases_list || []).reduce(
+              (sum: number, d: DiseaseKitItem) => sum + (d.test_count || 0), 0
+            );
+            unitData.serology_data = {
+              diseases_list: unit.serology_data.diseases_list || [],
+              kit_type: unit.serology_data.kit_type || "",
+              number_of_wells: unit.serology_data.number_of_wells || 0,
+              tests_count: calculatedTestsCount > 0 ? calculatedTestsCount : null,
+            };
+          }
+
+          if (unit.microbiology_data) {
+            unitData.microbiology_data = {
+              diseases_list: unit.microbiology_data.diseases_list || [],
+              batch_no: unit.microbiology_data.batch_no || "",
+              fumigation: unit.microbiology_data.fumigation || "",
+              index_list: unit.microbiology_data.index_list || [],
+              technician_name: unit.microbiology_data.technician_name || "",
+            };
+          }
+
+          return unitData;
+        },
+      );
+
+      setUnits(transformedUnits);
+      setExpandedUnits(new Set(transformedUnits.map((_, idx) => idx)));
+      setTimeout(checkSampleInfoComplete, 200);
+      transformedUnits.forEach((unit, idx) => {
+        setTimeout(() => checkUnitComplete(unit, idx), 300);
+      });
+    }
+  }, [isDuplicateMode, duplicateSample, departments]);
 
   // Calculate unit codes preview based on current units
   const calculateUnitCodesPreview = () => {
@@ -1357,7 +1927,8 @@ export default function UnifiedSampleRegistration() {
     return unitPreviews;
   };
 
-  const unitCodesPreview = calculateUnitCodesPreview();
+  // Suppress unused variable warning - kept for future use
+  void calculateUnitCodesPreview;
   const totalUnits = units.length;
 
   // Calculate overall progress
@@ -1390,25 +1961,40 @@ export default function UnifiedSampleRegistration() {
       return {
         bg: "bg-blue-50",
         border: "border-blue-300",
-        chip: "bg-blue-100 border-blue-300 text-blue-900",
+        chip: "bg-blue-600",
+        chipSelected: "bg-blue-700 border-2 border-blue-400 ring-2 ring-blue-300",
         badge: "bg-blue-600",
         gradient: "from-blue-50 to-blue-100",
+        text: "text-blue-600",
+        focusRing: "focus:ring-blue-500",
+        focusBorder: "focus:border-blue-500",
+        checkbox: "text-blue-600",
       };
     } else if (code === "SER") {
       return {
         bg: "bg-green-50",
         border: "border-green-300",
-        chip: "bg-green-100 border-green-300 text-green-900",
+        chip: "bg-green-600",
+        chipSelected: "bg-green-700 border-2 border-green-400 ring-2 ring-green-300",
         badge: "bg-green-600",
         gradient: "from-green-50 to-green-100",
+        text: "text-green-600",
+        focusRing: "focus:ring-green-500",
+        focusBorder: "focus:border-green-500",
+        checkbox: "text-green-600",
       };
     } else {
       return {
         bg: "bg-purple-50",
         border: "border-purple-300",
-        chip: "bg-purple-100 border-purple-300 text-purple-900",
+        chip: "bg-purple-600",
+        chipSelected: "bg-purple-700 border-2 border-purple-400 ring-2 ring-purple-300",
         badge: "bg-purple-600",
         gradient: "from-purple-50 to-purple-100",
+        text: "text-purple-600",
+        focusRing: "focus:ring-purple-500",
+        focusBorder: "focus:border-purple-500",
+        checkbox: "text-purple-600",
       };
     }
   };
@@ -1425,43 +2011,62 @@ export default function UnifiedSampleRegistration() {
     return grouped;
   };
 
-  // Get departments that have units
-  const getUsedDepartments = () => {
-    const deptIds = [...new Set(units.map((u) => u.department_id))];
-    return deptIds.map((id) => ({
-      id,
-      ...getDepartmentInfo(id),
-      count: units.filter((u) => u.department_id === id).length,
-    }));
-  };
 
   // Add a new unit for a department
   const addUnit = (deptId: number) => {
     const dept = departments.find((d) => d.id === deptId);
     if (!dept) return;
 
+    // Apply saved defaults
+    const defaults = loadDefaults();
+    
+    // Find the highest existing unit code number for this department
+    const sameDepUnits = units.filter(u => u.department_id === deptId);
+    let maxNumber = 0;
+    sameDepUnits.forEach(u => {
+      if (u.unit_code) {
+        const match = u.unit_code.match(/-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num > maxNumber) maxNumber = num;
+        }
+      }
+    });
+    
+    // If no existing codes found, start from preview data or 1
+    if (maxNumber === 0 && previewData?.unit_counters?.[deptId]) {
+      maxNumber = previewData.unit_counters[deptId].next_unit_number + sameDepUnits.length - 1;
+      if (maxNumber < 0) maxNumber = 0;
+    }
+    
+    const nextNumber = maxNumber + 1;
+    const unitCode = `${dept.code}-${nextNumber}`;
+    
     const newUnit: UnitData = {
       department_id: deptId,
-      house: [], // Multi-select houses
+      unit_code: unitCode,
+      house: [],
       age: "",
-      source: "",
-      sample_type: [], // Multi-select sample types (organs)
+      source: [],
+      sample_type: [],
       samples_number: null as unknown as number,
       notes: "",
     };
 
-    // Initialize department-specific data
+    // Initialize department-specific data with defaults
     if (dept.code === "PCR") {
       newUnit.pcr_data = {
         diseases_list: [],
         kit_type: "",
+        extraction_method: defaults.pcr_extraction_method || "",
       };
     } else if (dept.code === "SER") {
       newUnit.samples_number = 1; // Default samples count to 1 for Serology
+      newUnit.sample_type = ["Blood"]; // Pre-select Blood for Serology
       newUnit.serology_data = {
         diseases_list: [],
         kit_type: "",
-        number_of_wells: 0,
+        number_of_wells: defaults.serology_wells ? parseInt(defaults.serology_wells) : 0,
         tests_count: undefined,
       };
     } else if (dept.code === "MIC") {
@@ -1492,20 +2097,44 @@ export default function UnifiedSampleRegistration() {
     setTimeout(() => checkUnitComplete(newUnits[index], index), 100);
   };
 
-  // Duplicate a specific unit
+  // Duplicate a specific unit (department)
   const duplicateUnit = (index: number) => {
     const unitToDuplicate = units[index];
     const duplicatedUnit = JSON.parse(JSON.stringify(unitToDuplicate)); // Deep clone
+    
+    // Generate new unit code by finding the highest existing number and incrementing
+    const departmentId = unitToDuplicate.department_id;
+    const deptInfo = getDepartmentInfo(departmentId);
+    const departmentCode = deptInfo.code || 'UNK';
+    
+    // Find the highest unit code number for this department across all units
+    const sameDepUnits = units.filter(u => u.department_id === departmentId);
+    let maxNumber = 0;
+    sameDepUnits.forEach(u => {
+      if (u.unit_code) {
+        const match = u.unit_code.match(/-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num > maxNumber) maxNumber = num;
+        }
+      }
+    });
+    
+    // Increment from the highest found number
+    const nextNumber = maxNumber + 1;
+    duplicatedUnit.unit_code = `${departmentCode}-${nextNumber}`;
+    
+    // Remove id for new unit (will be assigned by backend)
+    delete duplicatedUnit.id;
+    
     const newUnits = [...units];
     newUnits.splice(index + 1, 0, duplicatedUnit); // Insert after current unit
     setUnits(newUnits);
+    
     // Expand the new unit
     setExpandedUnits(prev => new Set([...prev, index + 1]));
-  };
-
-  // Get available departments (not yet added)
-  const getAvailableDepartments = () => {
-    return departments;
+    
+    setNotification({ type: 'success', message: `Unit duplicated with code ${duplicatedUnit.unit_code}` });
   };
 
   // Create sample mutation
@@ -1517,11 +2146,12 @@ export default function UnifiedSampleRegistration() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["samples"] });
       // Reset form to allow registering another sample
-      alert(`Sample ${data.sample_code} created successfully!`);
-      // Reset to initial state
+      setNotification({ type: 'success', message: `Sample ${data.sample_code} created successfully!` });
+      // Clear draft and reset to initial state
+      clearDraft();
       setDateReceived("");
       setCompany("");
-      setFarm("");
+      setFarm([]);
       setCycle("");
       setFlock("");
       setStatus("In Progress");
@@ -1536,13 +2166,24 @@ export default function UnifiedSampleRegistration() {
       console.error("Sample creation error:", error);
       console.error("Error response:", error.response?.data);
       console.error("Error status:", error.response?.status);
-      alert(
-        `ERROR CREATING SAMPLE:
-
-${error.response?.data?.detail || error.message || "Unknown error"}
-
-Status: ${error.response?.status || "N/A"}`,
-      );
+      // Extract error message properly
+      let errorMessage = "Unknown error";
+      if (error.response?.data?.detail) {
+        const detail = error.response.data.detail;
+        if (typeof detail === 'string') {
+          errorMessage = detail;
+        } else if (Array.isArray(detail)) {
+          errorMessage = detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join(', ');
+        } else if (typeof detail === 'object') {
+          errorMessage = detail.msg || detail.message || JSON.stringify(detail);
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      setNotification({ 
+        type: 'error', 
+        message: `Failed to create sample: ${errorMessage}` 
+      });
     },
   });
 
@@ -1555,7 +2196,7 @@ Status: ${error.response?.status || "N/A"}`,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["samples"] });
       queryClient.invalidateQueries({ queryKey: ["sample", editSampleId] });
-      alert(`Sample ${data.sample_code} updated successfully!`);
+      setNotification({ type: 'success', message: `Sample ${data.sample_code} updated successfully!` });
       // Navigate back after update
       navigate(-1);
     },
@@ -1563,13 +2204,10 @@ Status: ${error.response?.status || "N/A"}`,
       console.error("Sample update error:", error);
       console.error("Error response:", error.response?.data);
       console.error("Error status:", error.response?.status);
-      alert(
-        `ERROR UPDATING SAMPLE:
-
-${error.response?.data?.detail || error.message || "Unknown error"}
-
-Status: ${error.response?.status || "N/A"}`,
-      );
+      setNotification({ 
+        type: 'error', 
+        message: `Failed to update sample: ${error.response?.data?.detail || error.message || "Unknown error"}` 
+      });
     },
   });
 
@@ -1589,10 +2227,6 @@ Status: ${error.response?.status || "N/A"}`,
       const deptInfo = getDepartmentInfo(unit.department_id);
       const unitLabel = `Unit ${idx + 1} (${deptInfo.name})`;
 
-      if (!unit.house || unit.house.length === 0) {
-        errors.push(`${unitLabel}: At least one House is required`);
-      }
-
       if (!unit.sample_type || unit.sample_type.length === 0) {
         errors.push(`${unitLabel}: At least one Sample Type is required`);
       }
@@ -1609,14 +2243,8 @@ Status: ${error.response?.status || "N/A"}`,
         if (!unit.pcr_data.extraction_method || unit.pcr_data.extraction_method === "") {
           errors.push(`${unitLabel}: Extraction Method is required`);
         }
-        if (!unit.samples_number || unit.samples_number === 0) {
-          errors.push(`${unitLabel}: Samples Count is required`);
-        }
         if (!unit.pcr_data.extraction || unit.pcr_data.extraction === 0) {
           errors.push(`${unitLabel}: Extraction is required`);
-        }
-        if (!unit.pcr_data.detection || unit.pcr_data.detection === 0) {
-          errors.push(`${unitLabel}: Detection is required`);
         }
       }
 
@@ -1629,8 +2257,12 @@ Status: ${error.response?.status || "N/A"}`,
         if (!unit.serology_data.number_of_wells || unit.serology_data.number_of_wells <= 0) {
           errors.push(`${unitLabel}: Number of wells must be greater than 0`);
         }
-        if (!unit.serology_data.tests_count || unit.serology_data.tests_count <= 0) {
-          errors.push(`${unitLabel}: Tests count must be greater than 0`);
+        // Check if diseases have test_count defined (auto-calculated)
+        const totalTestCount = (unit.serology_data.diseases_list || []).reduce(
+          (sum: number, d: DiseaseKitItem) => sum + (d.test_count || 0), 0
+        );
+        if (totalTestCount <= 0) {
+          errors.push(`${unitLabel}: Each disease must have a test count defined`);
         }
         if (!unit.serology_data.technician_name || unit.serology_data.technician_name === "") {
           errors.push(`${unitLabel}: Technician is required`);
@@ -1654,7 +2286,10 @@ Status: ${error.response?.status || "N/A"}`,
     });
 
     if (errors.length > 0) {
-      alert(`Please fix the following validation errors:\n\n${errors.join('\n')}`);
+      setNotification({ 
+        type: 'warning', 
+        message: `Please fix validation errors: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? ` and ${errors.length - 3} more...` : ''}` 
+      });
       return;
     }
 
@@ -1677,7 +2312,7 @@ Status: ${error.response?.status || "N/A"}`,
     const sampleData = {
       date_received: dateReceived,
       company,
-      farm,
+      farm: farm.join(', '), // Convert array to comma-separated string for backend
       cycle: cycle || null,
       flock: flock || null,
       status,
@@ -1699,6 +2334,18 @@ Status: ${error.response?.status || "N/A"}`,
         <div className="text-center py-12">
           <div className="text-gray-400 text-6xl mb-4">⏳</div>
           <p className="text-gray-500 text-lg">Loading sample data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while fetching sample data for duplication
+  if (isDuplicateMode && isLoadingDuplicateSample) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="text-center py-12">
+          <div className="text-gray-400 text-6xl mb-4">📋</div>
+          <p className="text-gray-500 text-lg">Loading sample for duplication...</p>
         </div>
       </div>
     );
@@ -1730,6 +2377,243 @@ Status: ${error.response?.status || "N/A"}`,
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-50">
+      {/* Professional Toast Notification */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in">
+          <div className={`px-5 py-4 rounded-xl shadow-lg flex items-center gap-3 min-w-[320px] max-w-md ${
+            notification.type === 'success' ? 'bg-green-600 text-white' :
+            notification.type === 'error' ? 'bg-red-600 text-white' :
+            notification.type === 'warning' ? 'bg-amber-500 text-white' :
+            'bg-blue-600 text-white'
+          }`}>
+            {notification.type === 'success' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            )}
+            {notification.type === 'error' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            )}
+            {notification.type === 'warning' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            )}
+            {notification.type === 'info' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            )}
+            <div className="flex-1">
+              <p className="font-medium text-sm">{notification.message}</p>
+            </div>
+            <button 
+              onClick={() => setNotification(null)}
+              className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Defaults Panel Toggle Button - Fixed on right */}
+      <button
+        type="button"
+        onClick={() => setShowDefaultsPanel(!showDefaultsPanel)}
+        className={`fixed right-0 top-1/2 -translate-y-1/2 z-40 p-3 rounded-l-xl shadow-lg transition-all duration-300 ${
+          showDefaultsPanel 
+            ? 'bg-gray-700 text-white' 
+            : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700'
+        }`}
+        title="Quick Defaults"
+      >
+        <svg className={`w-5 h-5 transition-transform duration-300 ${showDefaultsPanel ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </button>
+
+      {/* Defaults Panel - Slide from Right */}
+      <div className={`fixed right-0 top-0 h-full w-80 bg-white shadow-2xl z-50 transform transition-transform duration-300 ${
+        showDefaultsPanel ? 'translate-x-0' : 'translate-x-full'
+      }`}>
+        <div className="h-full flex flex-col">
+          {/* Panel Header */}
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Quick Defaults
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowDefaultsPanel(false)}
+                className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-indigo-100 text-xs mt-1">Set default values for faster registration</p>
+          </div>
+
+          {/* Panel Content */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* PCR Section */}
+            <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+              <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <span className="w-5 h-5 bg-blue-600 rounded text-white text-[10px] flex items-center justify-center font-bold">PCR</span>
+                PCR Defaults
+              </p>
+              
+              {/* PCR Extraction Method - Dropdown from Controls */}
+              <div className="space-y-1.5 mb-3">
+                <label className="text-sm font-semibold text-gray-700">Extraction Method</label>
+                <select
+                  value={fieldDefaults.pcr_extraction_method || ''}
+                  onChange={(e) => setFieldDefaults({ ...fieldDefaults, pcr_extraction_method: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 bg-white"
+                >
+                  <option value="">Select default...</option>
+                  {(() => {
+                    const pcrDept = departments.find(d => d.code === 'PCR');
+                    return pcrDept ? extractionMethodsData.map((method) => (
+                      <option key={method.id} value={method.name}>{method.name}</option>
+                    )) : null;
+                  })()}
+                </select>
+              </div>
+
+              {/* PCR Disease Kit Type Defaults */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-gray-700">Default Kit Types by Disease</label>
+                <div className="space-y-2 max-h-48 overflow-y-auto bg-white rounded-lg border border-blue-200 p-2">
+                  {(() => {
+                    const pcrDept = departments.find(d => d.code === 'PCR');
+                    if (!pcrDept) return <p className="text-xs text-gray-500">Loading...</p>;
+                    return pcrDiseasesData.length > 0 ? pcrDiseasesData.map((disease) => (
+                      <div key={disease.id} className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-700 min-w-[80px] truncate" title={disease.name}>{disease.name}</span>
+                        <select
+                          value={fieldDefaults.pcr_disease_kit_defaults?.[disease.name] || ''}
+                          onChange={(e) => setFieldDefaults({
+                            ...fieldDefaults,
+                            pcr_disease_kit_defaults: {
+                              ...fieldDefaults.pcr_disease_kit_defaults,
+                              [disease.name]: e.target.value
+                            }
+                          })}
+                          className="flex-1 border border-gray-200 rounded p-1 text-xs bg-white"
+                        >
+                          <option value="">No default</option>
+                          {pcrKitTypesData.map((kit) => (
+                            <option key={kit.id} value={kit.name}>{kit.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )) : <p className="text-xs text-gray-500">No diseases configured</p>;
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Serology Section */}
+            <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+              <p className="text-xs font-bold text-green-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <span className="w-5 h-5 bg-green-600 rounded text-white text-[10px] flex items-center justify-center font-bold">SER</span>
+                Serology Defaults
+              </p>
+
+              {/* Serology Wells */}
+              <div className="space-y-1.5 mb-3">
+                <label className="text-sm font-semibold text-gray-700">Number of Wells</label>
+                <input
+                  type="number"
+                  value={fieldDefaults.serology_wells || ''}
+                  onChange={(e) => setFieldDefaults({ ...fieldDefaults, serology_wells: e.target.value })}
+                  placeholder="Enter default wells"
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                />
+              </div>
+
+              {/* Serology Disease Kit Type Defaults */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-gray-700">Default Kit Types by Disease</label>
+                <div className="space-y-2 max-h-48 overflow-y-auto bg-white rounded-lg border border-green-200 p-2">
+                  {(() => {
+                    const serDept = departments.find(d => d.code === 'SER');
+                    if (!serDept) return <p className="text-xs text-gray-500">Loading...</p>;
+                    return serologyDiseasesData.length > 0 ? serologyDiseasesData.map((disease) => (
+                      <div key={disease.id} className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-700 min-w-[80px] truncate" title={disease.name}>{disease.name}</span>
+                        <select
+                          value={fieldDefaults.serology_disease_kit_defaults?.[disease.name] || ''}
+                          onChange={(e) => setFieldDefaults({
+                            ...fieldDefaults,
+                            serology_disease_kit_defaults: {
+                              ...fieldDefaults.serology_disease_kit_defaults,
+                              [disease.name]: e.target.value
+                            }
+                          })}
+                          className="flex-1 border border-gray-200 rounded p-1 text-xs bg-white"
+                        >
+                          <option value="">No default</option>
+                          {serologyKitTypesData.map((kit) => (
+                            <option key={kit.id} value={kit.name}>{kit.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )) : <p className="text-xs text-gray-500">No diseases configured</p>;
+                  })()}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Panel Footer */}
+          <div className="p-4 border-t border-gray-200 space-y-2">
+            <button
+              type="button"
+              onClick={() => saveDefaults(fieldDefaults)}
+              className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
+            >
+              Save Defaults
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const emptyDefaults = {
+                  pcr_extraction_method: '',
+                  pcr_disease_kit_defaults: {},
+                  serology_disease_kit_defaults: {},
+                  serology_wells: '',
+                };
+                saveDefaults(emptyDefaults);
+              }}
+              className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors text-sm"
+            >
+              Clear All Defaults
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Overlay when panel is open */}
+      {showDefaultsPanel && (
+        <div 
+          className="fixed inset-0 bg-black/20 z-40"
+          onClick={() => setShowDefaultsPanel(false)}
+        />
+      )}
+
       <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
         <div className="flex items-center gap-4 mb-8">
           <button
@@ -1756,7 +2640,9 @@ Status: ${error.response?.status || "N/A"}`,
             <h2 className="text-3xl font-bold text-gray-900 tracking-tight">
               {isEditMode
                 ? `Edit Sample ${existingSample?.sample_code || ""}`
-                : "Register New Sample"}
+                : isDuplicateMode
+                  ? `Duplicate Sample (from ${duplicateSample?.sample_code || ""})`
+                  : "Register New Sample"}
             </h2>
             {units.length > 0 && (
               <div className="mt-3">
@@ -1895,77 +2781,13 @@ Status: ${error.response?.status || "N/A"}`,
               </div>
             </div>
 
-            {/* Unit Codes Grid - Compact */}
-            {unitCodesPreview.length > 0 && (
-              <div className="bg-white rounded-xl shadow-md p-4 border border-gray-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  <h4 className="text-sm font-bold text-gray-800">Unit Codes</h4>
-                </div>
-
-                <div className="grid gap-2">
-                  {unitCodesPreview.map((preview, index) => {
-                    const colors = getDepartmentColors(preview.department_code);
-
-                    return (
-                      <div key={index} className={`bg-gradient-to-r ${colors.gradient} rounded-lg p-3 border ${colors.border}`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <div className={`${colors.badge} text-white px-2 py-0.5 rounded text-xs font-bold`}>
-                              {preview.department_code}
-                            </div>
-                            <span className="font-semibold text-gray-800 text-sm">{preview.department_name}</span>
-                          </div>
-                          <span className="text-xs text-gray-600 font-medium">
-                            {preview.count} {preview.count === 1 ? "unit" : "units"}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {preview.codes.map((code: string, idx: number) => (
-                            <div key={idx} className="bg-white px-2 py-1 rounded text-xs font-mono font-bold text-gray-800 shadow-sm">
-                              {code}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {units.length === 0 && (
-              <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-8 text-center border-2 border-dashed border-gray-300">
-                <svg
-                  className="w-16 h-16 text-gray-400 mx-auto mb-3"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                  />
-                </svg>
-                <p className="text-gray-600 font-medium text-lg mb-1">
-                  No Units Added
-                </p>
-                <p className="text-gray-500 text-sm">
-                  Add units below to see unit code preview
-                </p>
-              </div>
-            )}
           </div>
         )}
 
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Sample-Level Fields */}
-          <div className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-300 border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-300 border border-gray-200 overflow-visible relative z-20">
             <div className="bg-gradient-to-r from-indigo-500 to-blue-600 px-6 py-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-white flex items-center gap-3">
@@ -2010,82 +2832,234 @@ Status: ${error.response?.status || "N/A"}`,
                       setDateReceived(e.target.value);
                       setTimeout(checkSampleInfoComplete, 100);
                     }}
-                    className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 bg-gray-50 focus:bg-white"
+                    className={`w-full border-2 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 ${
+                      dateReceived ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 shadow-md' : 'bg-gray-50 border-gray-300'
+                    } focus:bg-white`}
                     required
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                {/* Company Searchable Dropdown */}
+                <div className="space-y-1.5" ref={companyDropdownRef}>
                   <label className="block text-sm font-semibold text-gray-700">
                     Company <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={company}
-                    onChange={(e) => {
-                      setCompany(e.target.value);
-                      setTimeout(checkSampleInfoComplete, 100);
-                    }}
-                    className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 bg-gray-50 focus:bg-white"
-                    required
-                  >
-                    <option value="">Select company...</option>
-                    {companies.map((item) => (
-                      <option key={item.id} value={item.name}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
+                      className={`w-full border-2 rounded-xl px-4 py-2.5 text-left flex justify-between items-center transition-all ${
+                        company ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 shadow-md' : 'bg-gray-50 border-gray-300 hover:bg-white hover:border-gray-400'
+                      }`}
+                    >
+                      <span className={company ? 'text-gray-900' : 'text-gray-500'}>
+                        {company || 'Select company...'}
+                      </span>
+                      <svg className={`w-5 h-5 transition-transform ${isCompanyDropdownOpen ? 'rotate-180' : ''} ${company ? 'text-blue-600' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {isCompanyDropdownOpen && (
+                      <div className="absolute z-[9999] w-full mt-2 bg-white border-2 border-blue-300 rounded-xl shadow-2xl max-h-60 overflow-hidden">
+                        <div className="p-2 bg-blue-50 border-b border-blue-200">
+                          <input
+                            type="text"
+                            placeholder="Search companies..."
+                            value={companySearch}
+                            onChange={(e) => setCompanySearch(e.target.value)}
+                            className="w-full border border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-100"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="max-h-44 overflow-y-auto">
+                          {companies.filter(item => item.name.toLowerCase().includes(companySearch.toLowerCase())).map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={() => { setCompany(item.name); setIsCompanyDropdownOpen(false); setCompanySearch(''); setTimeout(checkSampleInfoComplete, 100); }}
+                              className={`px-4 py-2 cursor-pointer hover:bg-blue-50 ${company === item.name ? 'bg-blue-100 font-semibold' : ''}`}
+                            >
+                              {item.name}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-sm font-semibold text-gray-700">Farm</label>
-                  <select
-                    value={farm}
-                    onChange={(e) => {
-                      setFarm(e.target.value);
-                      setTimeout(checkSampleInfoComplete, 100);
-                    }}
-                    className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 bg-gray-50 focus:bg-white"
-                  >
-                    <option value="">Select farm...</option>
-                    {farms.map((item) => (
-                      <option key={item.id} value={item.name}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
+                {/* Farm Multi-Select Dropdown */}
+                <div className="space-y-1.5" ref={farmDropdownRef}>
+                  <label className="block text-sm font-semibold text-gray-700">Farm(s)</label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsFarmDropdownOpen(!isFarmDropdownOpen)}
+                      className={`w-full border-2 rounded-xl px-4 py-2.5 text-left flex justify-between items-center transition-all ${
+                        farm.length > 0 ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 shadow-md' : 'bg-gray-50 border-gray-300 hover:bg-white hover:border-gray-400'
+                      }`}
+                    >
+                      <span className={farm.length > 0 ? 'text-gray-900' : 'text-gray-500'}>
+                        {farm.length > 0 ? farm.join(', ') : 'Select farms...'}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {farm.length > 0 && (
+                          <span className="bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{farm.length}</span>
+                        )}
+                        <svg className={`w-5 h-5 transition-transform ${isFarmDropdownOpen ? 'rotate-180' : ''} ${farm.length > 0 ? 'text-blue-600' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </button>
+                    {isFarmDropdownOpen && (
+                      <div className="absolute z-[9999] w-full mt-2 bg-white border-2 border-blue-300 rounded-xl shadow-2xl max-h-60 overflow-hidden">
+                        <div className="p-2 bg-blue-50 border-b border-blue-200">
+                          <input
+                            type="text"
+                            placeholder="Search farms..."
+                            value={farmSearch}
+                            onChange={(e) => setFarmSearch(e.target.value)}
+                            className="w-full border border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-100"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="max-h-44 overflow-y-auto">
+                          {farms.filter(item => item.name.toLowerCase().includes(farmSearch.toLowerCase())).map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={() => {
+                                const isSelected = farm.includes(item.name);
+                                if (isSelected) {
+                                  setFarm(farm.filter(f => f !== item.name));
+                                } else {
+                                  setFarm([...farm, item.name]);
+                                }
+                                setTimeout(checkSampleInfoComplete, 100);
+                              }}
+                              className={`px-4 py-2 cursor-pointer hover:bg-blue-50 flex items-center gap-2 ${farm.includes(item.name) ? 'bg-blue-100' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={farm.includes(item.name)}
+                                onChange={() => {}}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <span className={farm.includes(item.name) ? 'font-semibold' : ''}>{item.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {farm.length > 0 && (
+                          <div className="p-2 bg-gray-50 border-t border-gray-200 flex justify-between">
+                            <button
+                              type="button"
+                              onClick={() => { setFarm([]); setTimeout(checkSampleInfoComplete, 100); }}
+                              className="text-xs text-red-600 hover:text-red-800"
+                            >
+                              Clear all
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsFarmDropdownOpen(false)}
+                              className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
+                {/* Cycle Searchable Dropdown */}
+                <div className="space-y-1.5" ref={cycleDropdownRef}>
                   <label className="block text-sm font-semibold text-gray-700">Cycle</label>
-                  <select
-                    value={cycle}
-                    onChange={(e) => setCycle(e.target.value)}
-                    className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 bg-gray-50 focus:bg-white"
-                  >
-                    <option value="">Select cycle...</option>
-                    {cycles.map((item) => (
-                      <option key={item.id} value={item.name}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsCycleDropdownOpen(!isCycleDropdownOpen)}
+                      className={`w-full border-2 rounded-xl px-4 py-2.5 text-left flex justify-between items-center transition-all ${
+                        cycle ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 shadow-md' : 'bg-gray-50 border-gray-300 hover:bg-white hover:border-gray-400'
+                      }`}
+                    >
+                      <span className={cycle ? 'text-gray-900' : 'text-gray-500'}>
+                        {cycle || 'Select cycle...'}
+                      </span>
+                      <svg className={`w-5 h-5 transition-transform ${isCycleDropdownOpen ? 'rotate-180' : ''} ${cycle ? 'text-blue-600' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {isCycleDropdownOpen && (
+                      <div className="absolute z-[9999] w-full mt-2 bg-white border-2 border-blue-300 rounded-xl shadow-2xl max-h-60 overflow-hidden">
+                        <div className="p-2 bg-blue-50 border-b border-blue-200">
+                          <input
+                            type="text"
+                            placeholder="Search cycles..."
+                            value={cycleSearch}
+                            onChange={(e) => setCycleSearch(e.target.value)}
+                            className="w-full border border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-100"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="max-h-44 overflow-y-auto">
+                          {cycles.filter(item => item.name.toLowerCase().includes(cycleSearch.toLowerCase())).map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={() => { setCycle(item.name); setIsCycleDropdownOpen(false); setCycleSearch(''); }}
+                              className={`px-4 py-2 cursor-pointer hover:bg-blue-50 ${cycle === item.name ? 'bg-blue-100 font-semibold' : ''}`}
+                            >
+                              {item.name}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
+                {/* Flock Searchable Dropdown */}
+                <div className="space-y-1.5" ref={flockDropdownRef}>
                   <label className="block text-sm font-semibold text-gray-700">Flock</label>
-                  <select
-                    value={flock}
-                    onChange={(e) => setFlock(e.target.value)}
-                    className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 bg-gray-50 focus:bg-white"
-                  >
-                    <option value="">Select flock...</option>
-                    {flocks.map((item) => (
-                      <option key={item.id} value={item.name}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsFlockDropdownOpen(!isFlockDropdownOpen)}
+                      className={`w-full border-2 rounded-xl px-4 py-2.5 text-left flex justify-between items-center transition-all ${
+                        flock ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 shadow-md' : 'bg-gray-50 border-gray-300 hover:bg-white hover:border-gray-400'
+                      }`}
+                    >
+                      <span className={flock ? 'text-gray-900' : 'text-gray-500'}>
+                        {flock || 'Select flock...'}
+                      </span>
+                      <svg className={`w-5 h-5 transition-transform ${isFlockDropdownOpen ? 'rotate-180' : ''} ${flock ? 'text-blue-600' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {isFlockDropdownOpen && (
+                      <div className="absolute z-[9999] w-full mt-2 bg-white border-2 border-blue-300 rounded-xl shadow-2xl max-h-60 overflow-hidden">
+                        <div className="p-2 bg-blue-50 border-b border-blue-200">
+                          <input
+                            type="text"
+                            placeholder="Search flocks..."
+                            value={flockSearch}
+                            onChange={(e) => setFlockSearch(e.target.value)}
+                            className="w-full border border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-100"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="max-h-44 overflow-y-auto">
+                          {flocks.filter(item => item.name.toLowerCase().includes(flockSearch.toLowerCase())).map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={() => { setFlock(item.name); setIsFlockDropdownOpen(false); setFlockSearch(''); }}
+                              className={`px-4 py-2 cursor-pointer hover:bg-blue-50 ${flock === item.name ? 'bg-blue-100 font-semibold' : ''}`}
+                            >
+                              {item.name}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -2093,102 +3067,89 @@ Status: ${error.response?.status || "N/A"}`,
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
-                    className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 bg-gray-50 focus:bg-white"
+                    className={`w-full border-2 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all duration-200 ${
+                      status ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 shadow-md' : 'bg-gray-50 border-gray-300'
+                    } focus:bg-white`}
                   >
-                    <option value="">Select status...</option>
-                    {statuses.map((item) => (
-                      <option key={item.id} value={item.name}>
-                        {item.name}
-                      </option>
-                    ))}
+                    <option value="In Progress">In Progress</option>
+                    <option value="Hold">Hold</option>
+                    <option value="Rejected">Rejected</option>
+                    <option value="Other">Other</option>
                   </select>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Department Selection & Unit Management */}
-          <div className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-300 border border-gray-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-purple-500 to-indigo-600 px-6 py-4">
+          {/* Select Department Section */}
+          <div className="bg-white rounded-2xl shadow-md border border-gray-200 overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-600 px-4 sm:px-6 py-4">
               <h3 className="text-lg font-bold text-white flex items-center gap-3">
                 <div className="p-2 bg-white bg-opacity-20 rounded-lg backdrop-blur-sm">
-                  <svg
-                    className="w-5 h-5 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-                    />
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
                 </div>
-                <span>Departments</span>
+                <span>Select Department</span>
+                {units.length > 0 && (
+                  <span className="ml-auto bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-medium">
+                    {units.length} {units.length === 1 ? 'unit' : 'units'}
+                  </span>
+                )}
               </h3>
             </div>
-            <div className="p-6">
-
-              {/* Department Chips with Unit Count */}
-              {getUsedDepartments().length > 0 && (
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
-                  <div className="flex flex-wrap gap-3">
-                    {getUsedDepartments().map((dept) => {
-                      const colors = getDepartmentColors(dept.code);
-
-                      return (
-                        <div
-                          key={dept.id}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 ${colors.chip}`}
-                        >
-                          <span className="font-semibold">{dept.name}</span>
-
-                          <div className="flex items-center gap-2 bg-white rounded px-3 py-1 border">
-                            <span className="font-bold text-sm">
-                              {dept.count}
-                            </span>
-                            <span className="text-xs opacity-75">
-                              {dept.count === 1 ? "unit" : "units"}
-                            </span>
-                          </div>
+            <div className="p-4 sm:p-6">
+              <p className="text-sm text-gray-600 mb-3">Select departments for this sample. Use <strong>Duplicate</strong> to add more units per department.</p>
+              {/* Department Selection Buttons - Toggle Select/Unselect */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {departments.map((dept) => {
+                  const colors = getDepartmentColors(dept.code);
+                  const hasUnit = units.some(u => u.department_id === dept.id);
+                  
+                  return (
+                    <button
+                      key={dept.id}
+                      type="button"
+                      onClick={() => {
+                        if (hasUnit) {
+                          // Remove all units for this department
+                          setUnits(units.filter(u => u.department_id !== dept.id));
+                        } else {
+                          addUnit(dept.id);
+                        }
+                      }}
+                      className={`relative flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
+                        hasUnit 
+                          ? `${colors.chipSelected} shadow-lg text-white` 
+                          : 'bg-gray-50 border-gray-200 hover:shadow-md hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-8 h-8 ${hasUnit ? 'bg-white/20' : colors.badge} rounded-lg flex items-center justify-center shadow-sm`}>
+                          <span className={`font-bold text-xs ${hasUnit ? 'text-white' : 'text-white'}`}>{dept.code}</span>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                        <span className={`font-semibold text-sm ${hasUnit ? 'text-white' : 'text-gray-800'}`}>{dept.name}</span>
+                      </div>
+                      {hasUnit ? (
+                        <span className="px-2.5 py-1 bg-red-100 text-red-700 rounded-lg text-xs font-semibold hover:bg-red-200 transition-colors">
+                          Unselect
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-200 transition-colors">
+                          Select
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
 
-              {/* Add Department Dropdown */}
-              {getAvailableDepartments().length > 0 && (
-                <div className="mb-6">
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        addUnit(parseInt(e.target.value));
-                        e.target.value = "";
-                      }
-                    }}
-                    className="w-full border-2 border-blue-300 rounded-lg px-4 py-2 bg-white hover:bg-blue-50 cursor-pointer"
-                  >
-                    <option value="">+ Add Unit</option>
-                    {getAvailableDepartments().map((dept) => (
-                      <option key={dept.id} value={dept.id}>
-                        {dept.name} ({dept.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {units.length === 0 && (
-                <p className="text-gray-500 text-center py-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                  Add units to begin
-                </p>
-              )}
-
-              {/* Individual Unit Forms */}
+          {/* Department Units - Only show if units exist */}
+          {units.length > 0 && (
+            <div className="space-y-4">
+              {/* Individual Unit Forms - Grouped by Department */}
               {Object.entries(getUnitsByDepartment()).map(
                 ([deptIdStr, deptUnits]) => {
                   const deptId = parseInt(deptIdStr);
@@ -2196,17 +3157,27 @@ Status: ${error.response?.status || "N/A"}`,
                   const colors = getDepartmentColors(deptInfo.code);
 
                   return (
-                    <div key={deptId} className="mb-6">
-                      <h4 className={`font-bold text-lg mb-4 pb-2 border-b-2 ${colors.border}`}>
-                        {deptInfo.name}
-                      </h4>
+                    <div key={deptId} className="bg-white rounded-2xl shadow-md border border-gray-200 overflow-hidden">
+                      {/* Department Header */}
+                      <div className={`bg-gradient-to-r ${colors.gradient} px-4 sm:px-5 py-3`}>
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-white flex items-center gap-2">
+                            <div className="w-7 h-7 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
+                              <span className="text-xs font-bold">{deptInfo.code}</span>
+                            </div>
+                            <span>{deptInfo.name}</span>
+                          </h4>
+                          <span className="bg-white bg-opacity-20 px-2.5 py-1 rounded-full text-xs font-semibold text-white">
+                            {deptUnits.length} {deptUnits.length === 1 ? 'unit' : 'units'}
+                          </span>
+                        </div>
+                      </div>
 
-                      <div className="space-y-4">
+                      <div className="p-3 sm:p-4 space-y-3">
                         {deptUnits.map((unit) => {
                           const globalIndex = units.indexOf(unit);
 
                           // Calculate the correct sequential position for this department's units
-                          // Count how many units of this department appear before this one in the units array
                           const sequentialIndex = units.filter((u, idx) =>
                             u.department_id === deptId && idx <= globalIndex
                           ).length - 1;
@@ -2218,72 +3189,92 @@ Status: ${error.response?.status || "N/A"}`,
                               ? `${previewData.unit_counters[deptId].department_code}-${previewData.unit_counters[deptId].next_unit_number + sequentialIndex}`
                               : `${deptInfo.code}-${sequentialIndex + 1}`);
 
+                          const isExpanded = expandedUnits.has(globalIndex);
+                          const isComplete = completedFields.units[globalIndex];
+
                           return (
                             <div
                               key={globalIndex}
-                              className={`border-2 ${colors.border} rounded-xl transition-all duration-300 hover:shadow-lg ${colors.bg}`}
+                              className={`rounded-xl border-2 transition-all duration-300 ${
+                                isComplete 
+                                  ? 'border-green-300 bg-green-50/50' 
+                                  : isExpanded 
+                                    ? `${colors.border} bg-white shadow-md` 
+                                    : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                              }`}
                             >
-                              {/* Unit Header - Always Visible */}
-                              <div className="flex items-center justify-between p-4 bg-white border-b-2 transition-colors hover:bg-gray-50">
-                                <div className="flex items-center gap-3 flex-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleUnitExpansion(globalIndex)}
-                                    className="p-2 hover:bg-gray-200 rounded-lg transition-all duration-200 group"
-                                  >
+                              {/* Unit Header - Compact & Clean */}
+                              <div 
+                                className={`flex items-center justify-between p-3 cursor-pointer transition-colors ${
+                                  isExpanded ? 'border-b border-gray-200' : ''
+                                }`}
+                                onClick={() => toggleUnitExpansion(globalIndex)}
+                              >
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  {/* Expand/Collapse Icon */}
+                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center transition-all ${
+                                    isExpanded ? `${colors.badge} text-white` : 'bg-gray-200 text-gray-600'
+                                  }`}>
                                     <svg
-                                      className={`w-5 h-5 text-gray-600 group-hover:text-gray-900 transition-transform duration-300 ${expandedUnits.has(globalIndex) ? 'rotate-90' : ''}`}
+                                      className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
                                     >
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                                     </svg>
-                                  </button>
-                                  <div className="bg-gradient-to-r from-gray-700 to-gray-900 px-4 py-2 rounded-lg shadow-sm">
-                                    <span className="font-mono font-bold text-white text-sm">
+                                  </div>
+                                  
+                                  {/* Unit Code Badge */}
+                                  <div className={`${colors.badge} px-2.5 py-1 rounded-md shadow-sm`}>
+                                    <span className="font-mono font-bold text-white text-xs tracking-wide">
                                       {unitCode}
                                     </span>
                                   </div>
-                                  {completedFields.units[globalIndex] && (
-                                    <div className="flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold animate-pulse">
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  
+                                  {/* Status Indicator */}
+                                  {isComplete ? (
+                                    <div className="flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-md text-xs font-semibold">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                       </svg>
-                                      Complete
+                                      <span className="hidden sm:inline">Complete</span>
                                     </div>
-                                  )}
-                                  {!expandedUnits.has(globalIndex) && (
-                                    <div className="text-xs text-gray-500 font-medium bg-gray-100 px-3 py-1 rounded-full">
-                                      {unit.house?.length || 0} houses • {unit.sample_type?.length || 0} sample types
-                                    </div>
+                                  ) : !isExpanded && (
+                                    <span className="text-xs text-gray-500 truncate">
+                                      {unit.house?.length || 0} houses • {unit.sample_type?.length || 0} types
+                                    </span>
                                   )}
                                 </div>
-                                <div className="flex gap-2">
+                                
+                                {/* Action Buttons */}
+                                <div className="flex gap-1.5 ml-2" onClick={(e) => e.stopPropagation()}>
                                   <button
                                     type="button"
                                     onClick={() => duplicateUnit(globalIndex)}
-                                    className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 hover:scale-105 active:scale-95 text-sm font-semibold flex items-center gap-1.5 transition-all duration-200 shadow-sm hover:shadow"
-                                    title="Duplicate this unit with all its data"
+                                    className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                                    title="Duplicate"
                                   >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                     </svg>
-                                    <span className="hidden sm:inline">Duplicate</span>
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => removeUnit(globalIndex)}
-                                    className="px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 hover:scale-105 active:scale-95 text-sm font-semibold transition-all duration-200 shadow-sm hover:shadow"
+                                    className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                                    title="Remove"
                                   >
-                                    Remove
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
                                   </button>
                                 </div>
                               </div>
 
                               {/* Unit Body - Collapsible */}
-                              {expandedUnits.has(globalIndex) && (
-                                <div className="p-4">
+                              {isExpanded && (
+                                <div className="p-3 sm:p-4 bg-white">
                                   {/* Unit-Specific Fields */}
                                   <UnitFieldsForm
                                     unit={unit}
@@ -2296,7 +3287,43 @@ Status: ${error.response?.status || "N/A"}`,
                                     colors={colors}
                                   />
 
-                                  <div className="space-y-1.5">
+                                  {/* Department-Specific Fields */}
+                                  {deptInfo.code === "PCR" && unit.pcr_data && (
+                                    <PCRFields
+                                      unit={unit}
+                                      globalIndex={globalIndex}
+                                      updateUnit={updateUnit}
+                                      departmentId={deptId}
+                                      colors={colors}
+                                      setNotification={setNotification}
+                                    />
+                                  )}
+
+                                  {deptInfo.code === "SER" && unit.serology_data && (
+                                    <SerologyFields
+                                      unit={unit}
+                                      globalIndex={globalIndex}
+                                      updateUnit={updateUnit}
+                                      departmentId={deptId}
+                                      colors={colors}
+                                      setNotification={setNotification}
+                                    />
+                                  )}
+
+                                  {deptInfo.code === "MIC" &&
+                                    unit.microbiology_data && (
+                                      <MicrobiologyFields
+                                        unit={unit}
+                                        globalIndex={globalIndex}
+                                        updateUnit={updateUnit}
+                                        departmentId={deptId}
+                                        colors={colors}
+                                        setNotification={setNotification}
+                                      />
+                                    )}
+
+                                  {/* Notes field - before technician */}
+                                  <div className="space-y-1.5 mt-4">
                                     <label className="block text-sm font-semibold text-gray-700">
                                       Notes
                                     </label>
@@ -2312,38 +3339,6 @@ Status: ${error.response?.status || "N/A"}`,
                                       placeholder="Add any additional notes or comments..."
                                     />
                                   </div>
-
-                                  {/* Department-Specific Fields */}
-                                  {deptInfo.code === "PCR" && unit.pcr_data && (
-                                    <PCRFields
-                                      unit={unit}
-                                      globalIndex={globalIndex}
-                                      updateUnit={updateUnit}
-                                      departmentId={deptId}
-                                      colors={colors}
-                                    />
-                                  )}
-
-                                  {deptInfo.code === "SER" && unit.serology_data && (
-                                    <SerologyFields
-                                      unit={unit}
-                                      globalIndex={globalIndex}
-                                      updateUnit={updateUnit}
-                                      departmentId={deptId}
-                                      colors={colors}
-                                    />
-                                  )}
-
-                                  {deptInfo.code === "MIC" &&
-                                    unit.microbiology_data && (
-                                      <MicrobiologyFields
-                                        unit={unit}
-                                        globalIndex={globalIndex}
-                                        updateUnit={updateUnit}
-                                        departmentId={deptId}
-                                        colors={colors}
-                                      />
-                                    )}
                                 </div>
                               )}
                             </div>
@@ -2355,7 +3350,7 @@ Status: ${error.response?.status || "N/A"}`,
                 },
               )}
             </div>
-          </div>
+          )}
 
           {/* Submit Button */}
           <div className="flex gap-4">
@@ -2366,6 +3361,28 @@ Status: ${error.response?.status || "N/A"}`,
             >
               Cancel
             </button>
+            {!isEditMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Clear all form data and draft
+                  clearDraft();
+                  setDateReceived("");
+                  setCompany("");
+                  setFarm([]);
+                  setCycle("");
+                  setFlock("");
+                  setStatus("In Progress");
+                  setUnits([]);
+                  setExpandedUnits(new Set());
+                  setCompletedFields({ sampleInfo: false, units: {} });
+                  setNotification({ type: 'info', message: 'Form cleared' });
+                }}
+                className="px-8 py-3.5 bg-white border-2 border-orange-300 text-orange-600 rounded-xl hover:bg-orange-50 hover:border-orange-400 font-semibold transition-all duration-200 shadow-sm hover:shadow"
+              >
+                Clear
+              </button>
+            )}
             <button
               type="submit"
               disabled={
@@ -2432,40 +3449,31 @@ Status: ${error.response?.status || "N/A"}`,
                   <p className="text-sm text-gray-400 mt-1">Changes made before this feature was enabled are not tracked</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {editHistoryDialog.history.map((edit: any, idx: number) => (
-                    <div key={idx} className="bg-gray-50 rounded-lg p-4 border-l-4 border-amber-400">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-gray-800 capitalize">
-                            {edit.field_name.replace(/_/g, ' ')}
-                          </span>
-                          {edit.unit_code && (
-                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                              {edit.unit_code}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {new Date(edit.edited_at).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div className="bg-red-50 rounded p-3">
-                          <p className="text-xs text-red-600 font-medium mb-1">Before</p>
-                          <p className="text-red-800 break-words">{edit.old_value || '-'}</p>
-                        </div>
-                        <div className="bg-green-50 rounded p-3">
-                          <p className="text-xs text-green-600 font-medium mb-1">After</p>
-                          <p className="text-green-800 break-words">{edit.new_value || '-'}</p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Edited by: <span className="font-medium">{edit.edited_by}</span>
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                <table className="min-w-full border-collapse text-sm">
+                  <thead className="bg-gray-100 sticky top-0">
+                    <tr>
+                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Field</th>
+                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-red-600">Before</th>
+                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-green-600">After</th>
+                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Edited By</th>
+                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editHistoryDialog.history.map((edit: any, idx: number) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="border border-gray-300 px-3 py-2 font-medium">
+                          {formatFieldName(edit.field_name)}
+                          {edit.unit_code && <span className="text-xs text-blue-600 block">Unit: {edit.unit_code}</span>}
+                        </td>
+                        <td className="border border-gray-300 px-3 py-2 text-red-700 bg-red-50 break-words max-w-[150px]">{edit.old_value || '-'}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-green-700 bg-green-50 break-words max-w-[150px]">{edit.new_value || '-'}</td>
+                        <td className="border border-gray-300 px-3 py-2">{edit.edited_by}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{new Date(edit.edited_at).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
             <div className="mt-4 pt-4 border-t flex justify-end">

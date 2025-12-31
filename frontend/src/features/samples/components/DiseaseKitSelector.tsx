@@ -12,6 +12,7 @@ interface DiseaseKitSelectorProps {
   selectedDiseases: DiseaseKitItem[];
   onChange: (diseases: DiseaseKitItem[]) => void;
   departmentName: string;
+  defaultKitTypes?: Record<string, string>; // disease name -> default kit type
 }
 
 export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
@@ -20,6 +21,7 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
   selectedDiseases,
   onChange,
   departmentName,
+  defaultKitTypes = {},
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<'bottom' | 'top'>('bottom');
@@ -67,7 +69,9 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
     if (isDiseaseSelected(diseaseName)) {
       onChange(selectedDiseases.filter(d => d.disease !== diseaseName));
     } else {
-      onChange([...selectedDiseases, { disease: diseaseName, kit_type: '', test_count: 1 }]);
+      // Apply default kit type if available
+      const defaultKit = defaultKitTypes[diseaseName] || '';
+      onChange([...selectedDiseases, { disease: diseaseName, kit_type: defaultKit, test_count: 1 }]);
     }
   };
 
@@ -179,69 +183,78 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
                     key={disease.id}
                     className={`px-4 py-3 border-b last:border-b-0 transition-colors hover:${bgColor}`}
                   >
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-center gap-3">
                       {/* Checkbox */}
                       <input
                         type="checkbox"
                         checked={isDiseaseSelected(disease.name)}
                         onChange={() => handleDiseaseToggle(disease.name)}
-                        className="mt-1 h-5 w-5 text-blue-600 rounded-md focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                        className="h-5 w-5 text-blue-600 rounded-md focus:ring-2 focus:ring-blue-500 cursor-pointer flex-shrink-0"
                       />
 
                       {/* Disease Name */}
-                      <div className="flex-1">
-                        <label className="block text-sm font-semibold text-gray-800 cursor-pointer hover:text-gray-900">
-                          {disease.name}
-                        </label>
+                      <label className="text-sm font-semibold text-gray-800 cursor-pointer hover:text-gray-900 min-w-[120px]">
+                        {disease.name}
+                      </label>
 
-                        {/* Kit Type Dropdown - Only shown when disease is selected */}
-                        {isDiseaseSelected(disease.name) && (
-                          <div className="mt-2 space-y-3">
-                            {/* Kit Type Dropdown */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Kit Type</label>
-                              <select
-                                value={getKitTypeForDisease(disease.name)}
-                                onChange={(e) =>
-                                  handleKitTypeChange(disease.name, e.target.value)
-                                }
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-full text-sm border-2 border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                              >
-                                <option value="">Select kit type...</option>
-                                {availableKitTypes.map((kit) => (
-                                  <option key={kit.id} value={kit.name}>
-                                    {kit.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
+                      {/* Kit Type Dropdown - Always visible but only enabled when selected */}
+                      <select
+                        value={getKitTypeForDisease(disease.name)}
+                        onChange={(e) => {
+                          if (!isDiseaseSelected(disease.name)) {
+                            handleDiseaseToggle(disease.name);
+                          }
+                          handleKitTypeChange(disease.name, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        disabled={!isDiseaseSelected(disease.name)}
+                        className={`flex-1 text-sm border-2 rounded-lg px-2 py-1.5 transition-all ${
+                          isDiseaseSelected(disease.name) 
+                            ? 'border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500' 
+                            : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                      >
+                        <option value="">Kit type...</option>
+                        {availableKitTypes.map((kit) => (
+                          <option key={kit.id} value={kit.name}>
+                            {kit.name}
+                          </option>
+                        ))}
+                      </select>
 
-                            {/* Test Counter */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Test Count</label>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); handleTestCountChange(disease.name, -1); }}
-                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors font-bold text-lg"
-                                >
-                                  -
-                                </button>
-                                <div className="flex-1 bg-gray-50 border-2 border-gray-200 rounded-lg py-1.5 text-center font-bold text-gray-800">
-                                  {selectedDiseases.find(d => d.disease === disease.name)?.test_count || 1}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); handleTestCountChange(disease.name, 1); }}
-                                  className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 transition-colors font-bold text-lg"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                      {/* Test Counter - Always visible but only enabled when selected */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleTestCountChange(disease.name, -1); }}
+                          disabled={!isDiseaseSelected(disease.name)}
+                          className={`w-7 h-7 flex items-center justify-center rounded-full font-bold text-sm transition-colors ${
+                            isDiseaseSelected(disease.name)
+                              ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          }`}
+                        >
+                          -
+                        </button>
+                        <div className={`w-10 py-1 text-center font-bold text-sm rounded-lg border-2 ${
+                          isDiseaseSelected(disease.name)
+                            ? 'bg-gray-50 border-gray-200 text-gray-800'
+                            : 'bg-gray-100 border-gray-200 text-gray-400'
+                        }`}>
+                          {selectedDiseases.find(d => d.disease === disease.name)?.test_count || 1}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleTestCountChange(disease.name, 1); }}
+                          disabled={!isDiseaseSelected(disease.name)}
+                          className={`w-7 h-7 flex items-center justify-center rounded-full font-bold text-sm transition-colors ${
+                            isDiseaseSelected(disease.name)
+                              ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          }`}
+                        >
+                          +
+                        </button>
                       </div>
                     </div>
                   </div>

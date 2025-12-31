@@ -36,6 +36,7 @@ from app.models.department import Department
 from app.models.pcr_data import PCRData
 from app.models.serology_data import SerologyData
 from app.models.microbiology_data import MicrobiologyData
+from app.models.microbiology_coa import MicrobiologyCOA
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -73,6 +74,7 @@ class CompanyStats(BaseModel):
     serology_diseases: Optional[List[SerologyDiseaseCount]] = None
     pcr_extraction_count: Optional[int] = None
     pcr_detection_count: Optional[int] = None
+    serology_wells_count: Optional[int] = None
 
 
 class DiseaseKitStats(BaseModel):
@@ -89,6 +91,7 @@ class ReportsResponse(BaseModel):
     total_tests: int
     total_positive: int
     total_negative: int
+    total_wells_count: int = 0
     companies: List[CompanyStats]
     diseases: List[DiseaseKitStats]
     date_range: Dict[str, str]
@@ -165,23 +168,21 @@ def get_comprehensive_reports(
             # Calculate total sub-samples for microbiology (sum of samples_number)
             total_sub_samples = sum(unit.samples_number or 0 for unit in units)
         elif department == 'PCR':
-            # For PCR: samples = sum of extraction values, sub-samples = sum of samples_number
-            total_samples = 0
+            # For PCR: samples = count of units (1 per PCR code), sub-samples = sum of extraction values
+            total_samples = len(units)  # Each PCR code is 1 sample
             total_sub_samples = 0
             for unit in units:
-                # Samples = extraction count
+                # Sub-samples = extraction count
                 if unit.pcr_data and unit.pcr_data.extraction:
-                    total_samples += unit.pcr_data.extraction
-                # Sub-samples = samples_number (samples count field)
-                total_sub_samples += unit.samples_number or 0
+                    total_sub_samples += unit.pcr_data.extraction
         elif department == 'SER':
             # For Serology: samples = sum of samples_number
             total_samples = sum(unit.samples_number or 0 for unit in units)
             total_sub_samples = 0
         else:
             # For All Departments:
-            # MIC: Count units (1 per unit)
-            # PCR: Sum extraction values
+            # MIC: Count units (1 per unit), sub-samples = samples_number
+            # PCR: Count units (1 per unit), sub-samples = extraction values
             # SER: Sum samples_number
             total_samples = 0
             total_sub_samples = 0
@@ -190,11 +191,11 @@ def get_comprehensive_reports(
                     total_samples += 1
                     total_sub_samples += unit.samples_number or 0
                 elif unit.department.code == 'PCR':
-                    # PCR samples = extraction count
+                    # PCR samples = 1 per unit code
+                    total_samples += 1
+                    # PCR sub-samples = extraction count
                     if unit.pcr_data and unit.pcr_data.extraction:
-                        total_samples += unit.pcr_data.extraction
-                    # PCR sub-samples = samples_number
-                    total_sub_samples += unit.samples_number or 0
+                        total_sub_samples += unit.pcr_data.extraction
                 else:
                     total_samples += (unit.samples_number or 0)
     except Exception:
@@ -212,6 +213,7 @@ def get_comprehensive_reports(
         'pcr_extraction_total': 0,
         'pcr_detection_total': 0,
         'mic_test_count': 0,  # Track microbiology tests explicitly
+        'serology_wells_total': 0,  # Track serology wells count
         'micro_sample_types': defaultdict(lambda: {
             'total': 0,
             'above_limit': 0,
@@ -249,11 +251,11 @@ def get_comprehensive_reports(
                 # Track sub-samples for microbiology
                 company_data[company]['total_sub_samples'] += unit.samples_number or 0
             elif dept_code == 'PCR':
-                # For PCR: samples = extraction count, sub-samples = samples_number
+                # For PCR: samples = 1 per unit code, sub-samples = extraction count
+                company_data[company]['total_samples'] += 1
+                # Track sub-samples for PCR (extraction field)
                 if unit.pcr_data and unit.pcr_data.extraction:
-                    company_data[company]['total_samples'] += unit.pcr_data.extraction
-                # Track sub-samples for PCR (samples_number field)
-                company_data[company]['total_sub_samples'] += unit.samples_number or 0
+                    company_data[company]['total_sub_samples'] += unit.pcr_data.extraction
             else:
                 # For other departments: samples = sum of samples_number
                 company_data[company]['total_samples'] += unit.samples_number or 0
@@ -335,24 +337,27 @@ def get_comprehensive_reports(
         # Process Serology data
         if unit.serology_data:
             diseases_list = unit.serology_data.diseases_list
-            kit_type = unit.serology_data.kit_type
-            tests_count = unit.serology_data.tests_count or 0
-            if not kit_type:
-                kit_type = 'Unknown'
+            wells_count = unit.serology_data.number_of_wells or 0
+            
+            # Track wells count per company
+            company_data[company]['serology_wells_total'] += wells_count
             
             if isinstance(diseases_list, str):
                 diseases_list = json.loads(diseases_list)
             
-            # For each disease, increment count based on tests_count
+            # For each disease, use the disease-specific test_count and kit_type
             for disease_item in diseases_list:
                 disease = disease_item.get('disease', 'Unknown')
+                # Use disease-specific test_count (default to 1 if not set)
+                disease_test_count = disease_item.get('test_count', 1) or 1
+                # Use disease-specific kit_type, fallback to unit-level, then Unknown
+                disease_kit_type = disease_item.get('kit_type', '') or unit.serology_data.kit_type or 'Unknown'
                 
-                # Use tests_count instead of counting diseases
-                disease_kit_data[disease]['test_count'] += tests_count
+                disease_kit_data[disease]['test_count'] += disease_test_count
                 
                 # Track per company
-                company_data[company]['serology_diseases'][disease]['kit_type'] = kit_type
-                company_data[company]['serology_diseases'][disease]['count'] += tests_count
+                company_data[company]['serology_diseases'][disease]['kit_type'] = disease_kit_type
+                company_data[company]['serology_diseases'][disease]['count'] += disease_test_count
         
         # Process Microbiology data
         if unit.microbiology_data:
@@ -378,23 +383,28 @@ def get_comprehensive_reports(
             company_data[company]['micro_sample_types'][sample_type]['total'] += 1
             
             # Process diseases - microbiology diseases_list is just an array of strings
+            # Get index_list and hidden_indexes for proper test count calculation
+            index_list = unit.microbiology_data.index_list or []
+            hidden_indexes = unit.microbiology_coa.hidden_indexes if unit.microbiology_coa else {}
+            
             if diseases_list:
-                # Calculate tests for this unit = diseases_count * samples_number
-                unit_test_count = len(diseases_list) * (unit.samples_number or 0)
-                company_data[company]['mic_test_count'] += unit_test_count
-                
+                # Calculate tests = sum of visible indexes per disease (excluding hidden indexes)
+                unit_test_count = 0
                 for disease in diseases_list:
                     if disease and isinstance(disease, str):
-                        # Don't add to generic sample_diseases to avoid double counting
-                        # sample_diseases[sample_id].add(disease)
+                        # Get hidden indexes for this disease
+                        disease_hidden = hidden_indexes.get(disease, []) if hidden_indexes else []
+                        # Calculate visible indexes count for this disease
+                        visible_count = len(index_list) - len(disease_hidden)
+                        visible_count = max(0, visible_count)
+                        unit_test_count += visible_count
                         
                         # Group by disease (no kit type for micro)
                         disease_kit_key = f"{disease}|||"
-                        # For microbiology: each disease = samples_number tests
-                        samples_number = unit.samples_number or 0
-                        disease_kit_data[disease_kit_key]['test_count'] += samples_number
-                        # Note: Microbiology doesn't store results in the diseases_list
-                        # Results would need to come from a separate microbiology_coa table
+                        # For microbiology: each disease = visible indexes count
+                        disease_kit_data[disease_kit_key]['test_count'] += visible_count
+                
+                company_data[company]['mic_test_count'] += unit_test_count
     
     # Calculate total tests - sum all tests when no department filter, otherwise use department-specific logic
     try:
@@ -406,26 +416,36 @@ def get_comprehensive_reports(
                 for data in company_data.values()
             )
         elif department == 'MIC':
-            # For microbiology: tests = sum of (diseases_count * samples_number) for each unit
+            # For microbiology: tests = sum of visible indexes per disease (excluding hidden indexes)
             total_tests = 0
             for unit in units:
                 if unit.microbiology_data and unit.microbiology_data.diseases_list:
-                    diseases_count = len(unit.microbiology_data.diseases_list)
-                    samples_number = unit.samples_number or 0
-                    total_tests += diseases_count * samples_number
+                    diseases_list = unit.microbiology_data.diseases_list or []
+                    index_list = unit.microbiology_data.index_list or []
+                    hidden_indexes = unit.microbiology_coa.hidden_indexes if unit.microbiology_coa else {}
+                    
+                    for disease in diseases_list:
+                        disease_hidden = hidden_indexes.get(disease, []) if hidden_indexes else []
+                        visible_count = len(index_list) - len(disease_hidden)
+                        total_tests += max(0, visible_count)
         elif department is None:  # All departments - sum PCR detections + Serology tests + microbiology tests + other disease tests
             pcr_tests = sum(data['pcr_detection_total'] for data in company_data.values())
             serology_tests = sum(
                 sum(disease_data['count'] for disease_data in data['serology_diseases'].values())
                 for data in company_data.values()
             )
-            # Calculate microbiology tests
+            # Calculate microbiology tests (accounting for hidden indexes)
             mic_tests = 0
             for unit in units:
                 if unit.microbiology_data and unit.microbiology_data.diseases_list:
-                    diseases_count = len(unit.microbiology_data.diseases_list)
-                    samples_number = unit.samples_number or 0
-                    mic_tests += diseases_count * samples_number
+                    diseases_list = unit.microbiology_data.diseases_list or []
+                    index_list = unit.microbiology_data.index_list or []
+                    hidden_indexes = unit.microbiology_coa.hidden_indexes if unit.microbiology_coa else {}
+                    
+                    for disease in diseases_list:
+                        disease_hidden = hidden_indexes.get(disease, []) if hidden_indexes else []
+                        visible_count = len(index_list) - len(disease_hidden)
+                        mic_tests += max(0, visible_count)
             other_tests = sum(len(diseases) for diseases in sample_diseases.values())
             total_tests = pcr_tests + serology_tests + mic_tests + other_tests
         else:
@@ -444,13 +464,18 @@ def get_comprehensive_reports(
                 disease_data['count'] for disease_data in data['serology_diseases'].values()
             )
         elif department == 'MIC':
-            # For microbiology: calculate tests from units for this company
+            # For microbiology: calculate tests from visible indexes per disease (excluding hidden indexes)
             company_test_count = 0
             for unit in units:
                 if unit.sample.company == company and unit.microbiology_data and unit.microbiology_data.diseases_list:
-                    diseases_count = len(unit.microbiology_data.diseases_list)
-                    samples_number = unit.samples_number or 0
-                    company_test_count += diseases_count * samples_number
+                    diseases_list = unit.microbiology_data.diseases_list or []
+                    index_list = unit.microbiology_data.index_list or []
+                    hidden_indexes = unit.microbiology_coa.hidden_indexes if unit.microbiology_coa else {}
+                    
+                    for disease in diseases_list:
+                        disease_hidden = hidden_indexes.get(disease, []) if hidden_indexes else []
+                        visible_count = len(index_list) - len(disease_hidden)
+                        company_test_count += max(0, visible_count)
         elif department is None:  # All departments
             company_test_count = data['pcr_detection_total'] + sum(
                 disease_data['count'] for disease_data in data['serology_diseases'].values()
@@ -518,7 +543,8 @@ def get_comprehensive_reports(
                 microbiology_sample_types=microbiology_sample_types,
                 serology_diseases=serology_diseases,
                 pcr_extraction_count=data['pcr_extraction_total'] if data['pcr_extraction_total'] > 0 else None,
-                pcr_detection_count=data['pcr_detection_total'] if data['pcr_detection_total'] > 0 else None
+                pcr_detection_count=data['pcr_detection_total'] if data['pcr_detection_total'] > 0 else None,
+                serology_wells_count=data['serology_wells_total'] if data['serology_wells_total'] > 0 else None
             )
         )
     
@@ -544,12 +570,16 @@ def get_comprehensive_reports(
     
     diseases.sort(key=lambda x: x.test_count, reverse=True)
     
+    # Calculate total wells count for Serology
+    total_wells_count = sum(data['serology_wells_total'] for data in company_data.values())
+    
     return ReportsResponse(
         total_samples=total_samples,
         total_sub_samples=total_sub_samples,
         total_tests=total_tests,
         total_positive=total_positive,
         total_negative=total_negative,
+        total_wells_count=total_wells_count,
         companies=companies,
         diseases=diseases,
         date_range={
@@ -1437,7 +1467,7 @@ def get_month_comparison(
                     Sample.date_received <= end_date
                 ).scalar() or 0
             elif dept.code == 'SER':
-                test_count = db.query(func.count(SerologyData.id)).join(
+                test_count = db.query(func.coalesce(func.sum(SerologyData.tests_count), 0)).join(
                     Unit, SerologyData.unit_id == Unit.id
                 ).join(
                     Sample, Unit.sample_id == Sample.id

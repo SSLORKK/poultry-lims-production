@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.unit import Unit
 from app.models.serology_data import SerologyData
+from app.models.edit_history import EditHistory
 from app.services.drive_service import DriveService
 from app.api.v1.deps import get_current_user
 
@@ -273,6 +274,23 @@ async def upload_serology_coa(
                     'coa_file_id': upload_result.id
                 })
         
+        # Track edit history for serology COA upload
+        old_diseases_str = str(serology_data.diseases_list)
+        new_diseases_str = str(updated_diseases)
+        if old_diseases_str != new_diseases_str:
+            sample_code = unit.sample.sample_code if unit.sample else None
+            edit_history = EditHistory(
+                entity_type='unit',
+                entity_id=unit_id,
+                field_name='serology_coa_upload',
+                old_value=old_diseases_str,
+                new_value=new_diseases_str,
+                edited_by=current_user.full_name,
+                sample_code=sample_code,
+                unit_code=unit.unit_code
+            )
+            db.add(edit_history)
+        
         serology_data.diseases_list = updated_diseases
         # Flag the JSON field as modified so SQLAlchemy detects the change
         flag_modified(serology_data, 'diseases_list')
@@ -356,7 +374,28 @@ async def update_serology_results(
             else:
                 updated_diseases.append(disease)
         
+        # Track edit history for serology results update
+        old_diseases_str = str(serology_data.diseases_list)
+        new_diseases_str = str(updated_diseases)
+        if old_diseases_str != new_diseases_str:
+            # Get sample code and unit code for edit history
+            sample_code = unit.sample.sample_code if unit.sample else None
+            unit_code = unit.unit_code
+            
+            edit_history = EditHistory(
+                entity_type='unit',
+                entity_id=unit_id,
+                field_name='serology_results',
+                old_value=old_diseases_str,
+                new_value=new_diseases_str,
+                edited_by=current_user.full_name,
+                sample_code=sample_code,
+                unit_code=unit_code
+            )
+            db.add(edit_history)
+        
         serology_data.diseases_list = updated_diseases
+        flag_modified(serology_data, 'diseases_list')
         db.commit()
     
     return {"success": True, "message": "Results updated successfully"}

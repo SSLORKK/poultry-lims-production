@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { SalmonellaSheet } from './sheets/SalmonellaSheet';
 import { TotalCountSheet } from './sheets/TotalCountSheet';
 import { FungiSheet } from './sheets/FungiSheet';
@@ -15,6 +15,14 @@ export const TechnicalDataSheet: React.FC = () => {
     const [startDate, setStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const sheetRef = useRef<SheetRef>(null);
+    const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
+
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => setNotification(null), 4000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification]);
 
     const tabs: { id: SheetType; label: string }[] = [
         { id: 'salmonella', label: 'Salmonella' },
@@ -26,7 +34,7 @@ export const TechnicalDataSheet: React.FC = () => {
 
     const handleExportExcel = () => {
         if (!validateDateRange(startDate, endDate)) {
-            alert('Invalid Date Range: Start date cannot be after end date.');
+            setNotification({ type: 'error', message: 'Invalid date range: The start date must be before or equal to the end date. Please adjust your date selection.' });
             return;
         }
         sheetRef.current?.exportToExcel();
@@ -34,7 +42,7 @@ export const TechnicalDataSheet: React.FC = () => {
 
     const handleExportPDF = () => {
         if (!validateDateRange(startDate, endDate)) {
-            alert('Invalid Date Range: Start date cannot be after end date.');
+            setNotification({ type: 'error', message: 'Invalid date range: The start date must be before or equal to the end date. Please adjust your date selection.' });
             return;
         }
         sheetRef.current?.exportToPDF();
@@ -59,6 +67,27 @@ export const TechnicalDataSheet: React.FC = () => {
 
     return (
         <div className="p-6 min-h-screen bg-gray-100">
+            {/* Toast Notification */}
+            {notification && (
+                <div className="fixed top-4 right-4 z-50 animate-pulse">
+                    <div className={`px-5 py-4 rounded-xl shadow-lg flex items-center gap-3 min-w-[320px] max-w-md ${
+                        notification.type === 'success' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' :
+                        notification.type === 'error' ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white' :
+                        'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
+                    }`}>
+                        <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="font-medium">{notification.message}</span>
+                        <button onClick={() => setNotification(null)} className="ml-auto hover:opacity-80">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Control Bar - Tabs and Date Range on same line */}
             <div className="mb-6 bg-white p-4 rounded-lg shadow-sm flex flex-wrap items-center justify-between gap-4 print:hidden">
                 {/* Tabs Section */}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { apiClient } from '../../../services/apiClient';
 import { useCurrentUser } from '../../../hooks/useCurrentUser';
@@ -54,7 +54,8 @@ export function PCRCOA() {
   
   const [unitData, setUnitData] = useState<UnitData | null>(null);
   const [coaData, setCoaData] = useState<COAData | null>(null);
-  const [testResults, setTestResults] = useState<{ [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string }> }>({});
+  const [testResults, setTestResults] = useState<{ [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string; neg_control: string }> }>({});
+  const [sampleTypes, setSampleTypes] = useState<string[]>([]);
   const [dateTested, setDateTested] = useState<string>('');
   const [testedBy, setTestedBy] = useState<string>('');
   const [testedByPIN, setTestedByPIN] = useState<string>('');
@@ -71,9 +72,25 @@ export function PCRCOA() {
   const [error, setError] = useState<string | null>(null);
   const [postponedReason, setPostponedReason] = useState<string>('');
   const [showPostponedModal, setShowPostponedModal] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
-  // Ref for keyboard navigation in result table
-  const tableInputsRef = useRef<(HTMLInputElement | null)[][]>([]);
+  // Ordered diseases list for drag and drop reordering
+  const [orderedDiseases, setOrderedDiseases] = useState<Array<{ disease: string; kit_type: string }>>([]);
+  const [draggedDiseaseIndex, setDraggedDiseaseIndex] = useState<number | null>(null);
+  
+  // House values per column index (for the House row) - each column has independent house value
+  const [houseValues, setHouseValues] = useState<string[]>([]);
+  
+  // Sample type column drag state for reordering
+  const [draggedSampleTypeIndex, setDraggedSampleTypeIndex] = useState<number | null>(null);
+
+  // Auto-dismiss notification after 4 seconds
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   // Signature Images
   const [testedBySignatureImage, setTestedBySignatureImage] = useState<string | null>(null);
@@ -82,19 +99,22 @@ export function PCRCOA() {
   const [labManagerSignatureImage, setLabManagerSignatureImage] = useState<string | null>(null);
 
   const initializeTestResults = useCallback((unit: UnitData) => {
-    const results: { [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string }> } = {};
+    const results: { [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string; neg_control: string }> } = {};
     
     unit.pcr_data?.diseases_list?.forEach((diseaseItem) => {
       const emptyValues: { [sampleType: string]: string } = {};
-      unit.sample_type?.forEach((sampleType) => {
-        emptyValues[sampleType] = '';
+      unit.sample_type?.forEach((_, idx) => {
+        emptyValues[`col_${idx}`] = '';
       });
       results[diseaseItem.disease] = [
-        { houses: '', values: emptyValues, pos_control: '' }
+        { houses: '', values: emptyValues, pos_control: '', neg_control: 'confirmed' }
       ];
     });
     
     setTestResults(results);
+    setSampleTypes(unit.sample_type || []);
+    // Initialize house values array with empty strings for each sample type
+    setHouseValues(new Array(unit.sample_type?.length || 0).fill(''));
     setTestedBy(unit.pcr_data?.technician_name || '');
   }, []);
 
@@ -106,6 +126,11 @@ export function PCRCOA() {
       // Fetch unit data
       const unitResponse = await apiClient.get(`/units/${unitId}`);
       setUnitData(unitResponse.data);
+      
+      // Initialize ordered diseases from unit data
+      if (unitResponse.data.pcr_data?.diseases_list) {
+        setOrderedDiseases(unitResponse.data.pcr_data.diseases_list);
+      }
 
       // Try to fetch existing COA data
       try {
@@ -115,14 +140,15 @@ export function PCRCOA() {
 
         // Normalize test results to new structure
         const normalize = (raw: any, sampleTypes: string[]) => {
-          const normalized: { [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string }> } = {};
+          const normalized: { [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string; neg_control: string }> } = {};
           Object.entries(raw || {}).forEach(([disease, value]: [string, any]) => {
             if (Array.isArray(value)) {
               // New format: array of pools
               normalized[disease] = value.map((pool) => ({
                 houses: pool.houses || '',
                 values: { ...sampleTypes.reduce((acc, st) => ({ ...acc, [st]: pool.values?.[st] || '' }), {}) },
-                pos_control: pool.pos_control || ''
+                pos_control: pool.pos_control || '',
+                neg_control: pool.neg_control || 'confirmed'
               }));
             } else if (value && typeof value === 'object') {
               // Old format: single object - convert to single pool
@@ -130,7 +156,7 @@ export function PCRCOA() {
               const pos_control = value.pos_control || '';
               const values: { [sampleType: string]: string } = {};
               sampleTypes.forEach(st => { values[st] = value[st] || ''; });
-              normalized[disease] = [{ houses, values, pos_control }];
+              normalized[disease] = [{ houses, values, pos_control, neg_control: 'confirmed' }];
             } else {
               normalized[disease] = [];
             }
@@ -138,8 +164,11 @@ export function PCRCOA() {
           return normalized;
         };
 
-        const sampleTypes = unitResponse.data?.sample_type || [];
-        setTestResults(normalize(coa.test_results, sampleTypes));
+        const initialSampleTypes = unitResponse.data?.sample_type || [];
+        setSampleTypes(initialSampleTypes);
+        // Initialize house values array with empty strings for each sample type
+        setHouseValues(new Array(initialSampleTypes.length).fill(''));
+        setTestResults(normalize(coa.test_results, initialSampleTypes));
         setDateTested(coa.date_tested || '');
         setTestedBy(coa.tested_by || '');
         setReviewedBy(coa.reviewed_by || '');
@@ -230,32 +259,124 @@ export function PCRCOA() {
     });
   };
 
-  const handlePoolHousesChange = (disease: string, poolIndex: number, value: string) => {
-    setTestResults((prev) => {
-      const pools = [...(prev[disease] || [])];
-      const pool = { ...pools[poolIndex], houses: value };
-      pools[poolIndex] = pool;
-      return { ...prev, [disease]: pools };
+  // Remove a sample type column by index
+  const removeSampleTypeColumn = (index: number) => {
+    if (sampleTypes.length <= 1) return; // Keep at least one
+    setSampleTypes(prev => prev.filter((_, i) => i !== index));
+    setHouseValues(prev => prev.filter((_, i) => i !== index));
+    setTestResults(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(disease => {
+        updated[disease] = updated[disease].map(pool => {
+          const valuesArray = Object.values(pool.values);
+          const newValuesArray = valuesArray.filter((_, i) => i !== index);
+          const newValues: { [key: string]: string } = {};
+          newValuesArray.forEach((val, i) => { newValues[`col_${i}`] = val; });
+          return { ...pool, values: newValues };
+        });
+      });
+      return updated;
     });
   };
 
-  const handlePoolPosControlChange = (disease: string, poolIndex: number, value: string) => {
-    setTestResults((prev) => {
-      const pools = [...(prev[disease] || [])];
-      const pool = { ...pools[poolIndex], pos_control: value };
-      pools[poolIndex] = pool;
-      return { ...prev, [disease]: pools };
+  // Duplicate a specific sample type column
+  const duplicateSampleType = (sampleType: string, index: number) => {
+    // Just copy the name as-is without adding numbers
+    const newSampleTypes = [...sampleTypes];
+    newSampleTypes.splice(index + 1, 0, sampleType);
+    setSampleTypes(newSampleTypes);
+    // Add new house value at the new index position
+    setHouseValues(prev => {
+      const newHouseValues = [...prev];
+      newHouseValues.splice(index + 1, 0, prev[index] || '');
+      return newHouseValues;
+    });
+    setTestResults(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(disease => {
+        updated[disease] = updated[disease].map(pool => {
+          // Convert values to array, insert duplicate, then back to object with new indices
+          const valuesArray = newSampleTypes.map((_, i) => {
+            if (i <= index) return Object.values(pool.values)[i] || '';
+            if (i === index + 1) return Object.values(pool.values)[index] || '';
+            return Object.values(pool.values)[i - 1] || '';
+          });
+          const newValues: { [key: string]: string } = {};
+          newSampleTypes.forEach((_, i) => { newValues[`col_${i}`] = valuesArray[i] || ''; });
+          return { ...pool, values: newValues };
+        });
+      });
+      return updated;
     });
   };
 
-  const addPool = (disease: string, sampleTypes: string[]) => {
-    setTestResults((prev) => {
-      const emptyValues: { [sampleType: string]: string } = {};
-      sampleTypes.forEach(st => { emptyValues[st] = ''; });
-      const pools = [...(prev[disease] || [])];
-      pools.push({ houses: '', values: emptyValues, pos_control: '' });
-      return { ...prev, [disease]: pools };
+  // Sample type column drag handlers
+  const handleSampleTypeDragStart = (index: number) => {
+    setDraggedSampleTypeIndex(index);
+  };
+
+  const handleSampleTypeDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedSampleTypeIndex === null || draggedSampleTypeIndex === index) return;
+    
+    const newSampleTypes = [...sampleTypes];
+    const draggedItem = newSampleTypes[draggedSampleTypeIndex];
+    newSampleTypes.splice(draggedSampleTypeIndex, 1);
+    newSampleTypes.splice(index, 0, draggedItem);
+    setSampleTypes(newSampleTypes);
+    
+    // Also reorder house values
+    setHouseValues(prev => {
+      const newHouseValues = [...prev];
+      const draggedHouse = newHouseValues[draggedSampleTypeIndex];
+      newHouseValues.splice(draggedSampleTypeIndex, 1);
+      newHouseValues.splice(index, 0, draggedHouse);
+      return newHouseValues;
     });
+    
+    setDraggedSampleTypeIndex(index);
+  };
+
+  const handleSampleTypeDragEnd = () => {
+    setDraggedSampleTypeIndex(null);
+  };
+
+  // Drag and drop handlers for disease reordering
+  const handleDragStart = (index: number) => {
+    setDraggedDiseaseIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedDiseaseIndex === null || draggedDiseaseIndex === index) return;
+    
+    // Reorder diseases
+    const newOrder = [...orderedDiseases];
+    const draggedItem = newOrder[draggedDiseaseIndex];
+    newOrder.splice(draggedDiseaseIndex, 1);
+    newOrder.splice(index, 0, draggedItem);
+    setOrderedDiseases(newOrder);
+    setDraggedDiseaseIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedDiseaseIndex(null);
+  };
+
+  // Move disease up in the order
+  const moveDiseaseUp = (index: number) => {
+    if (index === 0) return;
+    const newOrder = [...orderedDiseases];
+    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+    setOrderedDiseases(newOrder);
+  };
+
+  // Move disease down in the order
+  const moveDiseaseDown = (index: number) => {
+    if (index === orderedDiseases.length - 1) return;
+    const newOrder = [...orderedDiseases];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    setOrderedDiseases(newOrder);
   };
 
   const verifyPIN = async (pin: string, field: 'testedBy' | 'reviewedBy' | 'labSupervisor' | 'labManager') => {
@@ -282,7 +403,7 @@ export function PCRCOA() {
           setLabManagerSignatureImage(response.data.signature_image || null);
         }
       } else {
-        alert('Invalid PIN. Please try again.');
+        setNotification({ type: 'error', message: 'Invalid PIN. Please verify the PIN and try again.' });
         if (field === 'testedBy') {
           setTestedByPIN('');
         } else if (field === 'reviewedBy') {
@@ -295,7 +416,7 @@ export function PCRCOA() {
       }
     } catch (err) {
       console.error('Failed to verify PIN:', err);
-      alert('Failed to verify PIN. Please try again.');
+      setNotification({ type: 'error', message: 'PIN verification failed. Please check your connection and try again.' });
     }
   };
 
@@ -349,12 +470,12 @@ export function PCRCOA() {
       const sampleStatus = canApprove ? 'Completed' : 'Need Approval';
       await apiClient.patch(`/samples/${unitData.sample.id}`, { status: sampleStatus });
 
-      alert('COA saved successfully!');
-      navigate('/pcr/samples');
+      setNotification({ type: 'success', message: 'Certificate of Analysis saved successfully!' });
+      setTimeout(() => navigate('/pcr/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to save COA:', err);
       setError(err.response?.data?.detail || 'Failed to save COA');
-      alert('Failed to save COA. Please try again.');
+      setNotification({ type: 'error', message: 'Failed to save Certificate of Analysis. Please check your entries and try again.' });
     } finally {
       setSaving(false);
     }
@@ -362,6 +483,21 @@ export function PCRCOA() {
 
   const handleApprove = async () => {
     if (!unitData || !canApprove) return;
+
+    // Require at least 3 signatures: Reviewed By and Lab Supervisor are required, plus one more
+    const signatureCount = [testedBy, reviewedBy, labSupervisor, labManager].filter(s => s && s.trim()).length;
+    if (signatureCount < 3) {
+      setNotification({ type: 'warning', message: 'At least 3 signatures are required to approve the COA (Reviewed By and Lab Supervisor are required).' });
+      return;
+    }
+    if (!reviewedBy || !reviewedBy.trim()) {
+      setNotification({ type: 'warning', message: 'Reviewed By signature is required to approve the COA.' });
+      return;
+    }
+    if (!labSupervisor || !labSupervisor.trim()) {
+      setNotification({ type: 'warning', message: 'Lab Supervisor signature is required to approve the COA.' });
+      return;
+    }
 
     try {
       setSaving(true);
@@ -409,12 +545,12 @@ export function PCRCOA() {
       // Update parent sample status to 'Completed'
       await apiClient.patch(`/samples/${unitData.sample.id}`, { status: 'Completed' });
 
-      alert('COA approved successfully!');
-      navigate('/pcr/samples');
+      setNotification({ type: 'success', message: 'Certificate of Analysis approved successfully!' });
+      setTimeout(() => navigate('/pcr/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to approve COA:', err);
       setError(err.response?.data?.detail || 'Failed to approve COA');
-      alert('Failed to approve COA. Please try again.');
+      setNotification({ type: 'error', message: 'Failed to approve Certificate of Analysis. Please try again.' });
     } finally {
       setSaving(false);
     }
@@ -422,7 +558,7 @@ export function PCRCOA() {
 
   const handlePostpone = async () => {
     if (!unitData || !postponedReason.trim()) {
-      alert('Please enter a reason for postponing.');
+      setNotification({ type: 'warning', message: 'Please provide a reason for postponing this COA.' });
       return;
     }
 
@@ -455,65 +591,14 @@ export function PCRCOA() {
 
       setShowPostponedModal(false);
       setPostponedReason('');
-      alert('COA postponed successfully!');
-      navigate('/pcr/samples');
+      setNotification({ type: 'success', message: 'Certificate of Analysis postponed successfully!' });
+      setTimeout(() => navigate('/pcr/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to postpone COA:', err);
       setError(err.response?.data?.detail || 'Failed to postpone COA');
-      alert('Failed to postpone COA. Please try again.');
+      setNotification({ type: 'error', message: 'Failed to postpone Certificate of Analysis. Please try again.' });
     } finally {
       setSaving(false);
-    }
-  };
-
-  // Keyboard navigation handler for result table
-  const handleTableKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, rowIndex: number, colIndex: number, totalRows: number, totalCols: number) => {
-    const inputs = tableInputsRef.current;
-    let newRow = rowIndex;
-    let newCol = colIndex;
-
-    switch (e.key) {
-      case 'ArrowUp':
-        e.preventDefault();
-        newRow = rowIndex > 0 ? rowIndex - 1 : rowIndex;
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        newRow = rowIndex < totalRows - 1 ? rowIndex + 1 : rowIndex;
-        break;
-      case 'ArrowLeft':
-        if (e.currentTarget.selectionStart === 0) {
-          e.preventDefault();
-          newCol = colIndex > 0 ? colIndex - 1 : colIndex;
-        }
-        break;
-      case 'ArrowRight':
-        if (e.currentTarget.selectionStart === e.currentTarget.value.length) {
-          e.preventDefault();
-          newCol = colIndex < totalCols - 1 ? colIndex + 1 : colIndex;
-        }
-        break;
-      case 'Enter':
-        e.preventDefault();
-        // Move to next cell (right, or next row if at end)
-        if (colIndex < totalCols - 1) {
-          newCol = colIndex + 1;
-        } else if (rowIndex < totalRows - 1) {
-          newRow = rowIndex + 1;
-          newCol = 0;
-        }
-        break;
-      case 'Tab':
-        // Let default Tab behavior work, but could customize if needed
-        return;
-      default:
-        return;
-    }
-
-    // Focus the new cell
-    if (inputs[newRow] && inputs[newRow][newCol]) {
-      inputs[newRow][newCol]?.focus();
-      inputs[newRow][newCol]?.select();
     }
   };
 
@@ -559,10 +644,19 @@ export function PCRCOA() {
     if (!unitData || !unitData.sample) return '';
     
     const diseases = unitData.pcr_data?.diseases_list || [];
-    const sampleTypes = unitData.sample_type || [];
+    // Use sampleTypes state (not unitData.sample_type) to reflect UI changes
+    const pdfSampleTypes = sampleTypes.length > 0 ? sampleTypes : (unitData.sample_type || []);
     
-    // Format detection methods as "Disease (Kit Type)"
-    const detectionMethods = diseases.map(d => `${d.disease} (${d.kit_type})`).join(', ');
+    // Format detection methods as "Kit for (Disease1, Disease2)"
+    const kitToDiseasesMap: { [kit: string]: string[] } = {};
+    diseases.forEach(d => {
+      const kit = d.kit_type || 'Unknown Kit';
+      if (!kitToDiseasesMap[kit]) kitToDiseasesMap[kit] = [];
+      kitToDiseasesMap[kit].push(d.disease);
+    });
+    const detectionMethods = Object.entries(kitToDiseasesMap)
+      .map(([kit, diseaseList]) => `${kit} for (${diseaseList.join(', ')})`)
+      .join(' | ');
     
     // Helper to get pools for a disease
     const getPools = (disease: string) => {
@@ -571,29 +665,35 @@ export function PCRCOA() {
       return [];
     };
 
-    // Generate table rows for test results
+    // Generate table headers for sample types with house values (index-based)
+    const sampleTypeHeaders = pdfSampleTypes.map((st, idx) => {
+      const houseValue = houseValues[idx] || '';
+      return `<th style="vertical-align:top">
+        <div style="font-weight:700">${escapeHtml(st)}</div>
+        ${houseValue ? `<div style="font-size:10px; font-weight:600; color:#1e40af; margin-top:3px; background:#dbeafe; padding:2px 4px; border-radius:3px; white-space:nowrap">${escapeHtml(houseValue)}</div>` : ''}
+      </th>`;
+    }).join('');
+
+    // Generate disease rows for test results
     const tableRows = diseases.map(diseaseItem => {
       const pools = getPools(diseaseItem.disease);
-      return pools.map(pool => {
-        const sampleTypeCells = sampleTypes.map(st => {
-          const result = pool.values?.[st] || 'NA';
-          const formattedResult = formatCTValue(result);
-          return `<td>${escapeHtml(formattedResult)}</td>`;
-        }).join('');
-        const formattedPosControl = formatCTValue(pool.pos_control || '');
-        return `
-          <tr>
-            <td>${escapeHtml(diseaseItem.disease)}</td>
-            <td>${escapeHtml(pool.houses || '')}</td>
-            ${sampleTypeCells}
-            <td>${escapeHtml(formattedPosControl)}</td>
-          </tr>
-        `;
+      const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
+      const sampleTypeCells = pdfSampleTypes.map(st => {
+        const result = pool.values?.[st] || 'NA';
+        const formattedResult = formatCTValue(result);
+        return `<td>${escapeHtml(formattedResult)}</td>`;
       }).join('');
+      const formattedPosControl = formatCTValue(pool.pos_control || '');
+      const negControl = pool.neg_control || 'Confirmed';
+      return `
+        <tr>
+          <td>${escapeHtml(diseaseItem.disease)}</td>
+          ${sampleTypeCells}
+          <td>${escapeHtml(formattedPosControl)}</td>
+          <td>${escapeHtml(negControl)}</td>
+        </tr>
+      `;
     }).join('');
-    
-    // Generate table headers for sample types
-    const sampleTypeHeaders = sampleTypes.map(st => `<th>${escapeHtml(st)}</th>`).join('');
     
     return `
 <!DOCTYPE html>
@@ -614,13 +714,13 @@ export function PCRCOA() {
     *{box-sizing:border-box}
     html,body{background:var(--bg);color:var(--ink);font:12px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Tahoma,Arial,sans-serif; margin:0; padding:0;}
     body{display:block;}
-    .page{width:210mm; max-height:297mm; margin:2mm auto; padding:2mm 7mm; background:#fff; position:relative; box-shadow:0 0 5px rgba(0,0,0,0.15); overflow:hidden}
+    .page{width:210mm; min-height:297mm; margin:2mm auto; padding:2mm 7mm 15mm 7mm; background:#fff; position:relative; box-shadow:0 0 5px rgba(0,0,0,0.15);}
     .header{display:flex; align-items:center; gap:10px; border-bottom:2px solid var(--line); padding-bottom:4px; margin-bottom:6px}
     .logo{width:70px; height:70px; object-fit:contain;}
-    .lab-meta{flex:1}
-    .lab-name{font-size:18px; font-weight:900; color:var(--brand-ink); line-height:1.2}
+    .lab-meta{flex:1; text-align:center}
+    .lab-name{font-size:18px; font-weight:900; color:var(--brand-ink); line-height:1.2; text-align:center}
     .lab-sub{color:var(--muted); font-size:12px; margin-top:2px}
-    .coa-badge{margin-inline-start:auto; text-align:right; font-size:12px}
+    .coa-badge{margin-inline-start:auto; text-align:right; font-size:12px; min-width:100px}
     .badge-label{color:var(--muted); font-weight:600}
     .badge-value{color:var(--brand-ink); font-weight:800; font-size:15px}
     .info-block{margin-top:6px; padding:8px; border:1px solid var(--line); border-radius:4px; background:#f9fafb}
@@ -645,12 +745,21 @@ export function PCRCOA() {
     .muted{color:var(--muted)}
     .toolbar{position:sticky; top:0; background:#fff; padding:6px 0 10px; display:flex; gap:6px; z-index:10}
     .toolbar button{padding:6px 10px; border-radius:8px; border:1px solid var(--line); background:#f9fafb; cursor:pointer; font-size:12px}
+    .page-number{position:fixed; bottom:2mm; left:0; right:0; text-align:center; font-size:9px; color:var(--muted)}
     @media print{
       html,body{background:#fff; margin:0; padding:0}
-      .page{box-shadow:none; margin:0; width:210mm; max-height:297mm; padding:2mm 5mm; page-break-after:avoid}
+      .page{box-shadow:none; margin:0; width:210mm; min-height:auto; padding:2mm 5mm 8mm 5mm; page-break-inside:auto}
       .toolbar{display:none}
       a[href]:after{content:""}
       .section{page-break-inside:avoid}
+      table{page-break-inside:auto}
+      tr{page-break-inside:avoid; page-break-after:auto}
+      thead{display:table-header-group}
+      .page-number{position:fixed; bottom:2mm}
+    }
+    @page{
+      size:A4;
+      margin:5mm 5mm 8mm 5mm;
     }
   </style>
 </head>
@@ -668,30 +777,37 @@ export function PCRCOA() {
         <div style="text-align: center; font-size: 22px; font-weight: 900; color: #000000; margin-top: 6px;">Certificate of Analysis</div>
       </div>
       <div class="coa-badge">
-        <div class="badge-label">Test Report No.:</div>
-        <div class="badge-value">${escapeHtml(unitData.unit_code)}</div>
+        <div class="badge-value">PCR 002 R001</div>
       </div>
     </header>
 
     <section class="info-block">
-      <h2>Sample Information</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; border-bottom:1px solid var(--line); padding-bottom:3px">
+        <h2 style="margin:0; font-size:14px; color:var(--brand-ink)">Sample Information</h2>
+        <div style="text-align:right">
+          <span style="color:var(--muted); font-weight:600; font-size:11px">Test Report No.: </span>
+          <span style="color:var(--brand-ink); font-weight:800; font-size:13px">${escapeHtml(unitData.unit_code.replace('PCR-', 'P-'))}</span>
+        </div>
+      </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
         <div class="info-grid">
           <div class="info-label">Sample Code:</div><div class="info-value">${escapeHtml(unitData.sample.sample_code)}</div>
           <div class="info-label">Company:</div><div class="info-value">${escapeHtml(unitData.sample.company)}</div>
           <div class="info-label">Flock:</div><div class="info-value">${escapeHtml(unitData.sample.flock || 'N/A')}</div>
           <div class="info-label">House:</div><div class="info-value">${escapeHtml(unitData.house?.join(', ') || 'N/A')}</div>
-          <div class="info-label">Sample Types:</div><div class="info-value">${escapeHtml(sampleTypes.join(', '))}</div>
-          <div class="info-label">Extraction Method:</div><div class="info-value">${escapeHtml(unitData.pcr_data?.extraction_method || 'N/A')}</div>
         </div>
         <div class="info-grid">
           <div class="info-label">Unit Code:</div><div class="info-value">${escapeHtml(unitData.unit_code)}</div>
           <div class="info-label">Farm:</div><div class="info-value">${escapeHtml(unitData.sample.farm)}</div>
           <div class="info-label">Cycle:</div><div class="info-value">${escapeHtml(unitData.sample.cycle || 'N/A')}</div>
-          <div class="info-label">Age:</div><div class="info-value">${escapeHtml(unitData.age ? unitData.age + ' days' : 'N/A')}</div>
+          <div class="info-label">Age:</div><div class="info-value">${escapeHtml(unitData.age || 'N/A')}</div>
           <div class="info-label">Source:</div><div class="info-value">${escapeHtml(unitData.source || 'N/A')}</div>
-          <div class="info-label">Detection:</div><div class="info-value">${escapeHtml(detectionMethods)}</div>
         </div>
+      </div>
+      <div style="margin-top:6px; display:grid; grid-template-columns:120px 1fr; row-gap:4px; font-size:12px">
+        <div class="info-label">Sample Types:</div><div class="info-value">${escapeHtml(pdfSampleTypes.join(', '))}</div>
+        <div class="info-label">Extraction Method:</div><div class="info-value">${escapeHtml(unitData.pcr_data?.extraction_method || 'N/A')}</div>
+        <div class="info-label">Detection Method:</div><div class="info-value">${escapeHtml(detectionMethods)}</div>
       </div>
     </section>
 
@@ -700,10 +816,10 @@ export function PCRCOA() {
       <table>
         <thead>
           <tr>
-            <th style="width:20%">Disease</th>
-            <th style="width:15%">House</th>
+            <th style="width:18%">Disease</th>
             ${sampleTypeHeaders}
-            <th style="width:10%">Pos. Control</th>
+            <th style="width:10%">Pos. Con.</th>
+            <th style="width:10%">Neg. Con.</th>
           </tr>
         </thead>
         <tbody>
@@ -711,7 +827,7 @@ export function PCRCOA() {
         </tbody>
       </table>
       <div class="footnote">
-        <div class="muted">*Neg. = Negative, Ct:threshold cycle, NA = Not Applicable</div>
+        <div class="muted">*Neg. = Negative, Ct :threshold cycle, NA = Not Applicable, Pos. Con. = Positive Control, Neg. Con. = Negative Control</div>
         ${notes ? `<div style="margin-top:3px"><strong>Notes:</strong> ${escapeHtml(notes)}</div>` : ''}
       </div>
     </section>
@@ -773,19 +889,137 @@ export function PCRCOA() {
       </div>
     </section>
   </div>
+  <div class="page-number"></div>
+  <script>
+    // Page counter for PDF
+    (function() {
+      var pageNum = document.querySelector('.page-number');
+      if (pageNum) {
+        pageNum.textContent = 'Page 1 of 1';
+      }
+      window.onbeforeprint = function() {
+        if (pageNum) pageNum.textContent = 'Page 1 of 1';
+      };
+    })();
+  </script>
 </body>
 </html>
     `;
   };
 
-  const handlePrint = () => {
+  // Export PDF - opens print dialog with PDF pre-selected for exact styling
+  const handleDirectPDFDownload = () => {
+    if (!unitData) return;
+    
+    // Generate filename for clipboard with all available info:
+    // sample code - unit code - company - farm - flock - houses - source - age - cycle - diseases
+    const sampleCode = unitData.sample?.sample_code || '';
+    const unitCode = unitData.unit_code || '';
+    const company = unitData.sample?.company || '';
+    const farm = unitData.sample?.farm || '';
+    const flock = unitData.sample?.flock || '';
+    const houses = unitData.house && unitData.house.length > 0 ? unitData.house.join(', ') : '';
+    const source = Array.isArray(unitData.source) ? unitData.source.join(', ') : (unitData.source || '');
+    const age = unitData.age || '';
+    const cycle = unitData.sample?.cycle || '';
+    const diseases = unitData.pcr_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '';
+    
+    // Build filename string with all available parts
+    let filenameParts: string[] = [];
+    if (sampleCode) filenameParts.push(sampleCode);
+    if (unitCode) filenameParts.push(unitCode);
+    if (company) filenameParts.push(company);
+    if (farm) filenameParts.push(farm);
+    if (flock) filenameParts.push(flock);
+    if (houses) filenameParts.push(houses);
+    if (source) filenameParts.push(source);
+    if (age) filenameParts.push(age);
+    if (cycle) filenameParts.push(cycle);
+    if (diseases) filenameParts.push(diseases);
+    
+    const filename = filenameParts.join(' - ');
+    
+    // Copy filename to clipboard with robust fallback
+    const copyToClipboard = async (text: string) => {
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (err) {
+          console.warn('Clipboard API failed, trying fallback');
+        }
+      }
+      
+      // Fallback: Create a temporary textarea element
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+      } catch (err) {
+        console.error('Fallback copy failed:', err);
+        return false;
+      }
+    };
+    
+    copyToClipboard(filename).then((success) => {
+      if (success) {
+        setNotification({ type: 'success', message: `Filename copied: ${filename}` });
+      } else {
+        setNotification({ type: 'warning', message: `Filename: ${filename}` });
+      }
+    });
+    
     const htmlContent = generatePDFTemplate();
     const printWindow = window.open('', '_blank');
     if (printWindow) {
+      // Write content
+      printWindow.document.open();
       printWindow.document.write(htmlContent);
       printWindow.document.close();
-      printWindow.focus();
-      // Removed auto-trigger print - user will click Print button when ready
+      
+      // Single print trigger after images load - no duplicate calls
+      let printTriggered = false;
+      const triggerPrint = () => {
+        if (printTriggered) return;
+        printTriggered = true;
+        requestAnimationFrame(() => {
+          printWindow.focus();
+          printWindow.print();
+        });
+      };
+      
+      // Wait for all images to load before printing
+      const images = printWindow.document.querySelectorAll('img');
+      if (images.length === 0) {
+        setTimeout(triggerPrint, 300);
+      } else {
+        let loadedCount = 0;
+        const checkAllLoaded = () => {
+          loadedCount++;
+          if (loadedCount >= images.length) {
+            triggerPrint();
+          }
+        };
+        images.forEach((img) => {
+          if (img.complete) {
+            checkAllLoaded();
+          } else {
+            img.onload = checkAllLoaded;
+            img.onerror = checkAllLoaded;
+          }
+        });
+        // Fallback timeout if images take too long
+        setTimeout(triggerPrint, 3000);
+      }
     }
   };
 
@@ -828,10 +1062,17 @@ export function PCRCOA() {
   }
 
   const diseases = unitData.pcr_data?.diseases_list || [];
-  const sampleTypes = unitData.sample_type || [];
   
-  // Format detection methods as "Disease (Kit Type)"
-  const detectionMethods = diseases.map(d => `${d.disease} (${d.kit_type})`).join(', ');
+  // Format detection methods as "Kit for (Disease1, Disease2)"
+  const kitToDiseasesMapUI: { [kit: string]: string[] } = {};
+  diseases.forEach(d => {
+    const kit = d.kit_type || 'Unknown Kit';
+    if (!kitToDiseasesMapUI[kit]) kitToDiseasesMapUI[kit] = [];
+    kitToDiseasesMapUI[kit].push(d.disease);
+  });
+  const detectionMethods = Object.entries(kitToDiseasesMapUI)
+    .map(([kit, diseaseList]) => `${kit} for (${diseaseList.join(', ')})`)
+    .join(' | ');
 
   // Handle back navigation - go to database if came from there
   const handleBack = () => {
@@ -844,6 +1085,39 @@ export function PCRCOA() {
 
   return (
     <div className="p-8">
+      {/* Toast Notification */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-50 animate-pulse">
+          <div className={`px-5 py-4 rounded-xl shadow-lg flex items-center gap-3 min-w-[320px] max-w-md ${
+            notification.type === 'success' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white' :
+            notification.type === 'error' ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white' :
+            'bg-gradient-to-r from-amber-500 to-orange-500 text-white'
+          }`}>
+            {notification.type === 'success' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            {notification.type === 'error' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            {notification.type === 'warning' && (
+              <svg className="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            )}
+            <span className="font-medium">{notification.message}</span>
+            <button onClick={() => setNotification(null)} className="ml-auto hover:opacity-80">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       <button
         type="button"
         onClick={handleBack}
@@ -882,10 +1156,19 @@ export function PCRCOA() {
             <span className="font-semibold">Flock:</span> {unitData.sample.flock || '-'}
           </div>
           <div>
+            <span className="font-semibold">Cycle:</span> {unitData.sample.cycle || '-'}
+          </div>
+          <div>
             <span className="font-semibold">House:</span> {unitData.house?.join(', ') || '-'}
           </div>
           <div>
             <span className="font-semibold">Age:</span> {unitData.age || '-'}
+          </div>
+          <div>
+            <span className="font-semibold">Source:</span> {unitData.source || '-'}
+          </div>
+          <div>
+            <span className="font-semibold">Sample Types:</span> {sampleTypes.join(', ') || '-'}
           </div>
           <div>
             <span className="font-semibold">Extraction Method:</span> {unitData.pcr_data?.extraction_method || '-'}
@@ -896,8 +1179,8 @@ export function PCRCOA() {
         </div>
 
         {/* COA Metadata */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div>
+        <div className="mb-6">
+          <div className="w-full md:w-1/2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Date Tested</label>
             <input
               type="date"
@@ -905,17 +1188,6 @@ export function PCRCOA() {
               onChange={(e) => setDateTested(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="draft">Draft</option>
-              <option value="finalized">Finalized</option>
-            </select>
           </div>
         </div>
 
@@ -952,7 +1224,7 @@ export function PCRCOA() {
             )}
           </div>
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Reviewed By</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Reviewed By <span className="text-red-500">*</span></label>
             {reviewedBy ? (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
@@ -982,7 +1254,7 @@ export function PCRCOA() {
             )}
           </div>
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Lab Supervisor</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Lab Supervisor <span className="text-red-500">*</span></label>
             {labSupervisor ? (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
@@ -1056,131 +1328,161 @@ export function PCRCOA() {
           )}
           
           <div className="overflow-x-auto">
-            <p className="text-xs text-gray-500 mb-2 italic">💡 Tip: Use Arrow keys to navigate between cells, Enter to move to next cell</p>
+            <p className="text-xs text-gray-500 mb-2 italic">💡 Drag columns to reorder. Click (+) to duplicate sample type.</p>
             <table className="min-w-full border-collapse border border-gray-300">
               <thead>
+                {/* Header Row - Sample Types with House inputs */}
                 <tr className="bg-blue-100">
                   <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Disease</th>
-                  <th className="border border-gray-300 px-4 py-2 text-center font-semibold">House</th>
-                  {sampleTypes.map((sampleType) => (
-                    <th key={sampleType} className="border border-gray-300 px-4 py-2 text-center font-semibold">
-                      {sampleType}
+                  {sampleTypes.map((sampleType, stIndex) => (
+                    <th 
+                      key={`${sampleType}-${stIndex}`} 
+                      className={`border border-gray-300 px-2 py-2 text-center font-semibold cursor-grab ${draggedSampleTypeIndex === stIndex ? 'bg-blue-200' : ''}`}
+                      draggable
+                      onDragStart={() => handleSampleTypeDragStart(stIndex)}
+                      onDragOver={(e) => handleSampleTypeDragOver(e, stIndex)}
+                      onDragEnd={handleSampleTypeDragEnd}
+                    >
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-center gap-1">
+                          <span>{sampleType}</span>
+                          <button
+                            type="button"
+                            onClick={() => duplicateSampleType(sampleType, stIndex)}
+                            className="text-blue-600 hover:text-blue-800 font-bold text-sm"
+                            title="Duplicate this column"
+                          >
+                            +
+                          </button>
+                          {sampleTypes.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeSampleTypeColumn(stIndex)}
+                              className="text-red-500 hover:text-red-700 text-xs"
+                              title="Remove column"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={houseValues[stIndex] || ''}
+                          onChange={(e) => setHouseValues(prev => {
+                            const newValues = [...prev];
+                            newValues[stIndex] = e.target.value;
+                            return newValues;
+                          })}
+                          placeholder="House (e.g. H1-H4)"
+                          className="w-full px-2 py-1.5 border-2 border-blue-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center text-sm font-semibold text-blue-800 bg-blue-50 placeholder:text-blue-400 placeholder:font-normal"
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        />
+                      </div>
                     </th>
                   ))}
-                  <th className="border border-gray-300 px-4 py-2 text-center font-semibold">Pos. Control</th>
-                  <th className="border border-gray-300 px-2 py-2 text-center font-semibold w-12"></th>
+                  <th className="border border-gray-300 px-4 py-2 text-center font-semibold">Pos. Con.</th>
+                  <th className="border border-gray-300 px-4 py-2 text-center font-semibold">Neg. Con.</th>
                 </tr>
               </thead>
               <tbody>
                 {(() => {
-                  // Calculate total rows and columns for keyboard navigation
-                  const totalCols = 2 + sampleTypes.length; // House + sampleTypes + Pos.Control
-                  const allRows: Array<{ disease: string; poolIdx: number; pool: any }> = [];
+                  // Use orderedDiseases for rendering to maintain user-defined order
+                  const diseasesToRender = orderedDiseases.length > 0 ? orderedDiseases : diseases;
                   
-                  diseases.forEach((diseaseItem) => {
-                    (testResults[diseaseItem.disease] || []).forEach((pool, idx) => {
-                      allRows.push({ disease: diseaseItem.disease, poolIdx: idx, pool });
-                    });
-                  });
-                  
-                  const totalRows = allRows.length;
-                  
-                  // Initialize refs array
-                  if (tableInputsRef.current.length !== totalRows) {
-                    tableInputsRef.current = Array(totalRows).fill(null).map(() => Array(totalCols).fill(null));
-                  }
-                  
-                  return allRows.map((row, rowIndex) => (
-                    <tr key={`${row.disease}-pool-${row.poolIdx}`} className="hover:bg-gray-50">
-                      <td className="border border-gray-300 px-4 py-2 font-medium">
-                        {row.disease}
-                        {row.poolIdx > 0 && (
-                          <span className="ml-2 text-xs text-gray-500">(Pool {row.poolIdx + 1})</span>
-                        )}
-                      </td>
-                      <td className="border border-gray-300 px-2 py-2">
-                        <input
-                          ref={(el) => {
-                            if (tableInputsRef.current[rowIndex]) {
-                              tableInputsRef.current[rowIndex][0] = el;
-                            }
-                          }}
-                          type="text"
-                          value={row.pool.houses}
-                          onChange={(e) => handlePoolHousesChange(row.disease, row.poolIdx, e.target.value)}
-                          onKeyDown={(e) => handleTableKeyDown(e, rowIndex, 0, totalRows, totalCols)}
-                          placeholder={row.poolIdx === 0 ? "e.g., H1-H4" : "e.g., H5-H8"}
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-center"
-                        />
-                      </td>
-                      {sampleTypes.map((sampleType, stIdx) => (
-                        <td key={`${row.disease}-${row.poolIdx}-${sampleType}`} className="border border-gray-300 px-2 py-2">
+                  return diseasesToRender.map((diseaseItem, diseaseIndex) => {
+                    const pools = testResults[diseaseItem.disease] || [];
+                    const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
+                    
+                    return (
+                      <tr 
+                        key={diseaseItem.disease}
+                        className={`hover:bg-gray-50 ${draggedDiseaseIndex === diseaseIndex ? 'bg-blue-50' : ''}`}
+                        draggable
+                        onDragStart={() => handleDragStart(diseaseIndex)}
+                        onDragOver={(e) => handleDragOver(e, diseaseIndex)}
+                        onDragEnd={handleDragEnd}
+                      >
+                        <td className="border border-gray-300 px-4 py-2 font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="flex flex-col gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => moveDiseaseUp(diseaseIndex)}
+                                disabled={diseaseIndex === 0}
+                                className={`p-0.5 rounded ${diseaseIndex === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
+                                title="Move up"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveDiseaseDown(diseaseIndex)}
+                                disabled={diseaseIndex === diseasesToRender.length - 1}
+                                className={`p-0.5 rounded ${diseaseIndex === diseasesToRender.length - 1 ? 'text-gray-300' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
+                                title="Move down"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                            </div>
+                            <span className="cursor-grab">{diseaseItem.disease}</span>
+                          </div>
+                        </td>
+                        {sampleTypes.map((sampleType) => (
+                          <td key={`${diseaseItem.disease}-${sampleType}`} className="border border-gray-300 px-2 py-2">
+                            <input
+                              type="text"
+                              value={pool.values?.[sampleType] || ''}
+                              onChange={(e) => handleResultChange(diseaseItem.disease, 0, sampleType, e.target.value)}
+                              placeholder=""
+                              className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-center"
+                            />
+                          </td>
+                        ))}
+                        <td className="border border-gray-300 px-2 py-2">
                           <input
-                            ref={(el) => {
-                              if (tableInputsRef.current[rowIndex]) {
-                                tableInputsRef.current[rowIndex][1 + stIdx] = el;
-                              }
-                            }}
                             type="text"
-                            value={row.pool.values?.[sampleType] || ''}
-                            onChange={(e) => handleResultChange(row.disease, row.poolIdx, sampleType, e.target.value)}
-                            onKeyDown={(e) => handleTableKeyDown(e, rowIndex, 1 + stIdx, totalRows, totalCols)}
-                            placeholder="Result"
+                            value={pool.pos_control || ''}
+                            onChange={(e) => {
+                              setTestResults(prev => {
+                                const pools = [...(prev[diseaseItem.disease] || [])];
+                                pools[0] = { ...pools[0], pos_control: e.target.value };
+                                return { ...prev, [diseaseItem.disease]: pools };
+                              });
+                            }}
+                            placeholder=""
                             className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-center"
                           />
                         </td>
-                      ))}
-                      <td className="border border-gray-300 px-2 py-2">
-                        <input
-                          ref={(el) => {
-                            if (tableInputsRef.current[rowIndex]) {
-                              tableInputsRef.current[rowIndex][1 + sampleTypes.length] = el;
-                            }
-                          }}
-                          type="text"
-                          value={row.pool.pos_control || ''}
-                          onChange={(e) => handlePoolPosControlChange(row.disease, row.poolIdx, e.target.value)}
-                          onKeyDown={(e) => handleTableKeyDown(e, rowIndex, 1 + sampleTypes.length, totalRows, totalCols)}
-                          placeholder="+"
-                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-center"
-                        />
-                      </td>
-                      <td className="border border-gray-300 px-2 py-2 text-center">
-                        {row.poolIdx === 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => addPool(row.disease, sampleTypes)}
-                            className="text-blue-600 hover:text-blue-800 font-bold text-lg"
-                            title="Add pool for this disease"
-                          >
-                            +
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setTestResults((prev) => {
-                                const pools = [...(prev[row.disease] || [])];
-                                pools.splice(row.poolIdx, 1);
-                                return { ...prev, [row.disease]: pools };
+                        <td className="border border-gray-300 px-2 py-2">
+                          <input
+                            type="text"
+                            value={pool.neg_control || 'Confirmed'}
+                            onChange={(e) => {
+                              setTestResults(prev => {
+                                const pools = [...(prev[diseaseItem.disease] || [])];
+                                pools[0] = { ...pools[0], neg_control: e.target.value };
+                                return { ...prev, [diseaseItem.disease]: pools };
                               });
                             }}
-                            className="text-red-600 hover:text-red-800 font-bold text-lg"
-                            title="Remove this pool"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ));
+                            placeholder=""
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-center"
+                          />
+                        </td>
+                      </tr>
+                    );
+                  });
                 })()}
               </tbody>
             </table>
           </div>
           <div className="text-xs text-gray-500 mt-2">
-            *Neg. = Negative, Ct:threshold cycle, NA = Not Applicable<br />
-            *Click "+" to add pooled samples for the same disease. Enter house range (e.g., H1-H4, H5-H8)
+            *Neg. = Negative, Ct: threshold cycle, NA = Not Applicable, Pos. Con. = Positive Control, Neg. Con. = Negative Control<br />
+            *Click (+) on header to add sample type columns. House row shows house range for each organ.
           </div>
         </div>
 
@@ -1207,10 +1509,14 @@ export function PCRCOA() {
           </button>
           <div className="flex gap-3">
             <button
-              onClick={handlePrint}
+              onClick={handleDirectPDFDownload}
               disabled={saving}
-              className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:bg-gray-400"
+              className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400 flex items-center gap-2"
+              title="Export PDF"
             >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
               Export PDF
             </button>
             <button

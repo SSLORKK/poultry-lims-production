@@ -11,7 +11,13 @@ type Department = {
   code: string;
 };
 
-type TabType = 'company' | 'farm' | 'flock' | 'cycle' | 'status' | 'house' | 'source' | 'sample_type' | 'disease' | 'kit_type' | 'technician' | 'extraction_method' | 'signature' | 'users' | 'culture_isolation_types' | 'pathogenic_fungi_mold' | 'culture_screened_pathogens';
+type TabType = 'company' | 'farm' | 'flock' | 'cycle' | 'status' | 'house' | 'source' | 'sample_type' | 'disease' | 'kit_type' | 'technician' | 'extraction_method' | 'signature' | 'users' | 'culture_isolation_types' | 'pathogenic_fungi_mold' | 'culture_screened_pathogens' | 'ast_disks' | 'ast_disks_fastidious' | 'ast_disks_staphylococcus' | 'ast_disks_enterococcus';
+
+type CompanyType = {
+  id: number;
+  name: string;
+  is_active: boolean;
+};
 
 const Controls = () => {
   const { canRead, isLoading: permissionsLoading } = usePermissions();
@@ -26,8 +32,14 @@ const Controls = () => {
   const [newItemName, setNewItemName] = useState('');
   const [newItemPIN, setNewItemPIN] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<number | null>(null);
+  const [selectedCompanyForFarm, setSelectedCompanyForFarm] = useState<number | null>(null);
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // AST Disk specific fields
+  const [astRValue, setAstRValue] = useState('');
+  const [astIValue, setAstIValue] = useState('');
+  const [astSValue, setAstSValue] = useState('');
   
   const queryClient = useQueryClient();
 
@@ -71,9 +83,25 @@ const Controls = () => {
     },
   });
 
-  const tabs: { key: TabType; label: string; isDepartmentSpecific: boolean; endpoint: string }[] = [
+  // Fetch companies for farm sub-tabs
+  const { data: companies = [] } = useQuery<CompanyType[]>({
+    queryKey: ['controls', 'company'],
+    queryFn: async () => {
+      const response = await apiClient.get('/controls/companies');
+      return response.data;
+    },
+  });
+
+  // Set default selected company for farms when companies are loaded
+  useEffect(() => {
+    if (companies.length > 0 && selectedCompanyForFarm === null) {
+      setSelectedCompanyForFarm(companies[0].id);
+    }
+  }, [companies, selectedCompanyForFarm]);
+
+  const tabs: { key: TabType; label: string; isDepartmentSpecific: boolean; isCompanySpecific?: boolean; endpoint: string }[] = [
     { key: 'company', label: 'Companies', isDepartmentSpecific: false, endpoint: '/controls/companies' },
-    { key: 'farm', label: 'Farms', isDepartmentSpecific: false, endpoint: '/controls/farms' },
+    { key: 'farm', label: 'Farms', isDepartmentSpecific: false, isCompanySpecific: true, endpoint: '/controls/farms' },
     { key: 'flock', label: 'Flocks', isDepartmentSpecific: false, endpoint: '/controls/flocks' },
     { key: 'cycle', label: 'Cycles', isDepartmentSpecific: false, endpoint: '/controls/cycles' },
     { key: 'status', label: 'Status', isDepartmentSpecific: false, endpoint: '/controls/statuses' },
@@ -89,18 +117,28 @@ const Controls = () => {
     { key: 'culture_isolation_types', label: 'Culture Isolation Types', isDepartmentSpecific: false, endpoint: '/controls/culture-isolation-types' },
     { key: 'pathogenic_fungi_mold', label: 'Pathogenic Fungi & Mold', isDepartmentSpecific: false, endpoint: '/controls/pathogenic-fungi-mold' },
     { key: 'culture_screened_pathogens', label: 'Culture Screened Pathogens', isDepartmentSpecific: false, endpoint: '/controls/culture-screened-pathogens' },
+    { key: 'ast_disks', label: 'AST Disks (Enterobacteriaceae)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks' },
+    { key: 'ast_disks_fastidious', label: 'AST Disks (Fastidious M.o.)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-fastidious' },
+    { key: 'ast_disks_staphylococcus', label: 'AST Disks (Staphylococcus)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-staphylococcus' },
+    { key: 'ast_disks_enterococcus', label: 'AST Disks (Enterococcus)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-enterococcus' },
   ];
 
   const currentTab = tabs.find(tab => tab.key === activeTab)!;
 
   const { data: items = [], isLoading } = useQuery<any[]>({
-    queryKey: ['controls', activeTab, currentTab.isDepartmentSpecific ? selectedDepartment : null],
+    queryKey: ['controls', activeTab, currentTab.isDepartmentSpecific ? selectedDepartment : null, currentTab.isCompanySpecific ? selectedCompanyForFarm : null],
     queryFn: async () => {
-      const params = currentTab.isDepartmentSpecific ? { department_id: selectedDepartment } : {};
+      let params: any = {};
+      if (currentTab.isDepartmentSpecific) {
+        params.department_id = selectedDepartment;
+      }
+      if (currentTab.isCompanySpecific && selectedCompanyForFarm !== null) {
+        params.company_id = selectedCompanyForFarm;
+      }
       const response = await apiClient.get(currentTab.endpoint, { params });
       return response.data;
     },
-    enabled: !currentTab.isDepartmentSpecific || selectedDepartment !== null,
+    enabled: (!currentTab.isDepartmentSpecific || selectedDepartment !== null) && (!currentTab.isCompanySpecific || selectedCompanyForFarm !== null),
   });
 
   const createMutation = useMutation({
@@ -156,9 +194,30 @@ const Controls = () => {
       return;
     }
     
-    const data = currentTab.isDepartmentSpecific
-      ? { name: newItemName, department_id: selectedDepartment }
-      : { name: newItemName };
+    // For AST Disks (all bacteria families), include R, I, S values
+    if (activeTab === 'ast_disks' || activeTab === 'ast_disks_fastidious' || activeTab === 'ast_disks_staphylococcus' || activeTab === 'ast_disks_enterococcus') {
+      const data = { 
+        name: newItemName, 
+        r_value: astRValue || null,
+        i_value: astIValue || null,
+        s_value: astSValue || null
+      };
+      createMutation.mutate(data);
+      setAstRValue('');
+      setAstIValue('');
+      setAstSValue('');
+      return;
+    }
+    
+    let data: any = { name: newItemName };
+    
+    if (currentTab.isDepartmentSpecific) {
+      data.department_id = selectedDepartment;
+    }
+    
+    if (currentTab.isCompanySpecific && selectedCompanyForFarm !== null) {
+      data.company_id = selectedCompanyForFarm;
+    }
     
     createMutation.mutate(data);
   };
@@ -242,6 +301,33 @@ const Controls = () => {
                   * Kit Types are only available for PCR and Serology departments
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Company Sub-tabs (for farm tab) */}
+          {activeTab === 'farm' && companies.length > 0 && (
+            <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Company:
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {companies.filter(c => c.is_active).map(company => (
+                  <button
+                    key={company.id}
+                    onClick={() => setSelectedCompanyForFarm(company.id)}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                      selectedCompanyForFarm === company.id
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {company.name}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-600 mt-2">
+                * Farms are organized by company. Select a company to view/add its farms.
+              </p>
             </div>
           )}
 
@@ -351,6 +437,49 @@ const Controls = () => {
                   </div>
                 </>
               )}
+              
+              {/* AST Disk specific fields - for all bacteria families */}
+              {(activeTab === 'ast_disks' || activeTab === 'ast_disks_fastidious' || activeTab === 'ast_disks_staphylococcus' || activeTab === 'ast_disks_enterococcus') && (
+                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm font-medium text-green-800 mb-3">
+                    {activeTab === 'ast_disks' ? 'Enterobacteriaceae' : 
+                     activeTab === 'ast_disks_fastidious' ? 'Fastidious M.o.' :
+                     activeTab === 'ast_disks_staphylococcus' ? 'Staphylococcus' : 'Enterococcus'} Breakpoints (CLSI M100)
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-red-600 mb-1">R (Resistant) ≤</label>
+                      <input
+                        type="text"
+                        value={astRValue}
+                        onChange={(e) => setAstRValue(e.target.value)}
+                        placeholder="e.g., 13"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-yellow-600 mb-1">I (Intermediate)</label>
+                      <input
+                        type="text"
+                        value={astIValue}
+                        onChange={(e) => setAstIValue(e.target.value)}
+                        placeholder="e.g., 14-17"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-green-600 mb-1">S (Sensitive) ≥</label>
+                      <input
+                        type="text"
+                        value={astSValue}
+                        onChange={(e) => setAstSValue(e.target.value)}
+                        placeholder="e.g., 18"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -382,12 +511,26 @@ const Controls = () => {
                       key={item.id}
                       className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-1">
                         <span className="text-gray-900 font-medium">{item.name}</span>
                         {!item.is_active && (
                           <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded">
                             Inactive
                           </span>
+                        )}
+                        {/* AST Disk specific columns - for all bacteria families */}
+                        {(activeTab === 'ast_disks' || activeTab === 'ast_disks_fastidious' || activeTab === 'ast_disks_staphylococcus' || activeTab === 'ast_disks_enterococcus') && (
+                          <div className="flex gap-4 ml-auto mr-4">
+                            <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded font-medium">
+                              R: {item.r_value || '-'}
+                            </span>
+                            <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded font-medium">
+                              I: {item.i_value || '-'}
+                            </span>
+                            <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded font-medium">
+                              S: {item.s_value || '-'}
+                            </span>
+                          </div>
                         )}
                       </div>
                       <button

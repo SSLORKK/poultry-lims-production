@@ -5,6 +5,7 @@ export interface DropdownItem {
   id: number;
   name: string;
   department_id?: number;
+  company_id?: number;
   is_active: boolean;
 }
 
@@ -124,9 +125,12 @@ export const useKitTypes = (departmentId?: number) => {
         ? `/controls/kit-types?department_id=${departmentId}`
         : '/controls/kit-types';
       const response = await apiClient.get(url);
+      console.log('Kit Types API Response:', response.data, 'for department:', departmentId);
       return response.data;
     },
     enabled: !!departmentId,
+    staleTime: 0,
+    gcTime: 0,
   });
 };
 

@@ -26,6 +26,18 @@ def get_users(
     return user_service.get_all_users(skip=skip, limit=limit)
 
 
+@router.get("/sharing/list", response_model=List[UserResponse])
+def get_users_for_sharing(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all active users for sharing purposes. Available to all authenticated users."""
+    user_service = UserService(db)
+    all_users = user_service.get_all_users(skip=0, limit=1000)
+    # Return only active users
+    return [u for u in all_users if u.is_active]
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: int,

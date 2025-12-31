@@ -15,8 +15,11 @@ class Farm(Base):
     __tablename__ = "farms"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, index=True, nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
     is_active = Column(Boolean, default=True)
+    
+    company = relationship("Company")
 
 
 class Flock(Base):
@@ -139,4 +142,48 @@ class CultureScreenedPathogen(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
+    is_active = Column(Boolean, default=True)
+
+
+class ASTDisk(Base):
+    __tablename__ = "ast_disks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+    r_value = Column(String, nullable=True)  # Resistant breakpoint
+    i_value = Column(String, nullable=True)  # Intermediate breakpoint
+    s_value = Column(String, nullable=True)  # Susceptible breakpoint
+    is_active = Column(Boolean, default=True)
+
+
+class ASTDiskFastidious(Base):
+    __tablename__ = "ast_disks_fastidious"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+    r_value = Column(String, nullable=True)
+    i_value = Column(String, nullable=True)
+    s_value = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+
+
+class ASTDiskStaphylococcus(Base):
+    __tablename__ = "ast_disks_staphylococcus"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+    r_value = Column(String, nullable=True)
+    i_value = Column(String, nullable=True)
+    s_value = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+
+
+class ASTDiskEnterococcus(Base):
+    __tablename__ = "ast_disks_enterococcus"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+    r_value = Column(String, nullable=True)
+    i_value = Column(String, nullable=True)
+    s_value = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)

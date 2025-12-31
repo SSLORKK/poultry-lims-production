@@ -1,19 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pydantic import BaseModel
 from app.db.session import get_db
 from app.models.user import User
 from app.api.v1.deps import get_current_user
 from app.schemas.dropdown import (
     DropdownCreate, DropdownResponse, DropdownUpdate,
     DepartmentDropdownCreate, DepartmentDropdownResponse, DepartmentDropdownUpdate,
-    SignatureCreate, SignatureResponse, PINVerifyRequest, PINVerifyResponse
+    SignatureCreate, SignatureResponse, PINVerifyRequest, PINVerifyResponse,
+    FarmCreate, FarmResponse
 )
 from app.repositories.dropdown_repository import DropdownRepository, DepartmentDropdownRepository
 from app.models.dropdown_data import (
     Company, Farm, Flock, Cycle, Status, House, Source,
     SampleType, Disease, KitType, Technician, Signature, ExtractionMethod,
-    CultureIsolationType, PathogenicFungiMold, CultureScreenedPathogen
+    CultureIsolationType, PathogenicFungiMold, CultureScreenedPathogen, ASTDisk,
+    ASTDiskFastidious, ASTDiskStaphylococcus, ASTDiskEnterococcus
 )
 import bcrypt
 
@@ -54,26 +57,40 @@ def delete_company(
     return {"message": "Company deleted successfully"}
 
 
-@router.get("/farms", response_model=List[DropdownResponse])
+@router.get("/farms", response_model=List[FarmResponse])
 def get_farms(
+    company_id: Optional[int] = None,
     include_inactive: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    repo = DropdownRepository(db, Farm)
-    return repo.get_all(include_inactive=include_inactive)
+    query = db.query(Farm)
+    if not include_inactive:
+        query = query.filter(Farm.is_active == True)
+    if company_id is not None:
+        query = query.filter(Farm.company_id == company_id)
+    return query.all()
 
 
-@router.post("/farms", response_model=DropdownResponse)
+@router.post("/farms", response_model=FarmResponse)
 def create_farm(
-    data: DropdownCreate,
+    data: FarmCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    repo = DropdownRepository(db, Farm)
-    if repo.get_by_name(data.name):
-        raise HTTPException(status_code=400, detail="Farm already exists")
-    return repo.create(name=data.name)
+    # Check if farm with same name exists for this company
+    existing = db.query(Farm).filter(
+        Farm.name == data.name,
+        Farm.company_id == data.company_id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Farm already exists for this company")
+    
+    farm = Farm(name=data.name, company_id=data.company_id)
+    db.add(farm)
+    db.commit()
+    db.refresh(farm)
+    return farm
 
 
 @router.delete("/farms/{item_id}")
@@ -82,9 +99,11 @@ def delete_farm(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    repo = DropdownRepository(db, Farm)
-    if not repo.delete(item_id):
+    farm = db.query(Farm).filter(Farm.id == item_id).first()
+    if not farm:
         raise HTTPException(status_code=404, detail="Farm not found")
+    db.delete(farm)
+    db.commit()
     return {"message": "Farm deleted successfully"}
 
 
@@ -173,7 +192,14 @@ def create_status(
     current_user: User = Depends(get_current_user)
 ):
     repo = DropdownRepository(db, Status)
-    if repo.get_by_name(data.name):
+    existing = repo.get_by_name(data.name)
+    if existing:
+        # If item exists but is inactive, reactivate it
+        if not existing.is_active:
+            existing.is_active = True
+            db.commit()
+            db.refresh(existing)
+            return existing
         raise HTTPException(status_code=400, detail="Status already exists")
     return repo.create(name=data.name)
 
@@ -652,3 +678,238 @@ def delete_culture_screened_pathogen(
     if not repo.delete(item_id):
         raise HTTPException(status_code=404, detail="Culture screened pathogen not found")
     return {"message": "Culture screened pathogen deleted successfully"}
+
+
+# AST Disk endpoints
+class ASTDiskResponse(BaseModel):
+    id: int
+    name: str
+    r_value: Optional[str] = None
+    i_value: Optional[str] = None
+    s_value: Optional[str] = None
+    is_active: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class ASTDiskCreate(BaseModel):
+    name: str
+    r_value: Optional[str] = None
+    i_value: Optional[str] = None
+    s_value: Optional[str] = None
+
+
+@router.get("/ast-disks", response_model=List[ASTDiskResponse])
+def get_ast_disks(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(ASTDisk)
+    if not include_inactive:
+        query = query.filter(ASTDisk.is_active == True)
+    return query.order_by(ASTDisk.name).all()
+
+
+@router.post("/ast-disks", response_model=ASTDiskResponse)
+def create_ast_disk(
+    data: ASTDiskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    existing = db.query(ASTDisk).filter(ASTDisk.name == data.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="AST Disk already exists")
+    
+    ast_disk = ASTDisk(
+        name=data.name,
+        r_value=data.r_value,
+        i_value=data.i_value,
+        s_value=data.s_value
+    )
+    db.add(ast_disk)
+    db.commit()
+    db.refresh(ast_disk)
+    return ast_disk
+
+
+@router.put("/ast-disks/{item_id}", response_model=ASTDiskResponse)
+def update_ast_disk(
+    item_id: int,
+    data: ASTDiskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ast_disk = db.query(ASTDisk).filter(ASTDisk.id == item_id).first()
+    if not ast_disk:
+        raise HTTPException(status_code=404, detail="AST Disk not found")
+    
+    ast_disk.name = data.name
+    ast_disk.r_value = data.r_value
+    ast_disk.i_value = data.i_value
+    ast_disk.s_value = data.s_value
+    db.commit()
+    db.refresh(ast_disk)
+    return ast_disk
+
+
+@router.delete("/ast-disks/{item_id}")
+def delete_ast_disk(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ast_disk = db.query(ASTDisk).filter(ASTDisk.id == item_id).first()
+    if not ast_disk:
+        raise HTTPException(status_code=404, detail="AST Disk not found")
+    db.delete(ast_disk)
+    db.commit()
+    return {"message": "AST Disk deleted successfully"}
+
+
+# AST Disk Fastidious endpoints
+@router.get("/ast-disks-fastidious", response_model=List[ASTDiskResponse])
+def get_ast_disks_fastidious(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(ASTDiskFastidious)
+    if not include_inactive:
+        query = query.filter(ASTDiskFastidious.is_active == True)
+    return query.order_by(ASTDiskFastidious.name).all()
+
+
+@router.post("/ast-disks-fastidious", response_model=ASTDiskResponse)
+def create_ast_disk_fastidious(
+    data: ASTDiskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    existing = db.query(ASTDiskFastidious).filter(ASTDiskFastidious.name == data.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="AST Disk already exists")
+    
+    ast_disk = ASTDiskFastidious(
+        name=data.name,
+        r_value=data.r_value,
+        i_value=data.i_value,
+        s_value=data.s_value
+    )
+    db.add(ast_disk)
+    db.commit()
+    db.refresh(ast_disk)
+    return ast_disk
+
+
+@router.delete("/ast-disks-fastidious/{item_id}")
+def delete_ast_disk_fastidious(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ast_disk = db.query(ASTDiskFastidious).filter(ASTDiskFastidious.id == item_id).first()
+    if not ast_disk:
+        raise HTTPException(status_code=404, detail="AST Disk not found")
+    db.delete(ast_disk)
+    db.commit()
+    return {"message": "AST Disk deleted successfully"}
+
+
+# AST Disk Staphylococcus endpoints
+@router.get("/ast-disks-staphylococcus", response_model=List[ASTDiskResponse])
+def get_ast_disks_staphylococcus(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(ASTDiskStaphylococcus)
+    if not include_inactive:
+        query = query.filter(ASTDiskStaphylococcus.is_active == True)
+    return query.order_by(ASTDiskStaphylococcus.name).all()
+
+
+@router.post("/ast-disks-staphylococcus", response_model=ASTDiskResponse)
+def create_ast_disk_staphylococcus(
+    data: ASTDiskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    existing = db.query(ASTDiskStaphylococcus).filter(ASTDiskStaphylococcus.name == data.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="AST Disk already exists")
+    
+    ast_disk = ASTDiskStaphylococcus(
+        name=data.name,
+        r_value=data.r_value,
+        i_value=data.i_value,
+        s_value=data.s_value
+    )
+    db.add(ast_disk)
+    db.commit()
+    db.refresh(ast_disk)
+    return ast_disk
+
+
+@router.delete("/ast-disks-staphylococcus/{item_id}")
+def delete_ast_disk_staphylococcus(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ast_disk = db.query(ASTDiskStaphylococcus).filter(ASTDiskStaphylococcus.id == item_id).first()
+    if not ast_disk:
+        raise HTTPException(status_code=404, detail="AST Disk not found")
+    db.delete(ast_disk)
+    db.commit()
+    return {"message": "AST Disk deleted successfully"}
+
+
+# AST Disk Enterococcus endpoints
+@router.get("/ast-disks-enterococcus", response_model=List[ASTDiskResponse])
+def get_ast_disks_enterococcus(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(ASTDiskEnterococcus)
+    if not include_inactive:
+        query = query.filter(ASTDiskEnterococcus.is_active == True)
+    return query.order_by(ASTDiskEnterococcus.name).all()
+
+
+@router.post("/ast-disks-enterococcus", response_model=ASTDiskResponse)
+def create_ast_disk_enterococcus(
+    data: ASTDiskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    existing = db.query(ASTDiskEnterococcus).filter(ASTDiskEnterococcus.name == data.name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="AST Disk already exists")
+    
+    ast_disk = ASTDiskEnterococcus(
+        name=data.name,
+        r_value=data.r_value,
+        i_value=data.i_value,
+        s_value=data.s_value
+    )
+    db.add(ast_disk)
+    db.commit()
+    db.refresh(ast_disk)
+    return ast_disk
+
+
+@router.delete("/ast-disks-enterococcus/{item_id}")
+def delete_ast_disk_enterococcus(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ast_disk = db.query(ASTDiskEnterococcus).filter(ASTDiskEnterococcus.id == item_id).first()
+    if not ast_disk:
+        raise HTTPException(status_code=404, detail="AST Disk not found")
+    db.delete(ast_disk)
+    db.commit()
+    return {"message": "AST Disk deleted successfully"}

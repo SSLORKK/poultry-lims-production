@@ -39,6 +39,7 @@ class SerologyDataCreate(BaseModel):
     kit_type: Optional[str] = None
     number_of_wells: Optional[int] = None
     tests_count: Optional[int] = None
+    technician_name: Optional[str] = None
 
 
 class SerologyDataResponse(BaseModel):
@@ -48,6 +49,7 @@ class SerologyDataResponse(BaseModel):
     kit_type: Optional[str] = None
     number_of_wells: Optional[int] = None
     tests_count: Optional[int] = None
+    technician_name: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -76,7 +78,7 @@ class UnitData(BaseModel):
     department_id: int
     house: Optional[List[str]] = None  # Multi-select houses
     age: Optional[str] = None  # Changed from int to str
-    source: Optional[str] = None
+    source: Optional[List[str]] = None  # Multi-select sources
     sample_type: Optional[List[str]] = None  # Multi-select sample types (organs)
     samples_number: Optional[int] = None
     notes: Optional[str] = None
@@ -91,7 +93,7 @@ class UnitResponse(BaseModel):
     department_id: int
     house: Optional[List[str]] = None  # Multi-select houses
     age: Optional[str] = None  # Changed from int to str
-    source: Optional[str] = None
+    source: Optional[List[str]] = None  # Multi-select sources
     sample_type: Optional[List[str]] = None  # Multi-select sample types (organs)
     samples_number: Optional[int] = None
     notes: Optional[str] = None

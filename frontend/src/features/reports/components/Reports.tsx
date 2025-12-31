@@ -35,6 +35,7 @@ interface CompanyStats {
   serology_diseases: SerologyDiseaseCount[] | null;
   pcr_extraction_count: number | null;
   pcr_detection_count: number | null;
+  serology_wells_count: number | null;
 }
 
 interface DiseaseKitStats {
@@ -51,6 +52,7 @@ interface ReportsData {
   total_tests: number;
   total_positive: number;
   total_negative: number;
+  total_wells_count: number;
   companies: CompanyStats[];
   diseases: DiseaseKitStats[];
   date_range: {
@@ -383,6 +385,30 @@ export default function Reports() {
                 <div className="bg-white bg-opacity-20 rounded-lg p-4">
                   <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10M7 12h10m-7 5h4" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Wells Count card - show for Serology */}
+          {(department === 'SER' || (!department && (reportsData.total_wells_count || 0) >= 0)) && (
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-purple-100 text-sm font-semibold uppercase tracking-wide">
+                    Total Wells Count
+                  </p>
+                  <p className="text-4xl font-bold mt-2">
+                    {(reportsData.total_wells_count || 0).toLocaleString()}
+                  </p>
+                  <p className="text-purple-200 text-sm mt-2">
+                    Serology Wells
+                  </p>
+                </div>
+                <div className="bg-white bg-opacity-20 rounded-lg p-4">
+                  <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
                 </div>
               </div>

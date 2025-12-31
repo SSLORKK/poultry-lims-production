@@ -26,6 +26,7 @@ interface DepartmentStatistic {
   sample_count: number;
   test_count: number;
   sub_sample_count: number;
+  wells_count?: number;
 }
 
 interface UnitsStatistics {
@@ -239,6 +240,14 @@ export default function Dashboard() {
                         {(dept.sub_sample_count === null || dept.sub_sample_count === undefined) && (
                           <p className="text-xs text-orange-600 mt-1">Backend data missing</p>
                         )}
+                      </div>
+                    )}
+                    {dept.department_code === 'SER' && (
+                      <div>
+                        <div className="text-3xl font-bold text-gray-700">
+                          {dept.wells_count !== null && dept.wells_count !== undefined ? dept.wells_count : 'N/A'}
+                        </div>
+                        <p className="text-gray-500 text-sm mt-1">Wells</p>
                       </div>
                     )}
                     <div>

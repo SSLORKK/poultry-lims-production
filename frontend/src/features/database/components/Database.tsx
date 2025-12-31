@@ -23,7 +23,7 @@ interface Unit {
   department_id: number;
   house: string[];
   age: string | null;  // Changed from number to string
-  source: string;
+  source: string | string[];
   sample_type: string[];
   samples_number: number | null;
   notes: string;
@@ -99,27 +99,61 @@ export default function Database() {
   };
   const [activeTab, setActiveTab] = useState<Department>(getInitialTab());
 
-  const [resultsFilter, setResultsFilter] = useState<string>('All');
-  const [selectedDiseases, setSelectedDiseases] = useState<string[]>([]);
-  const [selectedAges, setSelectedAges] = useState<string[]>([]);
-  const [dateFrom, setDateFrom] = useState<string>('');
-  const [dateTo, setDateTo] = useState<string>('');
+  // Load persisted filters from localStorage
+  const loadPersistedFilters = () => {
+    try {
+      const saved = localStorage.getItem('database_filters');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  };
+  const persistedFilters = loadPersistedFilters();
+
+  const [resultsFilter, setResultsFilter] = useState<string>(persistedFilters?.resultsFilter || 'All');
+  const [selectedDiseases, setSelectedDiseases] = useState<string[]>(persistedFilters?.diseases || []);
+  const [selectedAges, setSelectedAges] = useState<string[]>(persistedFilters?.ages || []);
+  const [dateFrom, setDateFrom] = useState<string>(persistedFilters?.dateFrom || '');
+  const [dateTo, setDateTo] = useState<string>(persistedFilters?.dateTo || '');
 
   // New UI state
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
-  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
-  const [selectedFarms, setSelectedFarms] = useState<string[]>([]);
-  const [selectedFlocks, setSelectedFlocks] = useState<string[]>([]);
-  const [selectedSampleTypes, setSelectedSampleTypes] = useState<string[]>([]);
-  const [selectedKitTypes, setSelectedKitTypes] = useState<string[]>([]);
-  const [selectedCycles, setSelectedCycles] = useState<string[]>([]);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [selectedSerologyDiseases, setSelectedSerologyDiseases] = useState<string[]>([]);
-  const [selectedSerologyKitTypes, setSelectedSerologyKitTypes] = useState<string[]>([]);
-  const [selectedMicrobiologyDiseases, setSelectedMicrobiologyDiseases] = useState<string[]>([]);
-  const [selectedMicrobiologyResults, setSelectedMicrobiologyResults] = useState<string[]>([]);
-  const [selectedPCRDiseases, setSelectedPCRDiseases] = useState<string[]>([]);
-  const [selectedPCRResults, setSelectedPCRResults] = useState<string[]>([]);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>(persistedFilters?.companies || []);
+  const [selectedFarms, setSelectedFarms] = useState<string[]>(persistedFilters?.farms || []);
+  const [selectedFlocks, setSelectedFlocks] = useState<string[]>(persistedFilters?.flocks || []);
+  const [selectedSampleTypes, setSelectedSampleTypes] = useState<string[]>(persistedFilters?.sampleTypes || []);
+  const [selectedKitTypes, setSelectedKitTypes] = useState<string[]>(persistedFilters?.kitTypes || []);
+  const [selectedCycles, setSelectedCycles] = useState<string[]>(persistedFilters?.cycles || []);
+  const [selectedSources, setSelectedSources] = useState<string[]>(persistedFilters?.sources || []);
+  const [selectedSerologyDiseases, setSelectedSerologyDiseases] = useState<string[]>(persistedFilters?.serologyDiseases || []);
+  const [selectedSerologyKitTypes, setSelectedSerologyKitTypes] = useState<string[]>(persistedFilters?.serologyKitTypes || []);
+  const [selectedMicrobiologyDiseases, setSelectedMicrobiologyDiseases] = useState<string[]>(persistedFilters?.microbiologyDiseases || []);
+  const [selectedMicrobiologyResults, setSelectedMicrobiologyResults] = useState<string[]>(persistedFilters?.microbiologyResults || []);
+  const [selectedPCRDiseases, setSelectedPCRDiseases] = useState<string[]>(persistedFilters?.pcrDiseases || []);
+  const [selectedPCRResults, setSelectedPCRResults] = useState<string[]>(persistedFilters?.pcrResults || []);
+
+  // Persist filters to localStorage when they change
+  useEffect(() => {
+    const filters = {
+      resultsFilter,
+      diseases: selectedDiseases,
+      ages: selectedAges,
+      dateFrom,
+      dateTo,
+      companies: selectedCompanies,
+      farms: selectedFarms,
+      flocks: selectedFlocks,
+      sampleTypes: selectedSampleTypes,
+      kitTypes: selectedKitTypes,
+      cycles: selectedCycles,
+      sources: selectedSources,
+      serologyDiseases: selectedSerologyDiseases,
+      serologyKitTypes: selectedSerologyKitTypes,
+      microbiologyDiseases: selectedMicrobiologyDiseases,
+      microbiologyResults: selectedMicrobiologyResults,
+      pcrDiseases: selectedPCRDiseases,
+      pcrResults: selectedPCRResults
+    };
+    localStorage.setItem('database_filters', JSON.stringify(filters));
+  }, [resultsFilter, selectedDiseases, selectedAges, dateFrom, dateTo, selectedCompanies, selectedFarms, selectedFlocks, selectedSampleTypes, selectedKitTypes, selectedCycles, selectedSources, selectedSerologyDiseases, selectedSerologyKitTypes, selectedMicrobiologyDiseases, selectedMicrobiologyResults, selectedPCRDiseases, selectedPCRResults]);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(100); // Fixed page size for display pagination
   const [maxDisplayLimit] = useState(1000); // Show last 1000 samples by default
@@ -252,7 +286,11 @@ export default function Database() {
       }
       // Filter by source
       if (selectedSources.length > 0) {
-        units = units.filter(unit => unit.source && selectedSources.includes(unit.source));
+        units = units.filter(unit => {
+          if (!unit.source) return false;
+          const sources = Array.isArray(unit.source) ? unit.source : [unit.source];
+          return sources.some(s => selectedSources.includes(s));
+        });
       }
       // Filter by Serology diseases
       if (selectedSerologyDiseases.length > 0) {
@@ -296,7 +334,12 @@ export default function Database() {
       // because it requires COA data which is loaded asynchronously
     }
 
-    return units;
+    // Sort by unit code descending (latest first - higher numbers first)
+    return units.sort((a, b) => {
+      const aNum = parseInt(a.unit_code.replace(/\D/g, '')) || 0;
+      const bNum = parseInt(b.unit_code.replace(/\D/g, '')) || 0;
+      return bNum - aNum;
+    });
   }, [unitsBeforeAgeFilter, activeTab, selectedCycles, selectedSources, selectedSerologyDiseases, selectedSerologyKitTypes, selectedMicrobiologyDiseases, selectedPCRDiseases]);
 
   // Paginated units - now just the filtered units since backend handles pagination
@@ -413,7 +456,10 @@ export default function Database() {
   const uniqueSources = useMemo(() => {
     const sources = new Set<string>();
     filteredUnits.forEach(unit => {
-      if (unit.source) sources.add(unit.source);
+      if (unit.source) {
+        const unitSources = Array.isArray(unit.source) ? unit.source : [unit.source];
+        unitSources.forEach(s => sources.add(s));
+      }
     });
     return Array.from(sources).sort();
   }, [filteredUnits]);
@@ -2059,7 +2105,7 @@ function PCRTable({
             unit.sample.cycle || '-',
             `"${getPoolHouses(unit.id)}"`,
             String(unit.age || '-'),
-            unit.source || '-',
+            Array.isArray(unit.source) ? unit.source.join(', ') : (unit.source || '-'),
             selectedSampleTypes.length > 0
               ? `"${unit.sample_type?.filter(st => selectedSampleTypes.includes(st)).join(', ') || '-'}"`
               : `"${unit.sample_type?.join(', ') || '-'}"`,
@@ -2353,7 +2399,7 @@ function PCRTable({
                   {visibleColumns.cycle && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{row.unit.sample.cycle || '-'}</td>}
                   {visibleColumns.house && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{row.poolHouses}</td>}
                   {visibleColumns.age && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{row.unit.age || '-'}</td>}
-                  {visibleColumns.source && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{row.unit.source || '-'}</td>}
+                  {visibleColumns.source && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{Array.isArray(row.unit.source) ? row.unit.source.join(', ') : (row.unit.source || '-')}</td>}
                   {visibleColumns.sampleType && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">
                     {showAllSampleTypes
                       ? (row.unit.sample_type?.join(', ') || '-')
@@ -2870,6 +2916,7 @@ function MicrobiologyTable({
               <th className="px-4 py-3 text-left font-semibold text-gray-700 border border-gray-300 bg-gray-50 whitespace-nowrap">Company</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700 border border-gray-300 bg-gray-50 whitespace-nowrap">Farm</th>
               {visibleColumns.flock && <th className="px-4 py-3 text-left font-semibold text-gray-700 border border-gray-300 bg-gray-50 whitespace-nowrap">Flock</th>}
+              {visibleColumns.cycle && <th className="px-4 py-3 text-left font-semibold text-gray-700 border border-gray-300 bg-gray-50 whitespace-nowrap">Cycle</th>}
               {visibleColumns.house && <th className="px-4 py-3 text-left font-semibold text-gray-700 border border-gray-300 bg-gray-50 whitespace-nowrap">House</th>}
               {visibleColumns.age && <th className="px-4 py-3 text-left font-semibold text-gray-700 border border-gray-300 bg-gray-50 whitespace-nowrap">Age</th>}
               {visibleColumns.sampleType && <th className="px-4 py-3 text-left font-semibold text-gray-700 border border-gray-300 bg-gray-50 whitespace-nowrap">Sample Type</th>}
@@ -2892,6 +2939,7 @@ function MicrobiologyTable({
                 <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{unit.sample.company}</td>
                 <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{unit.sample.farm}</td>
                 {visibleColumns.flock && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{unit.sample.flock || '-'}</td>}
+                {visibleColumns.cycle && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{unit.sample.cycle || '-'}</td>}
                 {visibleColumns.house && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{unit.house?.join(', ') || '-'}</td>}
                 {visibleColumns.age && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{unit.age || '-'}</td>}
                 {visibleColumns.sampleType && <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{unit.sample_type?.join(', ') || '-'}</td>}
@@ -3640,7 +3688,7 @@ function SerologyTable({
                     {visibleColumns.cycle && <td rowSpan={row.rowSpan} className="px-4 py-2 border border-gray-300 whitespace-nowrap align-middle text-center">{row.unit.sample.cycle || '-'}</td>}
                     {visibleColumns.house && <td rowSpan={row.rowSpan} className="px-4 py-2 border border-gray-300 whitespace-nowrap align-middle text-center">{row.unit.house?.join(', ') || '-'}</td>}
                     {visibleColumns.age && <td rowSpan={row.rowSpan} className="px-4 py-2 border border-gray-300 whitespace-nowrap align-middle text-center">{row.unit.age || '-'}</td>}
-                    {visibleColumns.source && <td rowSpan={row.rowSpan} className="px-4 py-2 border border-gray-300 whitespace-nowrap align-middle text-center">{row.unit.source || '-'}</td>}
+                    {visibleColumns.source && <td rowSpan={row.rowSpan} className="px-4 py-2 border border-gray-300 whitespace-nowrap align-middle text-center">{Array.isArray(row.unit.source) ? row.unit.source.join(', ') : (row.unit.source || '-')}</td>}
                   </>
                 )}
                 <td className="px-4 py-2 border border-gray-300 whitespace-nowrap">{row.disease}</td>
@@ -3963,7 +4011,7 @@ function SerologyTable({
                             if (visibleColumns.cycle) row.push(unit.sample.cycle || '-');
                             if (visibleColumns.house) row.push(`"${unit.house?.join(', ') || '-'}"`);
                             if (visibleColumns.age) row.push(String(unit.age || '-'));
-                            if (visibleColumns.source) row.push(unit.source || '-');
+                            if (visibleColumns.source) row.push(Array.isArray(unit.source) ? unit.source.join(', ') : (unit.source || '-'));
                             row.push('-', '-', '-', '-', '-', '-', unit.coa_status || '-');
                             csvRows.push(row.join(','));
                           } else {
@@ -3975,7 +4023,7 @@ function SerologyTable({
                               if (visibleColumns.cycle) row.push(unit.sample.cycle || '-');
                               if (visibleColumns.house) row.push(`"${unit.house?.join(', ') || '-'}"`);
                               if (visibleColumns.age) row.push(String(unit.age || '-'));
-                              if (visibleColumns.source) row.push(unit.source || '-');
+                              if (visibleColumns.source) row.push(Array.isArray(unit.source) ? unit.source.join(', ') : (unit.source || '-'));
                               row.push(d.disease, d.kit_type || '-', '-', '-', '-', '-', unit.coa_status || '-');
                               csvRows.push(row.join(','));
                             });

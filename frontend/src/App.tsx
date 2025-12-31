@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LoginPage } from './features/auth/components/LoginPage';
 import { RegisterPage } from './features/auth/components/RegisterPage';
 import { MainLayout } from './components/MainLayout';
-import UnifiedSampleRegistration from './features/samples/components/UnifiedSampleRegistration';
+import { UnifiedSampleRegistration } from './features/samples/components/UnifiedSampleRegistration';
 import { AllSamplesView } from './features/samples/components/AllSamplesView';
 import { PCRSamples } from './features/samples/components/PCRSamples';
 import { SerologySamples } from './features/samples/components/SerologySamples';
@@ -17,6 +17,7 @@ import Controls from './features/controls/components/Controls';
 import Database from './features/database/components/Database';
 import Reports from './features/reports/components/Reports';
 import Drive from './features/drive/components/Drive';
+import { DriveAdmin } from './features/drive/components/DriveAdmin';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { SmartRedirect } from './components/SmartRedirect';
 import ErrorBoundary from './components/common/ErrorBoundary';
@@ -76,6 +77,7 @@ function App() {
             <Route path="microbiology-coa/:unitId" element={<ErrorBoundary><MicrobiologyCOA /></ErrorBoundary>} />
             <Route path="database" element={<ErrorBoundary><Database /></ErrorBoundary>} />
             <Route path="drive" element={<ErrorBoundary><Drive /></ErrorBoundary>} />
+            <Route path="drive-admin" element={<ErrorBoundary><DriveAdmin /></ErrorBoundary>} />
             <Route path="controls" element={<ErrorBoundary><Controls /></ErrorBoundary>} />
           </Route>
 

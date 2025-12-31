@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../services/apiClient';
 import { ApiErrorDisplay } from '../../../components/common/ApiErrorDisplay';
-
+import { useCurrentUser } from '../../../hooks/useCurrentUser';
+import { usePermissions } from '../../../hooks/usePermissions';
 interface DriveItem {
   id: number;
   name: string;
@@ -46,13 +47,35 @@ interface DriveContents {
 type SortField = 'name' | 'updated_at' | 'size' | 'type';
 type SortDirection = 'asc' | 'desc';
 
+// Helper function to highlight matching text in search results
+const highlightText = (text: string, query: string): React.ReactNode => {
+  if (!query.trim()) return text;
+  
+  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  const parts = text.split(regex);
+  
+  return parts.map((part, index) => 
+    regex.test(part) ? (
+      <mark key={index} className="bg-yellow-200 text-yellow-900 px-0.5 rounded">
+        {part}
+      </mark>
+    ) : (
+      part
+    )
+  );
+};
+
 const Drive = () => {
   const queryClient = useQueryClient();
+  const { user } = useCurrentUser();
+  const { canWrite } = usePermissions();
+  const canEdit = canWrite('Drive') || user?.role === 'admin' || user?.role === 'manager';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
   
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -67,9 +90,6 @@ const Drive = () => {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [shareItem, setShareItem] = useState<DriveItem | null>(null);
-  const [shareUsers, setShareUsers] = useState<string>('');
   
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ item: DriveItem; position: ContextMenuPosition } | null>(null);
@@ -80,8 +100,6 @@ const Drive = () => {
   const [_moveItem, setMoveItem] = useState<DriveItem | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [colorItem, setColorItem] = useState<DriveItem | null>(null);
-  const [showManageAccessModal, setShowManageAccessModal] = useState(false);
-  const [accessItem, setAccessItem] = useState<DriveItem | null>(null);
   
   // Drag and drop for moving items
   const [draggedItem, setDraggedItem] = useState<DriveItem | null>(null);
@@ -97,15 +115,25 @@ const Drive = () => {
     }
   });
 
-  // Search query
-  const { data: searchResults } = useQuery<DriveItem[]>({
-    queryKey: ['drive-search', searchQuery],
+
+  // Debounce search input for better performance
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300); // 300ms debounce delay
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Search query with debounced value for faster response
+  const { data: searchResults, isLoading: isSearching } = useQuery<DriveItem[]>({
+    queryKey: ['drive-search', debouncedSearch],
     queryFn: async () => {
-      if (!searchQuery.trim()) return [];
-      const response = await apiClient.get(`/drive/search?q=${encodeURIComponent(searchQuery)}`);
+      if (!debouncedSearch.trim()) return [];
+      const response = await apiClient.get(`/drive/search?q=${encodeURIComponent(debouncedSearch)}`);
       return response.data;
     },
-    enabled: searchQuery.length > 2
+    enabled: debouncedSearch.length > 1, // Start search after 2 characters
+    staleTime: 30000, // Cache results for 30 seconds
   });
 
   // Create folder mutation
@@ -152,20 +180,6 @@ const Drive = () => {
     onError: () => {
       setUploading(false);
       setUploadProgress(0);
-    }
-  });
-
-  // Share mutation
-  const shareMutation = useMutation({
-    mutationFn: async ({ id, users }: { id: number; users: string[] }) => {
-      const response = await apiClient.put(`/drive/${id}/share`, { shared_with: users });
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['drive', currentFolderId] });
-      setShowShareModal(false);
-      setShareItem(null);
-      setShareUsers('');
     }
   });
 
@@ -299,9 +313,22 @@ const Drive = () => {
     const diff = now.getTime() - date.getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     
-    if (days === 0) return `Today, ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
-    if (days === 1) return `Yesterday, ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    // Use Iraq timezone (Asia/Baghdad)
+    const iraqTimeOptions: Intl.DateTimeFormatOptions = { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      timeZone: 'Asia/Baghdad'
+    };
+    const iraqDateOptions: Intl.DateTimeFormatOptions = { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric',
+      timeZone: 'Asia/Baghdad'
+    };
+    
+    if (days === 0) return `Today, ${date.toLocaleTimeString('en-US', iraqTimeOptions)}`;
+    if (days === 1) return `Yesterday, ${date.toLocaleTimeString('en-US', iraqTimeOptions)}`;
+    return date.toLocaleDateString('en-US', iraqDateOptions);
   };
 
   const getFileIcon = (item: DriveItem) => {
@@ -342,6 +369,46 @@ const Drive = () => {
         </svg>
       );
     }
+    // Compressed/Archive files
+    if (mime.includes('zip') || mime.includes('rar') || mime.includes('7z') || mime.includes('tar') || mime.includes('gzip') || mime.includes('compressed') || item.name.match(/\.(zip|rar|7z|tar|gz|bz2|xz|tgz)$/i)) {
+      return (
+        <svg className="h-6 w-6 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm4 2a1 1 0 00-1 1v1h2V7a1 1 0 00-1-1zM7 9v1h2V9H7zm0 2v1h2v-1H7zm0 2v2h2v-2H7z" clipRule="evenodd" />
+        </svg>
+      );
+    }
+    // Video files
+    if (mime.startsWith('video/') || item.name.match(/\.(mp4|avi|mov|wmv|flv|mkv|webm)$/i)) {
+      return (
+        <svg className="h-6 w-6 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+        </svg>
+      );
+    }
+    // Audio files
+    if (mime.startsWith('audio/') || item.name.match(/\.(mp3|wav|ogg|flac|aac|wma)$/i)) {
+      return (
+        <svg className="h-6 w-6 text-pink-500" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+        </svg>
+      );
+    }
+    // Presentation files
+    if (mime.includes('presentation') || mime.includes('powerpoint') || item.name.match(/\.(ppt|pptx|odp)$/i)) {
+      return (
+        <svg className="h-6 w-6 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+        </svg>
+      );
+    }
+    // Text files
+    if (mime.startsWith('text/') || item.name.match(/\.(txt|csv|json|xml|md|log)$/i)) {
+      return (
+        <svg className="h-6 w-6 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+        </svg>
+      );
+    }
     return (
       <svg className="h-6 w-6 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
         <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
@@ -352,11 +419,16 @@ const Drive = () => {
   const getFileType = (item: DriveItem) => {
     if (item.type === 'folder') return 'Folder';
     const mime = item.mime_type || '';
+    const name = item.name.toLowerCase();
     if (mime.startsWith('image/')) return 'Image';
     if (mime === 'application/pdf') return 'PDF';
-    if (mime.includes('spreadsheet') || mime.includes('excel')) return 'Spreadsheet';
-    if (mime.includes('word') || mime.includes('document')) return 'Document';
-    if (mime.includes('zip') || mime.includes('rar')) return 'Archive';
+    if (mime.includes('spreadsheet') || mime.includes('excel') || name.match(/\.(xls|xlsx|ods)$/)) return 'Spreadsheet';
+    if (mime.includes('word') || mime.includes('document') || name.match(/\.(doc|docx|odt)$/)) return 'Document';
+    if (mime.includes('zip') || mime.includes('rar') || mime.includes('7z') || mime.includes('tar') || mime.includes('gzip') || mime.includes('compressed') || name.match(/\.(zip|rar|7z|tar|gz|bz2|xz|tgz)$/)) return 'Archive';
+    if (mime.startsWith('video/') || name.match(/\.(mp4|avi|mov|wmv|flv|mkv|webm)$/)) return 'Video';
+    if (mime.startsWith('audio/') || name.match(/\.(mp3|wav|ogg|flac|aac|wma)$/)) return 'Audio';
+    if (mime.includes('presentation') || mime.includes('powerpoint') || name.match(/\.(ppt|pptx|odp)$/)) return 'Presentation';
+    if (mime.startsWith('text/') || name.match(/\.(txt|csv|json|xml|md|log)$/)) return 'Text';
     return 'File';
   };
 
@@ -620,29 +692,34 @@ const Drive = () => {
             </h1>
             <p className="text-gray-500 mt-1">Manage and access your files securely</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:bg-gray-100'}`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:bg-gray-100'}`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
-            </button>
-          </div>
         </div>
 
-        {/* Breadcrumbs */}
-        {contents?.breadcrumbs && contents.breadcrumbs.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm p-3 mb-4 flex items-center gap-2 flex-wrap">
+        {/* Navigation Bar with Back Button and Breadcrumbs */}
+        <div className="bg-white rounded-lg shadow-sm p-3 mb-4 flex items-center gap-3">
+          {/* Back Button */}
+          <button
+            onClick={() => {
+              if (contents?.breadcrumbs && contents.breadcrumbs.length > 1) {
+                setCurrentFolderId(contents.breadcrumbs[contents.breadcrumbs.length - 2].id);
+              } else {
+                setCurrentFolderId(null);
+              }
+            }}
+            disabled={!currentFolderId}
+            className={`p-2 rounded-lg transition-colors ${
+              currentFolderId 
+                ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' 
+                : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+            }`}
+            title="Go back"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          {/* Breadcrumbs */}
+          <div className="flex items-center gap-2 flex-wrap flex-1">
             <button
               onClick={() => setCurrentFolderId(null)}
               className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
@@ -652,36 +729,56 @@ const Drive = () => {
               </svg>
               Home
             </button>
-            {contents.breadcrumbs.map((crumb, idx) => (
+            {contents?.breadcrumbs?.map((crumb, idx) => (
               <div key={crumb.id} className="flex items-center gap-2">
                 <span className="text-gray-400">/</span>
                 <button
                   onClick={() => setCurrentFolderId(crumb.id)}
-                  className={`font-medium ${idx === contents.breadcrumbs.length - 1 ? 'text-gray-800' : 'text-blue-600 hover:text-blue-800'}`}
+                  className={`font-medium ${idx === (contents?.breadcrumbs?.length || 0) - 1 ? 'text-gray-800' : 'text-blue-600 hover:text-blue-800'}`}
                 >
                   {crumb.name}
                 </button>
               </div>
             ))}
           </div>
-        )}
+
+          {/* Quick Paste Button when clipboard has content */}
+          {clipboard && (
+            <button
+              onClick={handlePaste}
+              className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              Paste here
+            </button>
+          )}
+        </div>
 
         {/* Search and Actions Bar */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
           <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
-            {/* Search */}
+            {/* Search with loading indicator */}
             <div className="flex-1 w-full lg:max-w-xl">
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Search in Drive..."
+                  placeholder="Search files and folders..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-gray-900 placeholder-gray-400"
+                  className="w-full pl-12 pr-12 py-3 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-gray-900 placeholder-gray-400"
                 />
-                <svg className="absolute left-4 top-3.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+                {isSearching ? (
+                  <svg className="absolute left-4 top-3.5 h-5 w-5 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="absolute left-4 top-3.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                )}
                 {searchQuery && (
                   <button 
                     onClick={() => setSearchQuery('')}
@@ -693,6 +790,33 @@ const Drive = () => {
                   </button>
                 )}
               </div>
+              {debouncedSearch && searchResults && (
+                <p className="text-xs text-gray-500 mt-1 ml-2">
+                  {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{debouncedSearch}"
+                </p>
+              )}
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                title="List view"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                title="Grid view"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+              </button>
             </div>
 
             {/* Sort Options */}
@@ -716,36 +840,38 @@ const Drive = () => {
               </select>
             </div>
 
-            {/* Actions */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowNewFolderModal(true)}
-                className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2 font-medium"
-              >
-                <svg className="h-5 w-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                </svg>
-                <span className="hidden sm:inline">New Folder</span>
-              </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all flex items-center gap-2 font-medium shadow-sm"
-                disabled={uploading}
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span className="hidden sm:inline">{uploading ? `${uploadProgress}%` : 'Upload'}</span>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                onChange={handleFileUpload}
-                className="hidden"
-                accept="*/*"
-              />
-            </div>
+            {/* Actions - Only show for users with edit permission */}
+            {canEdit && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowNewFolderModal(true)}
+                  className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2 font-medium"
+                >
+                  <svg className="h-5 w-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                  </svg>
+                  <span className="hidden sm:inline">New Folder</span>
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all flex items-center gap-2 font-medium shadow-sm"
+                  disabled={uploading}
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span className="hidden sm:inline">{uploading ? `${uploadProgress}%` : 'Upload'}</span>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  accept="*/*"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -819,9 +945,9 @@ const Drive = () => {
               <p className="text-gray-500 mb-6 max-w-sm mx-auto">
                 {searchQuery 
                   ? `No files or folders match "${searchQuery}"`
-                  : 'Drag and drop files here or use the upload button to add files'}
+                  : canEdit ? 'Drag and drop files here or use the upload button to add files' : 'No files in this folder'}
               </p>
-              {!searchQuery && (
+              {!searchQuery && canEdit && (
                 <div className="flex items-center justify-center gap-3">
                   <button
                     onClick={() => setShowNewFolderModal(true)}
@@ -857,6 +983,7 @@ const Drive = () => {
                   }`}
                   onClick={() => item.type === 'folder' ? setCurrentFolderId(item.id) : null}
                   onDoubleClick={() => item.type === 'file' && handleDownload(item)}
+                  onContextMenu={(e) => handleContextMenu(e, item)}
                 >
                   {/* Selection Checkbox */}
                   <div 
@@ -887,42 +1014,44 @@ const Drive = () => {
                     </div>
                   </div>
 
-                  {/* File Name */}
+                  {/* File Name with search highlighting */}
                   <p className="text-sm font-medium text-gray-900 text-center truncate" title={item.name}>
-                    {item.name}
+                    {debouncedSearch ? highlightText(item.name, debouncedSearch) : item.name}
                   </p>
                   <p className="text-xs text-gray-500 text-center mt-1">
                     {item.type === 'folder' ? 'Folder' : formatFileSize(item.size)}
                   </p>
 
-                  {/* Quick Actions */}
-                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRenameItem(item);
-                        setNewName(item.name);
-                        setShowRenameModal(true);
-                      }}
-                      className="p-1.5 bg-white rounded-lg shadow-sm hover:bg-gray-50 mr-1"
-                    >
-                      <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteItem(item);
-                        setShowDeleteModal(true);
-                      }}
-                      className="p-1.5 bg-white rounded-lg shadow-sm hover:bg-red-50"
-                    >
-                      <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
+                  {/* Quick Actions - Only show for users with edit permission */}
+                  {canEdit && (
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenameItem(item);
+                          setNewName(item.name);
+                          setShowRenameModal(true);
+                        }}
+                        className="p-1.5 bg-white rounded-lg shadow-sm hover:bg-gray-50 mr-1"
+                      >
+                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteItem(item);
+                          setShowDeleteModal(true);
+                        }}
+                        className="p-1.5 bg-white rounded-lg shadow-sm hover:bg-red-50"
+                      >
+                        <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -973,9 +1102,6 @@ const Drive = () => {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">
                       Modified By
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">
-                      Shared With
-                    </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-32">
                       Actions
                     </th>
@@ -1018,7 +1144,7 @@ const Drive = () => {
                         >
                           <span className="mr-3 flex-shrink-0">{getFileIcon(item)}</span>
                           <span className="text-sm font-medium text-gray-900 group-hover/name:text-blue-600 truncate max-w-xs">
-                            {item.name}
+                            {debouncedSearch ? highlightText(item.name, debouncedSearch) : item.name}
                           </span>
                         </div>
                       </td>
@@ -1041,30 +1167,6 @@ const Drive = () => {
                         {item.updated_by || item.created_by || '-'}
                       </td>
                       <td className="px-4 py-3">
-                        {item.shared_with && item.shared_with.length > 0 ? (
-                          <div className="flex items-center">
-                            <div className="flex -space-x-2">
-                              {item.shared_with.slice(0, 3).map((user, idx) => (
-                                <div
-                                  key={idx}
-                                  className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-medium border-2 border-white"
-                                  title={user}
-                                >
-                                  {user.charAt(0).toUpperCase()}
-                                </div>
-                              ))}
-                            </div>
-                            {item.shared_with.length > 3 && (
-                              <span className="ml-1 text-xs text-gray-500">
-                                +{item.shared_with.length - 3}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">Private</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {item.type === 'file' && (
                             <button
@@ -1077,44 +1179,35 @@ const Drive = () => {
                               </svg>
                             </button>
                           )}
-                          <button
-                            onClick={() => {
-                              setShareItem(item);
-                              setShareUsers(item.shared_with?.join(', ') || '');
-                              setShowShareModal(true);
-                            }}
-                            className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                            title="Share"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setRenameItem(item);
-                              setNewName(item.name);
-                              setShowRenameModal(true);
-                            }}
-                            className="p-2 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                            title="Rename"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setDeleteItem(item);
-                              setShowDeleteModal(true);
-                            }}
-                            className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          {canEdit && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setRenameItem(item);
+                                  setNewName(item.name);
+                                  setShowRenameModal(true);
+                                }}
+                                className="p-2 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
+                                title="Rename"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteItem(item);
+                                  setShowDeleteModal(true);
+                                }}
+                                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1136,10 +1229,20 @@ const Drive = () => {
               placeholder="Folder name"
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-2 ${
+                newFolderName && (/[<>:"/\\|?*]/.test(newFolderName) || contents?.items?.some(i => i.name.toLowerCase() === newFolderName.trim().toLowerCase()))
+                  ? 'border-red-300 bg-red-50'
+                  : 'border-gray-300'
+              }`}
               autoFocus
             />
-            <div className="flex justify-end gap-2">
+            {newFolderName && /[<>:"/\\|?*]/.test(newFolderName) && (
+              <p className="text-xs text-red-600 mb-2">Name cannot contain: {'< > : " / \\ | ? *'}</p>
+            )}
+            {newFolderName && contents?.items?.some(i => i.name.toLowerCase() === newFolderName.trim().toLowerCase()) && (
+              <p className="text-xs text-red-600 mb-2">A folder or file with this name already exists</p>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => {
                   setShowNewFolderModal(false);
@@ -1151,7 +1254,7 @@ const Drive = () => {
               </button>
               <button
                 onClick={() => newFolderName.trim() && createFolderMutation.mutate(newFolderName.trim())}
-                disabled={!newFolderName.trim() || createFolderMutation.isPending}
+                disabled={!newFolderName.trim() || createFolderMutation.isPending || /[<>:"/\\|?*]/.test(newFolderName) || contents?.items?.some(i => i.name.toLowerCase() === newFolderName.trim().toLowerCase())}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 {createFolderMutation.isPending ? 'Creating...' : 'Create'}
@@ -1171,10 +1274,20 @@ const Drive = () => {
               placeholder="New name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-2 ${
+                newName && (/[<>:"/\\|?*]/.test(newName) || (contents?.items?.some(i => i.id !== renameItem.id && i.name.toLowerCase() === newName.trim().toLowerCase())))
+                  ? 'border-red-300 bg-red-50'
+                  : 'border-gray-300'
+              }`}
               autoFocus
             />
-            <div className="flex justify-end gap-2">
+            {newName && /[<>:"/\\|?*]/.test(newName) && (
+              <p className="text-xs text-red-600 mb-2">Name cannot contain: {'< > : " / \\ | ? *'}</p>
+            )}
+            {newName && contents?.items?.some(i => i.id !== renameItem.id && i.name.toLowerCase() === newName.trim().toLowerCase()) && (
+              <p className="text-xs text-red-600 mb-2">A folder or file with this name already exists</p>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => {
                   setShowRenameModal(false);
@@ -1187,7 +1300,7 @@ const Drive = () => {
               </button>
               <button
                 onClick={() => newName.trim() && renameMutation.mutate({ id: renameItem.id, name: newName.trim() })}
-                disabled={!newName.trim() || renameMutation.isPending}
+                disabled={!newName.trim() || renameMutation.isPending || /[<>:"/\\|?*]/.test(newName) || contents?.items?.some(i => i.id !== renameItem.id && i.name.toLowerCase() === newName.trim().toLowerCase())}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 {renameMutation.isPending ? 'Renaming...' : 'Rename'}
@@ -1222,75 +1335,6 @@ const Drive = () => {
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
                 {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Share Modal */}
-      {showShareModal && shareItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">Share "{shareItem.name}"</h3>
-                <p className="text-sm text-gray-500">{shareItem.type === 'folder' ? 'Folder' : 'File'}</p>
-              </div>
-            </div>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Share with (enter usernames separated by commas)
-              </label>
-              <input
-                type="text"
-                placeholder="e.g.,Ali , Ahmed , ..."
-                value={shareUsers}
-                onChange={(e) => setShareUsers(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">Leave empty to make private</p>
-            </div>
-
-            {shareItem.shared_with && shareItem.shared_with.length > 0 && (
-              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm font-medium text-gray-700 mb-2">Currently shared with:</p>
-                <div className="flex flex-wrap gap-2">
-                  {shareItem.shared_with.map((user, idx) => (
-                    <span key={idx} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      {user}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowShareModal(false);
-                  setShareItem(null);
-                  setShareUsers('');
-                }}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const users = shareUsers.split(',').map(u => u.trim()).filter(u => u);
-                  shareMutation.mutate({ id: shareItem.id, users });
-                }}
-                disabled={shareMutation.isPending}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-              >
-                {shareMutation.isPending ? 'Sharing...' : 'Save Sharing'}
               </button>
             </div>
           </div>
@@ -1392,37 +1436,6 @@ const Drive = () => {
               Download
             </button>
           )}
-
-          {/* Share */}
-          <button
-            onClick={() => {
-              setShareItem(contextMenu.item);
-              setShareUsers(contextMenu.item.shared_with?.join(', ') || '');
-              setShowShareModal(true);
-              setContextMenu(null);
-            }}
-            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-3"
-          >
-            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-            </svg>
-            Share
-          </button>
-
-          {/* Manage Access */}
-          <button
-            onClick={() => {
-              setAccessItem(contextMenu.item);
-              setShowManageAccessModal(true);
-              setContextMenu(null);
-            }}
-            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-3"
-          >
-            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-            Manage Access
-          </button>
 
           <div className="border-t border-gray-100 my-1" />
 
@@ -1596,80 +1609,6 @@ const Drive = () => {
                 className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
               >
                 Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Manage Access Modal */}
-      {showManageAccessModal && accessItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Manage Access - {accessItem.name}</h3>
-            
-            <div className="mb-4">
-              <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
-                <input
-                  type="checkbox"
-                  checked={accessItem.is_public || false}
-                  onChange={(e) => {
-                    // This would need an API call to update
-                    console.log('Toggle public:', e.target.checked);
-                  }}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Public Access</p>
-                  <p className="text-xs text-gray-500">Anyone with the link can view</p>
-                </div>
-              </label>
-            </div>
-
-            <div className="mb-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Shared with:</p>
-              {accessItem.shared_with && accessItem.shared_with.length > 0 ? (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {accessItem.shared_with.map((user, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-medium">
-                          {user.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="text-sm text-gray-900">{user}</span>
-                      </div>
-                      <select className="text-xs border-0 bg-transparent text-gray-600 focus:ring-0">
-                        <option value="read">Can view</option>
-                        <option value="write">Can edit</option>
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500 p-3 bg-gray-50 rounded-lg">Not shared with anyone</p>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowManageAccessModal(false);
-                  setAccessItem(null);
-                }}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  setShareItem(accessItem);
-                  setShareUsers(accessItem.shared_with?.join(', ') || '');
-                  setShowManageAccessModal(false);
-                  setShowShareModal(true);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Add People
               </button>
             </div>
           </div>

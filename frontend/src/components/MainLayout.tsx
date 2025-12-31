@@ -3,7 +3,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { ProfileDropdown } from './common/ProfileDropdown';
 import { NotificationIcon } from './common/NotificationIcon';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export const MainLayout = () => {
   const location = useLocation();
@@ -13,8 +13,22 @@ export const MainLayout = () => {
     pcr: true,
     serology: true,
     microbiology: true,
+    drive: true,
   });
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Default sidebar closed on mobile (< 1024px), open on desktop
+  const [sidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
+
+  // Handle responsive sidebar behavior on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      const isDesktop = window.innerWidth >= 1024;
+      // Auto-close sidebar on mobile, auto-open on desktop
+      setSidebarOpen(isDesktop);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({
@@ -94,8 +108,9 @@ export const MainLayout = () => {
 
       {/* Sidebar Drawer */}
       <div
-        className={`fixed inset-y-0 left-0 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col z-30 transform transition-all duration-300 ease-in-out shadow-2xl ${sidebarOpen ? 'w-72' : 'w-20'
-          }`}
+        className={`fixed inset-y-0 left-0 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col z-30 transform transition-all duration-300 ease-in-out shadow-2xl ${
+          sidebarOpen ? 'w-72 translate-x-0' : 'lg:w-20 w-72 lg:translate-x-0 -translate-x-full'
+        }`}
       >
         {/* Logo/Header with gradient */}
         <div className={`border-b border-slate-700/50 bg-gradient-to-r from-blue-600/20 to-purple-600/20 ${sidebarOpen ? 'p-6' : 'p-4 flex justify-center'}`}>
@@ -388,20 +403,76 @@ export const MainLayout = () => {
                 <div className="border-t border-slate-700/50"></div>
               </li>
 
-              {/* Drive */}
-              {hasAnyPermission('Dashboard') && (
+              {/* Drive Section - Admin users always have full access */}
+              {(user?.role === 'admin' || hasAnyPermission('Drive') || hasAnyPermission('Drive Admin')) && (
                 <li>
-                  <Link
-                    to="/drive"
-                    className={`group flex items-center ${sidebarOpen ? 'px-4' : 'px-2 justify-center'} py-3 rounded-xl transition-all duration-200 ${location.pathname === '/drive'
-                        ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/50'
-                        : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
-                      }`}
-                    title={!sidebarOpen ? 'Drive' : undefined}
-                  >
-                    <DriveIcon />
-                    {sidebarOpen && <span className="font-medium">Drive</span>}
-                  </Link>
+                  {sidebarOpen ? (
+                    <>
+                      <button
+                        onClick={() => toggleSection('drive')}
+                        className="w-full group flex items-center px-4 py-3 rounded-xl transition-all duration-200 text-slate-300 hover:bg-slate-700/50 hover:text-white"
+                      >
+                        <DriveIcon />
+                        <span className="font-medium flex-1 text-left">Drive</span>
+                        <svg
+                          className={`w-4 h-4 transition-transform duration-200 ${expandedSections.drive ? 'rotate-180' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      {expandedSections.drive && (
+                        <ul className="ml-8 mt-1 space-y-1 border-l-2 border-slate-700/50 pl-4">
+                          {(user?.role === 'admin' || hasAnyPermission('Drive')) && (
+                            <li>
+                              <Link
+                                to="/drive"
+                                className={`flex items-center px-3 py-2 rounded-lg text-sm transition-all duration-200 ${location.pathname === '/drive'
+                                    ? 'bg-blue-600/20 text-blue-400 font-medium'
+                                    : 'text-slate-400 hover:text-white hover:bg-slate-700/30'
+                                  }`}
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                </svg>
+                                Files
+                              </Link>
+                            </li>
+                          )}
+                          {(user?.role === 'admin' || hasAnyPermission('Drive Admin')) && (
+                            <li>
+                              <Link
+                                to="/drive-admin"
+                                className={`flex items-center px-3 py-2 rounded-lg text-sm transition-all duration-200 ${location.pathname === '/drive-admin'
+                                    ? 'bg-indigo-600/20 text-indigo-400 font-medium'
+                                    : 'text-slate-400 hover:text-white hover:bg-slate-700/30'
+                                  }`}
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Access Management
+                              </Link>
+                            </li>
+                          )}
+                        </ul>
+                      )}
+                    </>
+                  ) : (
+                    <Link
+                      to="/drive"
+                      className={`group flex items-center justify-center px-2 py-3 rounded-xl transition-all duration-200 ${location.pathname === '/drive' || location.pathname === '/drive-admin'
+                          ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/50'
+                          : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
+                        }`}
+                      title="Drive"
+                    >
+                      <DriveIcon />
+                    </Link>
+                  )}
                 </li>
               )}
 
@@ -428,8 +499,9 @@ export const MainLayout = () => {
 
       {/* Main Content */}
       <div
-        className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${sidebarOpen ? 'ml-72' : 'ml-20'
-          }`}
+        className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
+          sidebarOpen ? 'lg:ml-72 ml-0' : 'lg:ml-20 ml-0'
+        }`}
       >
         {/* Top Bar with Hamburger Menu */}
         <div className="bg-white/80 backdrop-blur-md shadow-sm border-b border-gray-200/50 px-6 py-4 flex items-center justify-between relative z-50">
@@ -478,12 +550,100 @@ export const MainLayout = () => {
         </div>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-gray-100">
+        <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-gray-100 pb-20 lg:pb-0">
           <Outlet />
         </div>
       </div>
 
-      {/* Custom Scrollbar Styles */}
+      {/* Mobile Bottom Navigation Bar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg lg:hidden z-50 safe-area-bottom">
+        <div className="flex items-center justify-around h-16">
+          {/* Dashboard */}
+          {hasAnyPermission('Dashboard') && (
+            <Link
+              to="/dashboard"
+              className={`flex flex-col items-center justify-center flex-1 h-full transition-all ${
+                location.pathname === '/dashboard'
+                  ? 'text-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span className="text-xs mt-1 font-medium">Home</span>
+              {location.pathname === '/dashboard' && (
+                <div className="absolute bottom-0 w-12 h-1 bg-blue-600 rounded-t-full"></div>
+              )}
+            </Link>
+          )}
+
+          {/* Samples */}
+          {hasAnyPermission('All Samples') && (
+            <Link
+              to="/all-samples"
+              className={`flex flex-col items-center justify-center flex-1 h-full transition-all relative ${
+                location.pathname === '/all-samples'
+                  ? 'text-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              <span className="text-xs mt-1 font-medium">Samples</span>
+              {location.pathname === '/all-samples' && (
+                <div className="absolute bottom-0 w-12 h-1 bg-blue-600 rounded-t-full"></div>
+              )}
+            </Link>
+          )}
+
+          {/* Register (Center - Floating Action Button Style) */}
+          {hasAnyPermission('Register Sample') && (
+            <Link
+              to="/register-sample"
+              className="flex items-center justify-center w-14 h-14 -mt-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full shadow-lg shadow-blue-500/40 text-white transition-transform active:scale-95"
+            >
+              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+            </Link>
+          )}
+
+          {/* Database */}
+          {(hasAnyPermission('Database - PCR') || hasAnyPermission('Database - Serology') || hasAnyPermission('Database - Microbiology')) && (
+            <Link
+              to="/database"
+              className={`flex flex-col items-center justify-center flex-1 h-full transition-all relative ${
+                location.pathname === '/database'
+                  ? 'text-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+              </svg>
+              <span className="text-xs mt-1 font-medium">Database</span>
+              {location.pathname === '/database' && (
+                <div className="absolute bottom-0 w-12 h-1 bg-blue-600 rounded-t-full"></div>
+              )}
+            </Link>
+          )}
+
+          {/* Menu (opens sidebar) */}
+          <button
+            onClick={toggleSidebar}
+            className="flex flex-col items-center justify-center flex-1 h-full text-gray-500 hover:text-gray-700 transition-all"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            <span className="text-xs mt-1 font-medium">Menu</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Custom Scrollbar and Mobile Styles */}
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
@@ -498,6 +658,30 @@ export const MainLayout = () => {
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: rgba(100, 116, 139, 0.7);
+        }
+        
+        /* Safe area for mobile devices with notch/home indicator */
+        .safe-area-bottom {
+          padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        
+        /* Mobile app-like touch feedback */
+        @media (max-width: 1023px) {
+          * {
+            -webkit-tap-highlight-color: transparent;
+          }
+          
+          button, a {
+            touch-action: manipulation;
+          }
+        }
+        
+        /* Smooth scrolling on mobile */
+        @media (max-width: 1023px) {
+          .flex-1.overflow-auto {
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+          }
         }
       `}</style>
     </div>

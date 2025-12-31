@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Enum
+from sqlalchemy import Column, Integer, String, Enum, Boolean
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 import enum
@@ -20,6 +20,7 @@ class User(Base):
     full_name = Column(String, nullable=True)
     role = Column(Enum(UserRole), default=UserRole.technician, nullable=False)
     profile_picture = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
     
     # Relationship to permissions
     permissions = relationship("UserPermission", back_populates="user", cascade="all, delete-orphan")

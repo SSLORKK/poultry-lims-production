@@ -23,6 +23,8 @@ const SCREENS = [
   'Database - PCR',
   'Database - Serology',
   'Database - Microbiology',
+  'Drive',
+  'Drive Admin',
   'Controls'
 ];
 
