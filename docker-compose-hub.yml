@@ -49,7 +49,7 @@ services:
 
   # Backend API
   backend:
-    image: sslorkk/poultrylims-backend:1.0.0
+    image: sslorkk/poultrylims-backend:v1.2
     container_name: lims_backend
     environment:
       DATABASE_URL: postgresql+psycopg2://lims_user:lims_password@db:5432/lims_db
@@ -73,7 +73,7 @@ services:
 
   # Frontend
   frontend:
-    image: sslorkk/poultrylims-frontend:1.0.0
+    image: sslorkk/poultrylims-frontend:v1.2
     container_name: lims_frontend
     ports:
       - "3000:80"
