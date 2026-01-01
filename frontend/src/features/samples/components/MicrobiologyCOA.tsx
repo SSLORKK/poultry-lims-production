@@ -2631,60 +2631,67 @@ export function MicrobiologyCOA() {
 
               {/* AST Context Menu for Fill All */}
               {astContextMenu && (
-                <div 
-                  className="fixed bg-white border border-gray-300 rounded-lg shadow-xl z-50 py-2 min-w-[180px]"
-                  style={{ left: astContextMenu.x, top: astContextMenu.y }}
-                  onClick={() => setAstContextMenu(null)}
-                >
-                  {astContextMenu.type === 'result' ? (
-                    <>
-                      <div className="px-4 py-1 text-xs font-semibold text-gray-500 border-b">Fill All Results</div>
-                      <button
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
-                        onClick={() => handleFillAllResult('')}
-                      >
-                        Clear All
-                      </button>
-                      <button
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
-                        onClick={() => {
-                          const value = prompt('Enter value for all Result fields:');
-                          if (value !== null) handleFillAllResult(value);
-                        }}
-                      >
-                        Fill with custom value...
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="px-4 py-1 text-xs font-semibold text-gray-500 border-b">Fill All Interpretations</div>
-                      <button
-                        className="w-full px-4 py-2 text-left hover:bg-green-100 text-sm text-green-700 font-medium"
-                        onClick={() => handleFillAllInterpretation('Sensitive')}
-                      >
-                        ✓ Sensitive (All)
-                      </button>
-                      <button
-                        className="w-full px-4 py-2 text-left hover:bg-yellow-100 text-sm text-yellow-700 font-medium"
-                        onClick={() => handleFillAllInterpretation('Intermediate')}
-                      >
-                        ~ Intermediate (All)
-                      </button>
-                      <button
-                        className="w-full px-4 py-2 text-left hover:bg-red-100 text-sm text-red-700 font-medium"
-                        onClick={() => handleFillAllInterpretation('Resistant')}
-                      >
-                        ✗ Resistant (All)
-                      </button>
-                      <button
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm border-t"
-                        onClick={() => handleFillAllInterpretation('')}
-                      >
-                        Clear All
-                      </button>
-                    </>
-                  )}
-                </div>
+                <>
+                  {/* Backdrop to close menu when clicking outside */}
+                  <div 
+                    className="fixed inset-0 z-40"
+                    onClick={() => setAstContextMenu(null)}
+                  />
+                  <div 
+                    className="fixed bg-white border border-gray-300 rounded-lg shadow-xl z-50 py-2 min-w-[180px]"
+                    style={{ left: astContextMenu.x, top: astContextMenu.y }}
+                  >
+                    {astContextMenu.type === 'result' ? (
+                      <>
+                        <div className="px-4 py-1 text-xs font-semibold text-gray-500 border-b">Fill All Results</div>
+                        <button
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                          onClick={(e) => { e.stopPropagation(); handleFillAllResult(''); }}
+                        >
+                          Clear All
+                        </button>
+                        <button
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const value = prompt('Enter value for all Result fields:');
+                            if (value !== null) handleFillAllResult(value);
+                          }}
+                        >
+                          Fill with custom value...
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="px-4 py-1 text-xs font-semibold text-gray-500 border-b">Fill All Interpretations</div>
+                        <button
+                          className="w-full px-4 py-2 text-left hover:bg-green-100 text-sm text-green-700 font-medium"
+                          onClick={(e) => { e.stopPropagation(); handleFillAllInterpretation('Sensitive'); }}
+                        >
+                          ✓ Sensitive (All)
+                        </button>
+                        <button
+                          className="w-full px-4 py-2 text-left hover:bg-yellow-100 text-sm text-yellow-700 font-medium"
+                          onClick={(e) => { e.stopPropagation(); handleFillAllInterpretation('Intermediate'); }}
+                        >
+                          ~ Intermediate (All)
+                        </button>
+                        <button
+                          className="w-full px-4 py-2 text-left hover:bg-red-100 text-sm text-red-700 font-medium"
+                          onClick={(e) => { e.stopPropagation(); handleFillAllInterpretation('Resistant'); }}
+                        >
+                          ✗ Resistant (All)
+                        </button>
+                        <button
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm border-t"
+                          onClick={(e) => { e.stopPropagation(); handleFillAllInterpretation(''); }}
+                        >
+                          Clear All
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
               )}
               
             </div>
