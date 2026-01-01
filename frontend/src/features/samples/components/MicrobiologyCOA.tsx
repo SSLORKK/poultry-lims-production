@@ -1877,6 +1877,8 @@ export function MicrobiologyCOA() {
               <strong>Bacterial Isolate:</strong> ${escapeHtml(astBacterialIsolate || '-')}
               &nbsp;&nbsp;&nbsp;&nbsp;
               <strong>Organ:</strong> ${escapeHtml(astOrgan || '-')}
+              &nbsp;&nbsp;&nbsp;&nbsp;
+              <strong>Bacteria Family:</strong> ${escapeHtml(astBacteriaFamily || '-')}
             </div>
 
             <h1 style="text-align: center; font-size: 14px; margin-bottom: 8px;">Antimicrobial Susceptibility Testing Results</h1>
