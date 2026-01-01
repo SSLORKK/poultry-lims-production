@@ -136,8 +136,23 @@ export function MicrobiologyCOA() {
   const [showASTTab, setShowASTTab] = useState<boolean>(false);
   const [includeASTInPDF, setIncludeASTInPDF] = useState<boolean>(false);
   const [astBacterialIsolate, setAstBacterialIsolate] = useState<string>('');
+  const [astOrgan, setAstOrgan] = useState<string>('');
   const [astBacteriaFamily, setAstBacteriaFamily] = useState<string>('Enterobacteriaceae');
   const [astResults, setAstResults] = useState<ASTResult[]>([]);
+  
+  // Context menu state for AST Fill All
+  const [astContextMenu, setAstContextMenu] = useState<{ x: number; y: number; type: 'result' | 'interpretation' } | null>(null);
+
+  // Fill All handlers for AST
+  const handleFillAllResult = (value: string) => {
+    setAstResults(prev => prev.map(r => ({ ...r, mic: value })));
+    setAstContextMenu(null);
+  };
+
+  const handleFillAllInterpretation = (value: string) => {
+    setAstResults(prev => prev.map(r => ({ ...r, interpretation: value })));
+    setAstContextMenu(null);
+  };
 
   // Hidden indexes per disease (for +/- row toggle)
   const [hiddenIndexes, setHiddenIndexes] = useState<{ [disease: string]: Set<string> }>({});
@@ -636,6 +651,7 @@ export function MicrobiologyCOA() {
           // Load AST data if exists
           if (coa.ast_data) {
             setAstBacterialIsolate(coa.ast_data.bacterial_isolate || '');
+            setAstOrgan(coa.ast_data.organ || '');
             setAstBacteriaFamily(coa.ast_data.bacteria_family || 'Enterobacteriaceae');
             if (coa.ast_data.include_in_pdf !== undefined) {
               setIncludeASTInPDF(coa.ast_data.include_in_pdf);
@@ -1038,6 +1054,7 @@ export function MicrobiologyCOA() {
       // Prepare AST data if enabled
       const astDataForSave = showASTTab ? {
         bacterial_isolate: astBacterialIsolate,
+        organ: astOrgan,
         bacteria_family: astBacteriaFamily,
         include_in_pdf: includeASTInPDF,
         ast_results: astResults,
@@ -1858,6 +1875,8 @@ export function MicrobiologyCOA() {
             
             <div style="margin-bottom: 10px; font-size: 10px;">
               <strong>Bacterial Isolate:</strong> ${escapeHtml(astBacterialIsolate || '-')}
+              &nbsp;&nbsp;&nbsp;&nbsp;
+              <strong>Organ:</strong> ${escapeHtml(astOrgan || '-')}
             </div>
 
             <h1 style="text-align: center; font-size: 14px; margin-bottom: 8px;">Antimicrobial Susceptibility Testing Results</h1>
@@ -1871,7 +1890,7 @@ export function MicrobiologyCOA() {
               <thead>
                 <tr>
                   <th rowspan="2" style="text-align: left; width: 35%;">AST Disk</th>
-                  <th rowspan="2" style="width: 10%;">MIC</th>
+                  <th rowspan="2" style="width: 10%;">Result</th>
                   <th rowspan="2" style="width: 15%;">Interpretation</th>
                   <th colspan="3" style="width: 30%;">${escapeHtml(astBacteriaFamily)}</th>
                 </tr>
@@ -2490,6 +2509,17 @@ export function MicrobiologyCOA() {
                     />
                   </div>
                   <div className="flex items-center gap-2">
+                    <label className="font-semibold text-sm">Organ:</label>
+                    <input
+                      type="text"
+                      value={astOrgan}
+                      onChange={(e) => setAstOrgan(e.target.value)}
+                      className="w-48 px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
+                      placeholder="Enter organ"
+                      disabled={status === 'finalized'}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
                     <label className="font-semibold text-sm">Bacteria Family:</label>
                     <select
                       value={astBacteriaFamily}
@@ -2515,8 +2545,32 @@ export function MicrobiologyCOA() {
                   <thead>
                     <tr className="bg-gray-100">
                       <th className="border border-gray-300 px-3 py-2 text-left font-semibold" rowSpan={2}>AST Disk</th>
-                      <th className="border border-gray-300 px-3 py-2 text-center font-semibold" rowSpan={2}>MIC</th>
-                      <th className="border border-gray-300 px-3 py-2 text-center font-semibold" rowSpan={2}>Interpretation</th>
+                      <th 
+                        className="border border-gray-300 px-3 py-2 text-center font-semibold cursor-pointer hover:bg-gray-200" 
+                        rowSpan={2}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          if (status !== 'finalized') {
+                            setAstContextMenu({ x: e.clientX, y: e.clientY, type: 'result' });
+                          }
+                        }}
+                        title="Right-click to fill all"
+                      >
+                        Result
+                      </th>
+                      <th 
+                        className="border border-gray-300 px-3 py-2 text-center font-semibold cursor-pointer hover:bg-gray-200" 
+                        rowSpan={2}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          if (status !== 'finalized') {
+                            setAstContextMenu({ x: e.clientX, y: e.clientY, type: 'interpretation' });
+                          }
+                        }}
+                        title="Right-click to fill all"
+                      >
+                        Interpretation
+                      </th>
                       <th className="border border-gray-300 px-3 py-2 text-center font-semibold" colSpan={3}>{astBacteriaFamily}</th>
                     </tr>
                     <tr className="bg-gray-50">
@@ -2574,6 +2628,64 @@ export function MicrobiologyCOA() {
                   </tbody>
                 </table>
               </div>
+
+              {/* AST Context Menu for Fill All */}
+              {astContextMenu && (
+                <div 
+                  className="fixed bg-white border border-gray-300 rounded-lg shadow-xl z-50 py-2 min-w-[180px]"
+                  style={{ left: astContextMenu.x, top: astContextMenu.y }}
+                  onClick={() => setAstContextMenu(null)}
+                >
+                  {astContextMenu.type === 'result' ? (
+                    <>
+                      <div className="px-4 py-1 text-xs font-semibold text-gray-500 border-b">Fill All Results</div>
+                      <button
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                        onClick={() => handleFillAllResult('')}
+                      >
+                        Clear All
+                      </button>
+                      <button
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                        onClick={() => {
+                          const value = prompt('Enter value for all Result fields:');
+                          if (value !== null) handleFillAllResult(value);
+                        }}
+                      >
+                        Fill with custom value...
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="px-4 py-1 text-xs font-semibold text-gray-500 border-b">Fill All Interpretations</div>
+                      <button
+                        className="w-full px-4 py-2 text-left hover:bg-green-100 text-sm text-green-700 font-medium"
+                        onClick={() => handleFillAllInterpretation('Sensitive')}
+                      >
+                        ✓ Sensitive (All)
+                      </button>
+                      <button
+                        className="w-full px-4 py-2 text-left hover:bg-yellow-100 text-sm text-yellow-700 font-medium"
+                        onClick={() => handleFillAllInterpretation('Intermediate')}
+                      >
+                        ~ Intermediate (All)
+                      </button>
+                      <button
+                        className="w-full px-4 py-2 text-left hover:bg-red-100 text-sm text-red-700 font-medium"
+                        onClick={() => handleFillAllInterpretation('Resistant')}
+                      >
+                        ✗ Resistant (All)
+                      </button>
+                      <button
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm border-t"
+                        onClick={() => handleFillAllInterpretation('')}
+                      >
+                        Clear All
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
               
             </div>
           )}

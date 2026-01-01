@@ -41,6 +41,13 @@ const Controls = () => {
   const [astIValue, setAstIValue] = useState('');
   const [astSValue, setAstSValue] = useState('');
   
+  // Edit mode state
+  const [editingItem, setEditingItem] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRValue, setEditRValue] = useState('');
+  const [editIValue, setEditIValue] = useState('');
+  const [editSValue, setEditSValue] = useState('');
+  
   const queryClient = useQueryClient();
 
   // Handle signature image upload
@@ -168,6 +175,56 @@ const Controls = () => {
       queryClient.invalidateQueries({ queryKey: ['controls', activeTab] });
     },
   });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const response = await apiClient.put(`${currentTab.endpoint}/${id}`, data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['controls', activeTab] });
+      setEditingItem(null);
+      setEditName('');
+      setEditRValue('');
+      setEditIValue('');
+      setEditSValue('');
+    },
+    onError: (error: any) => {
+      alert(`Error updating item: ${error.response?.data?.detail || error.message}`);
+    },
+  });
+
+  const handleEdit = (item: any) => {
+    setEditingItem(item.id);
+    setEditName(item.name);
+    if (activeTab === 'ast_disks' || activeTab === 'ast_disks_fastidious' || activeTab === 'ast_disks_staphylococcus' || activeTab === 'ast_disks_enterococcus') {
+      setEditRValue(item.r_value || '');
+      setEditIValue(item.i_value || '');
+      setEditSValue(item.s_value || '');
+    }
+  };
+
+  const handleSaveEdit = (id: number) => {
+    if (!editName.trim()) return;
+    
+    let data: any = { name: editName };
+    
+    if (activeTab === 'ast_disks' || activeTab === 'ast_disks_fastidious' || activeTab === 'ast_disks_staphylococcus' || activeTab === 'ast_disks_enterococcus') {
+      data.r_value = editRValue || null;
+      data.i_value = editIValue || null;
+      data.s_value = editSValue || null;
+    }
+    
+    updateMutation.mutate({ id, data });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItem(null);
+    setEditName('');
+    setEditRValue('');
+    setEditIValue('');
+    setEditSValue('');
+  };
 
   const handleAdd = () => {
     if (!newItemName.trim()) return;
@@ -511,35 +568,97 @@ const Controls = () => {
                       key={item.id}
                       className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex items-center gap-3 flex-1">
-                        <span className="text-gray-900 font-medium">{item.name}</span>
-                        {!item.is_active && (
-                          <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded">
-                            Inactive
-                          </span>
-                        )}
-                        {/* AST Disk specific columns - for all bacteria families */}
-                        {(activeTab === 'ast_disks' || activeTab === 'ast_disks_fastidious' || activeTab === 'ast_disks_staphylococcus' || activeTab === 'ast_disks_enterococcus') && (
-                          <div className="flex gap-4 ml-auto mr-4">
-                            <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded font-medium">
-                              R: {item.r_value || '-'}
-                            </span>
-                            <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded font-medium">
-                              I: {item.i_value || '-'}
-                            </span>
-                            <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded font-medium">
-                              S: {item.s_value || '-'}
-                            </span>
+                      {editingItem === item.id ? (
+                        /* Edit Mode */
+                        <div className="flex items-center gap-3 flex-1">
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm flex-1 max-w-xs"
+                            autoFocus
+                          />
+                          {(activeTab === 'ast_disks' || activeTab === 'ast_disks_fastidious' || activeTab === 'ast_disks_staphylococcus' || activeTab === 'ast_disks_enterococcus') && (
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={editRValue}
+                                onChange={(e) => setEditRValue(e.target.value)}
+                                placeholder="R"
+                                className="w-16 px-2 py-2 border border-red-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 text-sm text-center"
+                              />
+                              <input
+                                type="text"
+                                value={editIValue}
+                                onChange={(e) => setEditIValue(e.target.value)}
+                                placeholder="I"
+                                className="w-16 px-2 py-2 border border-yellow-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm text-center"
+                              />
+                              <input
+                                type="text"
+                                value={editSValue}
+                                onChange={(e) => setEditSValue(e.target.value)}
+                                placeholder="S"
+                                className="w-16 px-2 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 text-sm text-center"
+                              />
+                            </div>
+                          )}
+                          <button
+                            onClick={() => handleSaveEdit(item.id)}
+                            disabled={updateMutation.isPending}
+                            className="px-3 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-md transition-colors disabled:opacity-50"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-md transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        /* View Mode */
+                        <>
+                          <div className="flex items-center gap-3 flex-1">
+                            <span className="text-gray-900 font-medium">{item.name}</span>
+                            {!item.is_active && (
+                              <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded">
+                                Inactive
+                              </span>
+                            )}
+                            {/* AST Disk specific columns - for all bacteria families */}
+                            {(activeTab === 'ast_disks' || activeTab === 'ast_disks_fastidious' || activeTab === 'ast_disks_staphylococcus' || activeTab === 'ast_disks_enterococcus') && (
+                              <div className="flex gap-4 ml-auto mr-4">
+                                <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded font-medium">
+                                  R: {item.r_value || '-'}
+                                </span>
+                                <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded font-medium">
+                                  I: {item.i_value || '-'}
+                                </span>
+                                <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded font-medium">
+                                  S: {item.s_value || '-'}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        disabled={deleteMutation.isPending}
-                        className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
-                      >
-                        Delete
-                      </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleEdit(item)}
+                              className="px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item.id)}
+                              disabled={deleteMutation.isPending}
+                              className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>

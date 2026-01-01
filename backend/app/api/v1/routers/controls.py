@@ -45,6 +45,23 @@ def create_company(
     return repo.create(name=data.name)
 
 
+@router.put("/companies/{item_id}", response_model=DropdownResponse)
+def update_company(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, Company)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Company not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.delete("/companies/{item_id}")
 def delete_company(
     item_id: int,
@@ -93,6 +110,22 @@ def create_farm(
     return farm
 
 
+@router.put("/farms/{item_id}", response_model=FarmResponse)
+def update_farm(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    farm = db.query(Farm).filter(Farm.id == item_id).first()
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+    farm.name = data.name
+    db.commit()
+    db.refresh(farm)
+    return farm
+
+
 @router.delete("/farms/{item_id}")
 def delete_farm(
     item_id: int,
@@ -129,6 +162,23 @@ def create_flock(
     return repo.create(name=data.name)
 
 
+@router.put("/flocks/{item_id}", response_model=DropdownResponse)
+def update_flock(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, Flock)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Flock not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.delete("/flocks/{item_id}")
 def delete_flock(
     item_id: int,
@@ -161,6 +211,23 @@ def create_cycle(
     if repo.get_by_name(data.name):
         raise HTTPException(status_code=400, detail="Cycle already exists")
     return repo.create(name=data.name)
+
+
+@router.put("/cycles/{item_id}", response_model=DropdownResponse)
+def update_cycle(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, Cycle)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Cycle not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @router.delete("/cycles/{item_id}")
@@ -204,6 +271,23 @@ def create_status(
     return repo.create(name=data.name)
 
 
+@router.put("/statuses/{item_id}", response_model=DropdownResponse)
+def update_status(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, Status)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Status not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.delete("/statuses/{item_id}")
 def delete_status(
     item_id: int,
@@ -238,6 +322,23 @@ def create_house(
     return repo.create(name=data.name)
 
 
+@router.put("/houses/{item_id}", response_model=DropdownResponse)
+def update_house(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, House)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="House not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.delete("/houses/{item_id}")
 def delete_house(
     item_id: int,
@@ -270,6 +371,23 @@ def create_source(
     if repo.get_by_name(data.name):
         raise HTTPException(status_code=400, detail="Source already exists")
     return repo.create(name=data.name)
+
+
+@router.put("/sources/{item_id}", response_model=DropdownResponse)
+def update_source(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, Source)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Source not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @router.delete("/sources/{item_id}")
