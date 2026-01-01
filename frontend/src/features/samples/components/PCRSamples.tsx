@@ -211,6 +211,13 @@ export const PCRSamples = () => {
     fetchAvailableYears();
   }, []);
 
+  // Auto-select the most recent year with data when available years load
+  useEffect(() => {
+    if (availableYears.length > 0 && !availableYears.includes(selectedYear)) {
+      setSelectedYear(availableYears[0]); // First year is most recent (sorted DESC)
+    }
+  }, [availableYears]);
+
   // Fetch edited sample and unit IDs
   useEffect(() => {
     const fetchEditedEntities = async () => {

@@ -1815,7 +1815,7 @@ export function MicrobiologyCOA() {
         const astPage = `
         <div class="page">
           <header class="header">
-            <img src="/logo.png" alt="Lab Logo" class="logo" onerror="this.style.display='none'" />
+            <img src="${window.location.origin}/assets/logo.png" alt="Lab Logo" class="logo" onerror="this.style.display='none'" />
             <div style="text-align: center; flex: 1;">
               <div class="lab-name">SAMA KARBALA CO. - Central Poultry Laboratories</div>
               <div class="coa-title">Certificate of Analysis</div>

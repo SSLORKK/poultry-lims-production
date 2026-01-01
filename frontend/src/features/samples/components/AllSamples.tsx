@@ -48,6 +48,8 @@ export const AllSamples = () => {
     open: false,
     note: '',
   });
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -81,12 +83,27 @@ export const AllSamples = () => {
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
 
+  const fetchAvailableYears = async () => {
+    try {
+      const response = await apiClient.get('/samples/available-years');
+      const years = response.data.years || [];
+      setAvailableYears(years);
+      // Auto-select the most recent year with data if current year has no data
+      if (years.length > 0 && !years.includes(selectedYear)) {
+        setSelectedYear(years[0]); // First year is most recent (sorted DESC)
+      }
+    } catch (err) {
+      console.error('Failed to load available years:', err);
+    }
+  };
+
   const fetchSamples = async () => {
     try {
       setLoading(true);
 
       // Build filter params for backend
       const params: any = {
+        year: selectedYear,
         skip: (page - 1) * 100,  // Backend pagination: skip records based on page
         limit: 100,              // Fetch 100 records at a time
       };
@@ -155,6 +172,10 @@ export const AllSamples = () => {
   };
 
   useEffect(() => {
+    fetchAvailableYears();
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(globalSearch);
       setPage(1); // Reset to first page when searching
@@ -164,7 +185,7 @@ export const AllSamples = () => {
 
   useEffect(() => {
     fetchSamples();
-  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, page, debouncedSearch]);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, page, debouncedSearch]);
 
   // Close export dropdown when clicking outside
   useEffect(() => {
@@ -563,6 +584,18 @@ export const AllSamples = () => {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              {/* Year Selector */}
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="px-2 sm:px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent min-w-[80px]"
+              >
+                {availableYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
               {/* Export Dropdown */}
               <div className="relative" ref={exportDropdownRef}>
                 <button

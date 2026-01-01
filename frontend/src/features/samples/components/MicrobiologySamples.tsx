@@ -148,7 +148,12 @@ export const MicrobiologySamples = () => {
   const fetchAvailableYears = async () => {
     try {
       const response = await apiClient.get('/samples/available-years');
-      setAvailableYears(response.data.years || []);
+      const years = response.data.years || [];
+      setAvailableYears(years);
+      // Auto-select the most recent year with data if current year has no data
+      if (years.length > 0 && !years.includes(selectedYear)) {
+        setSelectedYear(years[0]); // First year is most recent (sorted DESC)
+      }
     } catch (err) {
       console.error('Failed to load available years:', err);
     }
