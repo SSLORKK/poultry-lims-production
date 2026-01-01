@@ -17,8 +17,13 @@ depends_on = None
 
 
 def upgrade():
-    # Add hidden_indexes column to microbiology_coas table
-    op.add_column('microbiology_coas', sa.Column('hidden_indexes', sa.JSON(), nullable=True))
+    # Add hidden_indexes column to microbiology_coas table if table exists
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    if 'microbiology_coas' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('microbiology_coas')]
+        if 'hidden_indexes' not in columns:
+            op.add_column('microbiology_coas', sa.Column('hidden_indexes', sa.JSON(), nullable=True))
 
 
 def downgrade():

@@ -20,8 +20,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column('pcr_coa', sa.Column('lab_supervisor', sa.String(), nullable=True))
-    op.add_column('pcr_coa', sa.Column('lab_manager', sa.String(), nullable=True))
+    # Check if pcr_coa table exists before adding columns
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    if 'pcr_coa' in inspector.get_table_names():
+        # Check if columns already exist
+        columns = [col['name'] for col in inspector.get_columns('pcr_coa')]
+        if 'lab_supervisor' not in columns:
+            op.add_column('pcr_coa', sa.Column('lab_supervisor', sa.String(), nullable=True))
+        if 'lab_manager' not in columns:
+            op.add_column('pcr_coa', sa.Column('lab_manager', sa.String(), nullable=True))
 
 
 def downgrade() -> None:
