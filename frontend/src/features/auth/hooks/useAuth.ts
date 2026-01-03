@@ -2,6 +2,11 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '@/services/apiClient';
 
+// Token storage keys
+const TOKEN_KEY = 'token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
+const REMEMBER_ME_KEY = 'rememberMe';
+
 export const useAuth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,18 +21,16 @@ export const useAuth = () => {
         password,
         remember_me: rememberMe,
       });
-      localStorage.setItem('token', response.data.access_token);
+      
+      // Store both access and refresh tokens
+      localStorage.setItem(TOKEN_KEY, response.data.access_token);
+      localStorage.setItem(REFRESH_TOKEN_KEY, response.data.refresh_token);
 
       // Store remember me preference
       if (rememberMe) {
-        localStorage.setItem('rememberMe', 'true');
-        // Remove any session expiration
-        localStorage.removeItem('sessionExpiry');
+        localStorage.setItem(REMEMBER_ME_KEY, 'true');
       } else {
-        localStorage.removeItem('rememberMe');
-        // Set session to expire in 8 hours if not remembered (matches backend JWT expiration)
-        const expiryTime = Date.now() + (8 * 60 * 60 * 1000);
-        localStorage.setItem('sessionExpiry', expiryTime.toString());
+        localStorage.removeItem(REMEMBER_ME_KEY);
       }
 
       navigate('/');
@@ -51,7 +54,11 @@ export const useAuth = () => {
         full_name: fullName,
         role: 'technician',
       });
-      localStorage.setItem('token', response.data.access_token);
+      
+      // Store both tokens
+      localStorage.setItem(TOKEN_KEY, response.data.access_token);
+      localStorage.setItem(REFRESH_TOKEN_KEY, response.data.refresh_token);
+      
       navigate('/');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Registration failed');
@@ -60,12 +67,64 @@ export const useAuth = () => {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('rememberMe');
+  const logout = async () => {
+    try {
+      // Call logout endpoint to log on server
+      await apiClient.post('/auth/logout');
+    } catch (err) {
+      // Ignore errors - we still want to clear local storage
+      console.warn('Logout API call failed:', err);
+    }
+    
+    // Clear all auth-related storage
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(REMEMBER_ME_KEY);
     localStorage.removeItem('sessionExpiry');
+    localStorage.removeItem('session_expired');
+    
     navigate('/login');
   };
 
-  return { login, register, logout, isLoading, error };
+  const refreshAccessToken = async (): Promise<boolean> => {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (!refreshToken) {
+      return false;
+    }
+
+    try {
+      const response = await apiClient.post('/auth/refresh', {
+        refresh_token: refreshToken,
+      });
+      
+      // Update only the access token
+      localStorage.setItem(TOKEN_KEY, response.data.access_token);
+      return true;
+    } catch (err) {
+      console.warn('Token refresh failed:', err);
+      return false;
+    }
+  };
+
+  const isAuthenticated = (): boolean => {
+    return !!localStorage.getItem(TOKEN_KEY);
+  };
+
+  const getAccessToken = (): string | null => {
+    return localStorage.getItem(TOKEN_KEY);
+  };
+
+  return { 
+    login, 
+    register, 
+    logout, 
+    refreshAccessToken,
+    isAuthenticated,
+    getAccessToken,
+    isLoading, 
+    error 
+  };
 };
+
+// Export token keys for use in apiClient
+export { TOKEN_KEY, REFRESH_TOKEN_KEY };

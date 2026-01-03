@@ -12,6 +12,7 @@ class PCRData(Base):
     
     # PCR-specific fields
     diseases_list = Column(JSON, nullable=True)  # Array of {disease, kit_type} objects
+    kit_type = Column(String(255), nullable=True)
     technician_name = Column(String(255), nullable=True)
     extraction_method = Column(String(255), nullable=True)
     extraction = Column(Integer, nullable=True)  # Number of extractions

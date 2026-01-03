@@ -425,6 +425,22 @@ def create_sample_type(
     return repo.create(name=data.name, department_id=data.department_id)
 
 
+@router.put("/sample-types/{item_id}", response_model=DepartmentDropdownResponse)
+def update_sample_type(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    item = db.query(SampleType).filter(SampleType.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Sample type not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.delete("/sample-types/{item_id}")
 def delete_sample_type(
     item_id: int,
@@ -458,6 +474,22 @@ def create_disease(
 ):
     repo = DepartmentDropdownRepository(db, Disease)
     return repo.create(name=data.name, department_id=data.department_id)
+
+
+@router.put("/diseases/{item_id}", response_model=DepartmentDropdownResponse)
+def update_disease(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    item = db.query(Disease).filter(Disease.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Disease not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @router.delete("/diseases/{item_id}")
@@ -518,6 +550,22 @@ def create_kit_type(
     return repo.create(name=data.name, department_id=data.department_id)
 
 
+@router.put("/kit-types/{item_id}", response_model=DepartmentDropdownResponse)
+def update_kit_type(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    item = db.query(KitType).filter(KitType.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Kit type not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.delete("/kit-types/{item_id}")
 def delete_kit_type(
     item_id: int,
@@ -550,6 +598,23 @@ def create_technician(
     if repo.get_by_name(data.name):
         raise HTTPException(status_code=400, detail="Technician already exists")
     return repo.create(name=data.name)
+
+
+@router.put("/technicians/{item_id}", response_model=DropdownResponse)
+def update_technician(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, Technician)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Technician not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @router.delete("/technicians/{item_id}")
@@ -684,6 +749,23 @@ def create_extraction_method(
     return repo.create(name=data.name)
 
 
+@router.put("/extraction-methods/{item_id}", response_model=DropdownResponse)
+def update_extraction_method(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, ExtractionMethod)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Extraction method not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.delete("/extraction-methods/{item_id}")
 def delete_extraction_method(
     item_id: int,
@@ -716,6 +798,23 @@ def create_culture_isolation_type(
     if repo.get_by_name(data.name):
         raise HTTPException(status_code=400, detail="Culture isolation type already exists")
     return repo.create(name=data.name)
+
+
+@router.put("/culture-isolation-types/{item_id}", response_model=DropdownResponse)
+def update_culture_isolation_type(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, CultureIsolationType)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Culture isolation type not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @router.delete("/culture-isolation-types/{item_id}")
@@ -752,6 +851,23 @@ def create_pathogenic_fungi_mold(
     return repo.create(name=data.name)
 
 
+@router.put("/pathogenic-fungi-mold/{item_id}", response_model=DropdownResponse)
+def update_pathogenic_fungi_mold(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, PathogenicFungiMold)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Pathogenic Fungi & Mold not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.delete("/pathogenic-fungi-mold/{item_id}")
 def delete_pathogenic_fungi_mold(
     item_id: int,
@@ -784,6 +900,23 @@ def create_culture_screened_pathogen(
     if repo.get_by_name(data.name):
         raise HTTPException(status_code=400, detail="Culture screened pathogen already exists")
     return repo.create(name=data.name)
+
+
+@router.put("/culture-screened-pathogens/{item_id}", response_model=DropdownResponse)
+def update_culture_screened_pathogen(
+    item_id: int,
+    data: DropdownCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = DropdownRepository(db, CultureScreenedPathogen)
+    item = repo.get_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Culture screened pathogen not found")
+    item.name = data.name
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @router.delete("/culture-screened-pathogens/{item_id}")
@@ -921,6 +1054,26 @@ def create_ast_disk_fastidious(
     return ast_disk
 
 
+@router.put("/ast-disks-fastidious/{item_id}", response_model=ASTDiskResponse)
+def update_ast_disk_fastidious(
+    item_id: int,
+    data: ASTDiskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ast_disk = db.query(ASTDiskFastidious).filter(ASTDiskFastidious.id == item_id).first()
+    if not ast_disk:
+        raise HTTPException(status_code=404, detail="AST Disk not found")
+    
+    ast_disk.name = data.name
+    ast_disk.r_value = data.r_value
+    ast_disk.i_value = data.i_value
+    ast_disk.s_value = data.s_value
+    db.commit()
+    db.refresh(ast_disk)
+    return ast_disk
+
+
 @router.delete("/ast-disks-fastidious/{item_id}")
 def delete_ast_disk_fastidious(
     item_id: int,
@@ -970,6 +1123,26 @@ def create_ast_disk_staphylococcus(
     return ast_disk
 
 
+@router.put("/ast-disks-staphylococcus/{item_id}", response_model=ASTDiskResponse)
+def update_ast_disk_staphylococcus(
+    item_id: int,
+    data: ASTDiskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ast_disk = db.query(ASTDiskStaphylococcus).filter(ASTDiskStaphylococcus.id == item_id).first()
+    if not ast_disk:
+        raise HTTPException(status_code=404, detail="AST Disk not found")
+    
+    ast_disk.name = data.name
+    ast_disk.r_value = data.r_value
+    ast_disk.i_value = data.i_value
+    ast_disk.s_value = data.s_value
+    db.commit()
+    db.refresh(ast_disk)
+    return ast_disk
+
+
 @router.delete("/ast-disks-staphylococcus/{item_id}")
 def delete_ast_disk_staphylococcus(
     item_id: int,
@@ -1014,6 +1187,26 @@ def create_ast_disk_enterococcus(
         s_value=data.s_value
     )
     db.add(ast_disk)
+    db.commit()
+    db.refresh(ast_disk)
+    return ast_disk
+
+
+@router.put("/ast-disks-enterococcus/{item_id}", response_model=ASTDiskResponse)
+def update_ast_disk_enterococcus(
+    item_id: int,
+    data: ASTDiskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ast_disk = db.query(ASTDiskEnterococcus).filter(ASTDiskEnterococcus.id == item_id).first()
+    if not ast_disk:
+        raise HTTPException(status_code=404, detail="AST Disk not found")
+    
+    ast_disk.name = data.name
+    ast_disk.r_value = data.r_value
+    ast_disk.i_value = data.i_value
+    ast_disk.s_value = data.s_value
     db.commit()
     db.refresh(ast_disk)
     return ast_disk

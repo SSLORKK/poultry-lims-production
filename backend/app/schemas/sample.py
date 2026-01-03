@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 
@@ -8,15 +8,48 @@ class DiseaseKitItem(BaseModel):
     disease: str
     kit_type: str
     test_count: Optional[int] = 1
+    wells_count: Optional[int] = None  # Wells count per disease (for Serology)
+    
+    @field_validator('disease')
+    @classmethod
+    def validate_disease(cls, v: str) -> str:
+        if not v or v.strip() == '':
+            raise ValueError('Disease name cannot be empty')
+        if len(v.strip()) > 100:
+            raise ValueError('Disease name must be less than 100 characters')
+        return v.strip()
+    
+    @field_validator('kit_type')
+    @classmethod
+    def validate_kit_type(cls, v: str) -> str:
+        if not v or v.strip() == '':
+            raise ValueError('Kit type cannot be empty')
+        if len(v.strip()) > 100:
+            raise ValueError('Kit type must be less than 100 characters')
+        return v.strip()
+    
+    @field_validator('test_count')
+    @classmethod
+    def validate_test_count(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and (v < 1 or v > 100):
+            raise ValueError('Test count must be between 1 and 100')
+        return v
+    
+    @field_validator('wells_count')
+    @classmethod
+    def validate_wells_count(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and (v < 0 or v > 384):
+            raise ValueError('Wells count must be between 0 and 384')
+        return v
 
 
 # Department-specific data schemas
 class PCRDataCreate(BaseModel):
     diseases_list: Optional[List[DiseaseKitItem]] = []
-    kit_type: Optional[str] = None
-    technician_name: Optional[str] = None
-    extraction_method: Optional[str] = None
-    extraction: Optional[int] = None
+    kit_type: str
+    technician_name: str
+    extraction_method: str
+    extraction: int
     detection: Optional[int] = None
 
 
@@ -36,10 +69,10 @@ class PCRDataResponse(BaseModel):
 
 class SerologyDataCreate(BaseModel):
     diseases_list: Optional[List[DiseaseKitItem]] = []
-    kit_type: Optional[str] = None
+    kit_type: str
     number_of_wells: Optional[int] = None
     tests_count: Optional[int] = None
-    technician_name: Optional[str] = None
+    technician_name: str
 
 
 class SerologyDataResponse(BaseModel):

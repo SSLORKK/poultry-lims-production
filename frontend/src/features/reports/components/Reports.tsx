@@ -44,6 +44,7 @@ interface DiseaseKitStats {
   test_count: number;
   positive_count: number;
   negative_count: number;
+  wells_count: number;
 }
 
 interface ReportsData {
@@ -203,6 +204,7 @@ export default function Reports() {
       positive: number;
       negative: number;
       positiveRate: number;
+      wells: number;
     }>> = {
       PCR: [],
       SER: [],
@@ -235,7 +237,8 @@ export default function Reports() {
         kit: d.kit_type,
         positive: d.positive_count,
         negative: d.negative_count,
-        positiveRate: positiveRate
+        positiveRate: positiveRate,
+        wells: d.wells_count || 0
       });
     });
 
@@ -886,6 +889,9 @@ export default function Reports() {
                         <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider">Disease</th>
                         <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider">Kit Type</th>
                         <th className="px-4 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Total Tests</th>
+                        {department === 'SER' && (
+                          <th className="px-4 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Wells</th>
+                        )}
                         <th className="px-4 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Positive</th>
                         <th className="px-4 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Negative</th>
                         <th className="px-4 py-3 text-center text-xs font-bold text-white uppercase tracking-wider">Positive Rate</th>
@@ -901,6 +907,13 @@ export default function Reports() {
                               {item.count}
                             </span>
                           </td>
+                          {department === 'SER' && (
+                            <td className="px-4 py-3 text-sm text-center">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-800">
+                                {item.wells}
+                              </span>
+                            </td>
+                          )}
                           <td className="px-4 py-3 text-sm text-center">
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800">
                               {item.positive}

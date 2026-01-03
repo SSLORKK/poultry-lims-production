@@ -18,6 +18,7 @@ import Database from './features/database/components/Database';
 import Reports from './features/reports/components/Reports';
 import Drive from './features/drive/components/Drive';
 import { DriveAdmin } from './features/drive/components/DriveAdmin';
+import RecycleBin from './features/drive/components/RecycleBin';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { SmartRedirect } from './components/SmartRedirect';
 import ErrorBoundary from './components/common/ErrorBoundary';
@@ -78,6 +79,7 @@ function App() {
             <Route path="database" element={<ErrorBoundary><Database /></ErrorBoundary>} />
             <Route path="drive" element={<ErrorBoundary><Drive /></ErrorBoundary>} />
             <Route path="drive-admin" element={<ErrorBoundary><DriveAdmin /></ErrorBoundary>} />
+            <Route path="recycle-bin" element={<ErrorBoundary><RecycleBin /></ErrorBoundary>} />
             <Route path="controls" element={<ErrorBoundary><Controls /></ErrorBoundary>} />
           </Route>
 

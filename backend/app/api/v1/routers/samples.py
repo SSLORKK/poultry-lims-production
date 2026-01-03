@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Set
 from datetime import datetime
 from app.db.session import get_db
 from app.schemas.sample import SampleCreate, SampleUpdate, SampleResponse
@@ -8,9 +8,56 @@ from app.services import SampleService
 from app.repositories import CounterRepository, DepartmentRepository, UnitRepository
 from app.repositories.permission_repository import PermissionRepository
 from app.api.v1.deps import get_current_user
-from app.models.user import User
+from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/samples", tags=["samples"])
+
+# Permission screen name to department code mapping
+PERMISSION_TO_DEPT_CODE = {
+    "Database - PCR": "PCR",
+    "Database - Serology": "SER",
+    "Database - Microbiology": "MIC",
+}
+
+
+def get_allowed_department_ids(
+    user_permissions: list,
+    dept_repo: DepartmentRepository,
+    check_write: bool = False
+) -> Set[int]:
+    """
+    Get department IDs that user has access to based on permissions.
+    Uses database lookup instead of hardcoded IDs.
+    
+    Args:
+        user_permissions: List of user's permissions
+        dept_repo: Department repository for database lookup
+        check_write: If True, check can_write permission; otherwise check can_read
+    
+    Returns:
+        Set of department IDs the user can access
+    """
+    allowed_dept_ids: Set[int] = set()
+    
+    # Cache department lookups to avoid repeated queries
+    dept_cache = {}
+    
+    for perm in user_permissions:
+        screen_name = perm.screen_name
+        has_permission = perm.can_write if check_write else perm.can_read
+        
+        if screen_name in PERMISSION_TO_DEPT_CODE and has_permission:
+            dept_code = PERMISSION_TO_DEPT_CODE[screen_name]
+            
+            # Use cache or lookup from database
+            if dept_code not in dept_cache:
+                dept = dept_repo.get_by_code(dept_code)
+                dept_cache[dept_code] = dept.id if dept else None
+            
+            if dept_cache[dept_code]:
+                allowed_dept_ids.add(dept_cache[dept_code])
+    
+    return allowed_dept_ids
 
 
 @router.get("/", response_model=List[SampleResponse])
@@ -43,8 +90,8 @@ def get_samples(
     permission_repo = PermissionRepository(db)
     user_permissions = permission_repo.get_user_permissions(current_user.id)  # type: ignore
     
-    # Admin role has access to all departments
-    if current_user.role == "admin":  # type: ignore
+    # Admin role has access to all departments (use enum comparison)
+    if current_user.role == UserRole.admin:
         return samples
     
     # Check if user has "All Samples" permission - if so, grant access to all departments
@@ -57,15 +104,9 @@ def get_samples(
     if has_all_samples_permission:
         return samples
     
-    # Determine which departments the user has access to
-    allowed_dept_ids = set()
-    for perm in user_permissions:
-        if perm.screen_name == "Database - PCR" and perm.can_read:  # type: ignore
-            allowed_dept_ids.add(1)  # PCR department ID
-        elif perm.screen_name == "Database - Serology" and perm.can_read:  # type: ignore
-            allowed_dept_ids.add(2)  # Serology department ID
-        elif perm.screen_name == "Database - Microbiology" and perm.can_read:  # type: ignore
-            allowed_dept_ids.add(3)  # Microbiology department ID
+    # Determine which departments the user has access to using database lookup
+    dept_repo = DepartmentRepository(db)
+    allowed_dept_ids = get_allowed_department_ids(user_permissions, dept_repo, check_write=False)
     
     # Filter samples to only include units from allowed departments
     filtered_samples = []
@@ -203,8 +244,8 @@ def get_sample(
     permission_repo = PermissionRepository(db)
     user_permissions = permission_repo.get_user_permissions(current_user.id)  # type: ignore
     
-    # Admin role has access to all departments
-    if current_user.role == "admin":  # type: ignore
+    # Admin role has access to all departments (use enum comparison)
+    if current_user.role == UserRole.admin:
         return sample
     
     # Check if user has "All Samples" permission - if so, grant access to all departments
@@ -217,15 +258,9 @@ def get_sample(
     if has_all_samples_permission:
         return sample
     
-    # Determine which departments the user has access to
-    allowed_dept_ids = set()
-    for perm in user_permissions:
-        if perm.screen_name == "Database - PCR" and perm.can_read:  # type: ignore
-            allowed_dept_ids.add(1)  # PCR department ID
-        elif perm.screen_name == "Database - Serology" and perm.can_read:  # type: ignore
-            allowed_dept_ids.add(2)  # Serology department ID
-        elif perm.screen_name == "Database - Microbiology" and perm.can_read:  # type: ignore
-            allowed_dept_ids.add(3)  # Microbiology department ID
+    # Determine which departments the user has access to using database lookup
+    dept_repo = DepartmentRepository(db)
+    allowed_dept_ids = get_allowed_department_ids(user_permissions, dept_repo, check_write=False)
     
     # Filter units based on allowed departments
     allowed_units = [unit for unit in sample.units if unit.department_id in allowed_dept_ids]
@@ -302,7 +337,14 @@ def delete_sample(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a sample and all associated data"""
+    """Delete a sample and all associated data (Admin only)"""
+    # Only admin can delete samples
+    if current_user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can delete samples"
+        )
+    
     sample_service = SampleService(db)
     success = sample_service.delete_sample(sample_id)
     

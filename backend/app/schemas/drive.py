@@ -1,6 +1,19 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
+
+
+# Valid permission levels for Drive
+VALID_PERMISSION_LEVELS = ['read', 'write', 'admin']
+
+
+def validate_permission_level(value: str) -> str:
+    """
+    Validate that permission_level is one of: read, write, admin
+    """
+    if value not in VALID_PERMISSION_LEVELS:
+        raise ValueError(f"permission_level must be one of: {', '.join(VALID_PERMISSION_LEVELS)}")
+    return value
 
 
 class DriveItemBase(BaseModel):
@@ -31,6 +44,9 @@ class DriveItemResponse(DriveItemBase):
     created_by: Optional[str] = None
     updated_by: Optional[str] = None
     is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
+    deleted_by: Optional[str] = None
+    original_parent_id: Optional[int] = None
     
     class Config:
         from_attributes = True
@@ -53,6 +69,8 @@ class DriveUploadResponse(BaseModel):
     parent_id: Optional[int] = None
     created_at: Optional[datetime] = None
     created_by: Optional[str] = None
+    was_renamed: bool = False
+    replaced_existing: bool = False
     
     class Config:
         from_attributes = True
@@ -75,6 +93,12 @@ class DrivePermissionBase(BaseModel):
     has_access: bool = False
     permission_level: str = 'read'  # 'read', 'write', 'admin'
     folder_access: Optional[List[int]] = None  # null = all folders
+    
+    @field_validator('permission_level')
+    @classmethod
+    def validate_permission_level_field(cls, v: str) -> str:
+        """Validate permission_level is valid"""
+        return validate_permission_level(v)
 
 
 class DrivePermissionCreate(DrivePermissionBase):
@@ -85,6 +109,14 @@ class DrivePermissionUpdate(BaseModel):
     has_access: Optional[bool] = None
     permission_level: Optional[str] = None
     folder_access: Optional[List[int]] = None
+    
+    @field_validator('permission_level')
+    @classmethod
+    def validate_permission_level_field(cls, v: Optional[str]) -> Optional[str]:
+        """Validate permission_level is valid (if provided)"""
+        if v is None:
+            return v
+        return validate_permission_level(v)
 
 
 class DrivePermissionResponse(DrivePermissionBase):

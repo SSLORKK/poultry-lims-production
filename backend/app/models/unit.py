@@ -28,7 +28,7 @@ class Unit(Base):
     sample_type = Column(JSON, nullable=True)  # Array of sample types (organs)
     samples_number = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
-    coa_status = Column(String(50), nullable=True, index=True)  # draft, created, need_approval, finalized
+    coa_status = Column(String(50), nullable=True)  # draft, created, need_approval, finalized (indexed via composite index)
     
     # Edit tracking fields
     created_at = Column(DateTime, default=datetime.utcnow, nullable=True, index=True)

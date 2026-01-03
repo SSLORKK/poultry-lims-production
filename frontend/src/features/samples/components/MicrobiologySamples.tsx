@@ -403,7 +403,7 @@ export const MicrobiologySamples = () => {
             house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
             age: unit.age,
             source: unit.source || '-',
-            technician: 'N/A',
+            technician: unit.microbiology_data?.technician_name || '-',
             notes: unit.notes || '',
             sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
             status: sample.status,
@@ -1585,6 +1585,7 @@ export const MicrobiologySamples = () => {
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">House</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Age</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Source</th>
+                  <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Technician</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Sample Type</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Diseases</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Batch No</th>
@@ -1662,6 +1663,7 @@ export const MicrobiologySamples = () => {
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.house}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.age ?? '-'}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.source}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.technician}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.sampleType}</td>
                     <td className="border border-gray-300 px-3 py-2 text-xs text-gray-600">{row.diseases}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.batchNo}</td>

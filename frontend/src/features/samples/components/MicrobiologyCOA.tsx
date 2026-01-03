@@ -124,6 +124,7 @@ export function MicrobiologyCOA() {
   const [reviewedByPIN, setReviewedByPIN] = useState<string>('');
   const [labSupervisorPIN, setLabSupervisorPIN] = useState<string>('');
   const [labManagerPIN, setLabManagerPIN] = useState<string>('');
+  const [verifyingPIN, setVerifyingPIN] = useState<boolean>(false);
 
   // Water COA Volume and Dilution States
   const [waterVolume, setWaterVolume] = useState<number>(4);
@@ -403,7 +404,8 @@ export function MicrobiologyCOA() {
   }, []);
 
   const verifyPIN = async (pin: string, field: 'testedBy' | 'reviewedBy' | 'labSupervisor' | 'labManager') => {
-    if (!pin.trim()) return;
+    if (!pin.trim() || verifyingPIN) return;
+    setVerifyingPIN(true);
 
     try {
       // Get current token for PIN verification
@@ -461,6 +463,8 @@ export function MicrobiologyCOA() {
       } else {
         setNotification({ type: 'error', message: 'PIN verification failed. Please check your connection and try again.' });
       }
+    } finally {
+      setVerifyingPIN(false);
     }
   };
 

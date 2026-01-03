@@ -32,6 +32,7 @@ export function SmartRedirect() {
   // Helper function to find first allowed route
   const getFirstAllowedRoute = (): string | null => {
     if (hasAnyPermission('Dashboard')) return '/dashboard';
+    if (hasAnyPermission('Drive')) return '/drive';
     if (hasAnyPermission('All Samples')) return '/all-samples';
     if (hasAnyPermission('Register Sample')) return '/register-sample';
     if (hasAnyPermission('PCR Samples')) return '/pcr/samples';

@@ -54,12 +54,50 @@ class DriveRepository:
 
     def soft_delete(self, item: DriveItem, deleted_by: str) -> DriveItem:
         from datetime import datetime
+        # Store original parent for restore functionality
+        item.original_parent_id = item.parent_id
         item.is_deleted = True
         item.deleted_at = datetime.utcnow()
         item.deleted_by = deleted_by
         self.db.commit()
         self.db.refresh(item)
         return item
+
+    def get_deleted_items(self, parent_id: Optional[int] = None) -> List[DriveItem]:
+        """Get deleted items (recycle bin) - optionally filtered by original parent"""
+        query = self.db.query(DriveItem).filter(DriveItem.is_deleted == True)
+        if parent_id is not None:
+            query = query.filter(DriveItem.original_parent_id == parent_id)
+        return query.order_by(DriveItem.deleted_at.desc()).all()
+
+    def get_all_deleted_items(self) -> List[DriveItem]:
+        """Get all deleted items for recycle bin"""
+        return self.db.query(DriveItem).filter(
+            DriveItem.is_deleted == True
+        ).order_by(DriveItem.deleted_at.desc()).all()
+
+    def restore_item(self, item: DriveItem, restored_by: str) -> DriveItem:
+        """Restore a deleted item from recycle bin"""
+        from datetime import datetime
+        item.is_deleted = False
+        item.parent_id = item.original_parent_id
+        item.original_parent_id = None
+        item.deleted_at = None
+        item.deleted_by = None
+        item.updated_at = datetime.utcnow()
+        item.updated_by = restored_by
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def search_deleted(self, query: str) -> List[DriveItem]:
+        """Search deleted items in recycle bin"""
+        return self.db.query(DriveItem).filter(
+            and_(
+                DriveItem.is_deleted == True,
+                DriveItem.name.ilike(f"%{query}%")
+            )
+        ).order_by(DriveItem.deleted_at.desc()).all()
 
     def hard_delete(self, item: DriveItem) -> bool:
         self.db.delete(item)
@@ -76,6 +114,17 @@ class DriveRepository:
             else:
                 break
         return breadcrumbs
+
+    def get_by_name(self, name: str, parent_id: Optional[int] = None) -> Optional[DriveItem]:
+        """Get an item by name within a specific folder"""
+        query = self.db.query(DriveItem).filter(
+            and_(
+                DriveItem.name == name,
+                DriveItem.parent_id == parent_id,
+                DriveItem.is_deleted == False
+            )
+        )
+        return query.first()
 
     def search(self, query: str) -> List[DriveItem]:
         return self.db.query(DriveItem).filter(

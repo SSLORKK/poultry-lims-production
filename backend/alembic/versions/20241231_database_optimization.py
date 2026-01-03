@@ -98,11 +98,10 @@ def upgrade() -> None:
     # ===========================================
     op.create_index('ix_units_sample_id', 'units', ['sample_id'], unique=False, if_not_exists=True)
     op.create_index('ix_units_department_id', 'units', ['department_id'], unique=False, if_not_exists=True)
-    op.create_index('ix_units_coa_status', 'units', ['coa_status'], unique=False, if_not_exists=True)
     op.create_index('ix_units_created_at', 'units', ['created_at'], unique=False, if_not_exists=True)
-    # Composite indexes
+    # Composite indexes (ix_units_coa_status is defined in model with coa_status + department_id)
     op.create_index('ix_units_sample_dept', 'units', ['sample_id', 'department_id'], unique=False, if_not_exists=True)
-    op.create_index('ix_units_coa_status_dept', 'units', ['coa_status', 'department_id'], unique=False, if_not_exists=True)
+    # Note: ix_units_coa_status is created by SQLAlchemy model with (coa_status, department_id)
     
     # ===========================================
     # 7. TEST DATA INDEXES (pcr_data, serology_data, microbiology_data)
@@ -174,12 +173,11 @@ def downgrade() -> None:
     op.drop_index('ix_samples_date_received', table_name='samples', if_exists=True)
     
     # Drop units indexes
-    op.drop_index('ix_units_coa_status_dept', table_name='units', if_exists=True)
     op.drop_index('ix_units_sample_dept', table_name='units', if_exists=True)
     op.drop_index('ix_units_created_at', table_name='units', if_exists=True)
-    op.drop_index('ix_units_coa_status', table_name='units', if_exists=True)
     op.drop_index('ix_units_department_id', table_name='units', if_exists=True)
     op.drop_index('ix_units_sample_id', table_name='units', if_exists=True)
+    # Note: ix_units_coa_status is managed by SQLAlchemy model
     
     # Drop test data indexes
     op.drop_index('ix_pcr_data_unit_id', table_name='pcr_data', if_exists=True)

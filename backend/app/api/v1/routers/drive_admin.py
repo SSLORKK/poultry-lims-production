@@ -6,24 +6,28 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import secrets
+import logging
 from datetime import datetime
 
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.drive import DrivePermission, DriveShareLink, DriveItem
+from app.models.permission import UserPermission
 from app.schemas.drive import (
     DrivePermissionCreate, DrivePermissionUpdate, DrivePermissionResponse,
     DrivePermissionWithUser, DriveShareLinkCreate, DriveShareLinkResponse,
     DriveAccessCheckResponse, DriveItemResponse
 )
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, get_current_user_optional
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/drive-admin", tags=["drive-admin"])
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """Require admin role for drive management"""
-    if current_user.role != "admin":
+    if current_user.role != UserRole.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can manage drive permissions"
@@ -109,6 +113,36 @@ def create_permission(
     db.commit()
     db.refresh(permission)
     
+    # Sync with UserPermission table so Drive screen appears in menu
+    user_perm = db.query(UserPermission).filter(
+        UserPermission.user_id == data.user_id,
+        UserPermission.screen_name == 'Drive'
+    ).first()
+    
+    if data.has_access:
+        if not user_perm:
+            # Create UserPermission for Drive screen
+            user_perm = UserPermission(
+                user_id=data.user_id,
+                screen_name='Drive',
+                can_read=True,
+                can_write=data.permission_level in ['write', 'admin']
+            )
+            db.add(user_perm)
+        else:
+            # Update existing UserPermission
+            user_perm.can_read = True
+            user_perm.can_write = data.permission_level in ['write', 'admin']
+    else:
+        # Remove Drive screen access
+        if user_perm:
+            user_perm.can_read = False
+            user_perm.can_write = False
+    
+    db.commit()
+    
+    logger.info(f"Drive permission created for user {user.username}: has_access={data.has_access}, level={data.permission_level}")
+    
     return permission
 
 
@@ -145,6 +179,39 @@ def update_permission(
     db.commit()
     db.refresh(permission)
     
+    # Sync with UserPermission table so Drive screen appears in menu
+    user_perm = db.query(UserPermission).filter(
+        UserPermission.user_id == user_id,
+        UserPermission.screen_name == 'Drive'
+    ).first()
+    
+    has_access = permission.has_access
+    perm_level = permission.permission_level
+    
+    if has_access:
+        if not user_perm:
+            # Create UserPermission for Drive screen
+            user_perm = UserPermission(
+                user_id=user_id,
+                screen_name='Drive',
+                can_read=True,
+                can_write=perm_level in ['write', 'admin']
+            )
+            db.add(user_perm)
+        else:
+            # Update existing UserPermission
+            user_perm.can_read = True
+            user_perm.can_write = perm_level in ['write', 'admin']
+    else:
+        # Remove Drive screen access
+        if user_perm:
+            user_perm.can_read = False
+            user_perm.can_write = False
+    
+    db.commit()
+    
+    logger.info(f"Drive permission updated for user {user_id}: has_access={has_access}, level={perm_level}")
+    
     return permission
 
 
@@ -160,7 +227,20 @@ def delete_permission(
         raise HTTPException(status_code=404, detail="Permission not found")
     
     db.delete(permission)
+    
+    # Also remove Drive screen access from UserPermission
+    user_perm = db.query(UserPermission).filter(
+        UserPermission.user_id == user_id,
+        UserPermission.screen_name == 'Drive'
+    ).first()
+    
+    if user_perm:
+        user_perm.can_read = False
+        user_perm.can_write = False
+    
     db.commit()
+    
+    logger.info(f"Drive permission deleted for user {user_id}")
     
     return {"message": "Permission deleted successfully"}
 
@@ -278,9 +358,10 @@ def check_user_access(
         if link.requires_login and not current_user:
             return DriveAccessCheckResponse(has_access=False, reason="Login required")
         
-        # Check if user is in allowed list
-        if link.allowed_users and current_user.id not in link.allowed_users:
-            return DriveAccessCheckResponse(has_access=False, reason="User not in allowed list")
+        # Check if user is in allowed list (with null check)
+        if link.allowed_users:
+            if not current_user or current_user.id not in link.allowed_users:
+                return DriveAccessCheckResponse(has_access=False, reason="User not in allowed list")
         
         # Update link access tracking
         link.view_count += 1
@@ -295,7 +376,7 @@ def check_user_access(
     
     # Admins have full access
     user = db.query(User).filter(User.id == check_user_id).first()
-    if user and user.role == "admin":
+    if user and user.role == UserRole.admin:
         return DriveAccessCheckResponse(has_access=True, reason="Admin access", permission_level="admin")
     
     permission = db.query(DrivePermission).filter(DrivePermission.user_id == check_user_id).first()
@@ -331,7 +412,7 @@ def check_user_access(
 def verify_share_link(
     share_token: str,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
     Verify if a share link is valid and if the current user can access it.

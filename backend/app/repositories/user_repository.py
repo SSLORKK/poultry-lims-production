@@ -52,6 +52,16 @@ class UserRepository:
         if not db_user:
             return False
         
+        # Clean up related drive data that doesn't have CASCADE delete
+        from app.models.drive import DrivePermission, drive_item_shares
+        
+        # Delete drive permissions
+        self.db.query(DrivePermission).filter(DrivePermission.user_id == user_id).delete()
+        
+        # Delete drive item shares
+        self.db.execute(drive_item_shares.delete().where(drive_item_shares.c.user_id == user_id))
+        
+        # Now delete the user (permissions will cascade automatically)
         self.db.delete(db_user)
         self.db.commit()
         return True

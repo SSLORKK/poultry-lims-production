@@ -164,6 +164,11 @@ def update_user_permissions(
     # Set new permissions
     updated_permissions = permission_repo.set_user_permissions(user_id, permissions_data)
     
+    # Sync Drive permission with DrivePermission table if Drive screen is in permissions
+    drive_perm = next((p for p in permissions_data if p['screen_name'] == 'Drive'), None)
+    if drive_perm:
+        permission_repo.sync_drive_permission(user_id, drive_perm['can_read'], drive_perm['can_write'])
+    
     return UserPermissionsResponse(
         user_id=user_id,
         permissions=updated_permissions

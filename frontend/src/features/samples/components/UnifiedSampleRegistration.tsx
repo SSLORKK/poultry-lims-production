@@ -552,6 +552,10 @@ function PCRFields({
     if (currentIndex === -1) return;
     
     if (e.key === 'ArrowDown' || (e.key === 'Enter' && e.target instanceof HTMLInputElement)) {
+      // Don't auto-navigate on Enter for password fields (PIN input)
+      if (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.type === 'password') {
+        return; // Let the PIN verification handle it
+      }
       e.preventDefault();
       const nextIndex = (currentIndex + 1) % focusArray.length;
       focusArray[nextIndex]?.focus();
@@ -593,6 +597,11 @@ function PCRFields({
   const verifyTechnicianPIN = async (pin: string) => {
     if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
     setVerifyingPIN(true);
+    
+    // Store current scroll position to prevent auto-scroll
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
+    
     try {
       const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
       if (response.data.is_valid) {
@@ -604,6 +613,11 @@ function PCRFields({
         });
         setTechnicianPIN('');
         setNotification({ type: 'success', message: `Technician verified: ${response.data.name}` });
+        
+        // Restore scroll position after state update
+        requestAnimationFrame(() => {
+          window.scrollTo(scrollX, scrollY);
+        });
       } else {
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
@@ -701,14 +715,14 @@ function PCRFields({
           Technician <span className="text-red-500">*</span>
         </label>
         {unit.pcr_data?.technician_name ? (
-          <div className="flex items-center gap-2">
-            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold`}>
+          <div className="flex items-center gap-2 animate-fade-in">
+            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold transition-all duration-300 ease-in-out transform`}>
               {unit.pcr_data.technician_name}
             </span>
             <button
               type="button"
               onClick={() => updateUnit(globalIndex, { pcr_data: { ...unit.pcr_data!, technician_name: '' } })}
-              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold"
+              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold transition-all duration-200"
             >
               Clear
             </button>
@@ -719,7 +733,12 @@ function PCRFields({
               type="password"
               value={technicianPIN}
               onChange={(e) => setTechnicianPIN(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && verifyTechnicianPIN(technicianPIN)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  verifyTechnicianPIN(technicianPIN);
+                }
+              }}
               placeholder="Enter PIN to verify"
               className={`flex-1 border-2 ${colors.border} rounded-xl px-4 py-2.5 focus:ring-2 ${colors.focusRing}`}
               maxLength={8}
@@ -728,7 +747,7 @@ function PCRFields({
             {verifyingPIN && <span className="text-sm text-gray-500">Verifying...</span>}
           </div>
         )}
-        {(!unit.pcr_data?.technician_name || unit.pcr_data.technician_name === "") && (
+        {(!unit.pcr_data?.technician_name || unit.pcr_data.technician_name === "") && !verifyingPIN && (
           <p className="text-xs text-red-600 flex items-center gap-1">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -787,9 +806,34 @@ function SerologyFields({
     return {};
   };
 
+  // Load default wells counts from localStorage
+  const getDefaultWellsCounts = () => {
+    try {
+      const stored = localStorage.getItem('sample_registration_defaults');
+      if (stored) {
+        const defaults = JSON.parse(stored);
+        const wellsDefaults = defaults.serology_disease_wells_defaults || {};
+        // Convert string values to numbers
+        const result: Record<string, number> = {};
+        for (const [key, value] of Object.entries(wellsDefaults)) {
+          result[key] = typeof value === 'string' ? parseInt(value, 10) || 0 : (value as number);
+        }
+        return result;
+      }
+    } catch (e) {
+      console.error('Error loading defaults:', e);
+    }
+    return {};
+  };
+
   const verifyTechnicianPIN = async (pin: string) => {
     if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
     setVerifyingPIN(true);
+    
+    // Store current scroll position to prevent auto-scroll
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
+    
     try {
       const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
       if (response.data.is_valid) {
@@ -801,6 +845,11 @@ function SerologyFields({
         });
         setTechnicianPIN('');
         setNotification({ type: 'success', message: `Technician verified: ${response.data.name}` });
+        
+        // Restore scroll position after state update
+        requestAnimationFrame(() => {
+          window.scrollTo(scrollX, scrollY);
+        });
       } else {
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
@@ -826,39 +875,12 @@ function SerologyFields({
         }
         departmentName="Serology"
         defaultKitTypes={getDefaultKitTypes()}
+        defaultWellsCounts={getDefaultWellsCounts()}
+        showWellsCount={true}
       />
       {(!unit.serology_data?.diseases_list || unit.serology_data.diseases_list.length === 0) && (
         <p className="text-xs text-red-600 mt-1">At least one disease required</p>
       )}
-      <div className="space-y-1.5">
-        <label className="block text-sm font-semibold text-gray-700">
-          Wells Count <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="number"
-          min="1"
-          value={unit.serology_data?.number_of_wells || ""}
-          onChange={(e) =>
-            updateUnit(globalIndex, {
-              serology_data: {
-                ...unit.serology_data!,
-                number_of_wells: parseInt(e.target.value) || 0,
-              },
-            })
-          }
-          className="w-full border-2 border-gray-300 rounded-xl px-4 py-2.5 bg-gray-50 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          placeholder="Enter wells count"
-          onWheel={(e) => e.currentTarget.blur()}
-        />
-        {(!unit.serology_data?.number_of_wells || unit.serology_data.number_of_wells <= 0) && (
-          <p className="text-xs text-red-600 flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Wells count required
-          </p>
-        )}
-      </div>
 
       {/* Technician field - last field */}
       <div className="space-y-1.5 mt-4">
@@ -866,14 +888,14 @@ function SerologyFields({
           Technician <span className="text-red-500">*</span>
         </label>
         {unit.serology_data?.technician_name ? (
-          <div className="flex items-center gap-2">
-            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold`}>
+          <div className="flex items-center gap-2 animate-fade-in">
+            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold transition-all duration-300 ease-in-out transform`}>
               {unit.serology_data.technician_name}
             </span>
             <button
               type="button"
               onClick={() => updateUnit(globalIndex, { serology_data: { ...unit.serology_data!, technician_name: '' } })}
-              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold"
+              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold transition-all duration-200"
             >
               Clear
             </button>
@@ -884,7 +906,12 @@ function SerologyFields({
               type="password"
               value={technicianPIN}
               onChange={(e) => setTechnicianPIN(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && verifyTechnicianPIN(technicianPIN)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  verifyTechnicianPIN(technicianPIN);
+                }
+              }}
               placeholder="Enter PIN to verify"
               className={`flex-1 border-2 ${colors.border} rounded-xl px-4 py-2.5 focus:ring-2 ${colors.focusRing}`}
               maxLength={8}
@@ -893,7 +920,7 @@ function SerologyFields({
             {verifyingPIN && <span className="text-sm text-gray-500">Verifying...</span>}
           </div>
         )}
-        {(!unit.serology_data?.technician_name || unit.serology_data.technician_name === "") && (
+        {(!unit.serology_data?.technician_name || unit.serology_data.technician_name === "") && !verifyingPIN && (
           <p className="text-xs text-red-600 flex items-center gap-1">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -945,6 +972,11 @@ function MicrobiologyFields({
   const verifyTechnicianPIN = async (pin: string) => {
     if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
     setVerifyingPIN(true);
+    
+    // Store current scroll position to prevent auto-scroll
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
+    
     try {
       const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
       if (response.data.is_valid) {
@@ -956,6 +988,11 @@ function MicrobiologyFields({
         });
         setTechnicianPIN('');
         setNotification({ type: 'success', message: `Technician verified: ${response.data.name}` });
+        
+        // Restore scroll position after state update
+        requestAnimationFrame(() => {
+          window.scrollTo(scrollX, scrollY);
+        });
       } else {
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
@@ -1325,14 +1362,14 @@ function MicrobiologyFields({
           Technician <span className="text-red-500">*</span>
         </label>
         {unit.microbiology_data?.technician_name ? (
-          <div className="flex items-center gap-2">
-            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold`}>
+          <div className="flex items-center gap-2 animate-fade-in">
+            <span className={`flex-1 border-2 rounded-xl px-4 py-2.5 bg-gradient-to-r ${colors.gradient} ${colors.border} shadow-md font-semibold transition-all duration-300 ease-in-out transform`}>
               {unit.microbiology_data.technician_name}
             </span>
             <button
               type="button"
               onClick={() => updateUnit(globalIndex, { microbiology_data: { ...unit.microbiology_data!, technician_name: '' } })}
-              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold"
+              className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-sm font-semibold transition-all duration-200"
             >
               Clear
             </button>
@@ -1343,7 +1380,12 @@ function MicrobiologyFields({
               type="password"
               value={technicianPIN}
               onChange={(e) => setTechnicianPIN(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && verifyTechnicianPIN(technicianPIN)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  verifyTechnicianPIN(technicianPIN);
+                }
+              }}
               placeholder="Enter PIN to verify"
               className={`flex-1 border-2 ${colors.border} rounded-xl px-4 py-2.5 focus:ring-2 ${colors.focusRing}`}
               maxLength={8}
@@ -1352,7 +1394,7 @@ function MicrobiologyFields({
             {verifyingPIN && <span className="text-sm text-gray-500">Verifying...</span>}
           </div>
         )}
-        {(!unit.microbiology_data?.technician_name || unit.microbiology_data.technician_name === "") && (
+        {(!unit.microbiology_data?.technician_name || unit.microbiology_data.technician_name === "") && !verifyingPIN && (
           <p className="text-xs text-red-600 flex items-center gap-1">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1478,6 +1520,7 @@ export const UnifiedSampleRegistration = () => {
       pcr_extraction_method: '',
       pcr_disease_kit_defaults: {} as Record<string, string>, // disease name -> default kit type
       serology_disease_kit_defaults: {} as Record<string, string>, // disease name -> default kit type
+      serology_disease_wells_defaults: {} as Record<string, string>, // disease name -> default wells count
       serology_wells: '',
     };
   };
@@ -2575,6 +2618,36 @@ export const UnifiedSampleRegistration = () => {
                   })()}
                 </div>
               </div>
+
+              {/* Serology Disease Wells Count Defaults */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-gray-700">Default Wells Count by Disease</label>
+                <div className="space-y-2 max-h-48 overflow-y-auto bg-white rounded-lg border border-green-200 p-2">
+                  {(() => {
+                    const serDept = departments.find(d => d.code === 'SER');
+                    if (!serDept) return <p className="text-xs text-gray-500">Loading...</p>;
+                    return serologyDiseasesData.length > 0 ? serologyDiseasesData.map((disease) => (
+                      <div key={disease.id} className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-700 min-w-[80px] truncate" title={disease.name}>{disease.name}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={fieldDefaults.serology_disease_wells_defaults?.[disease.name] || ''}
+                          onChange={(e) => setFieldDefaults({
+                            ...fieldDefaults,
+                            serology_disease_wells_defaults: {
+                              ...fieldDefaults.serology_disease_wells_defaults,
+                              [disease.name]: e.target.value
+                            }
+                          })}
+                          placeholder="Wells"
+                          className="flex-1 border border-gray-200 rounded p-1 text-xs bg-white"
+                        />
+                      </div>
+                    )) : <p className="text-xs text-gray-500">No diseases configured</p>;
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2749,41 +2822,6 @@ export const UnifiedSampleRegistration = () => {
             )}
           </div>
         )}
-
-        {/* Code Preview Section */}
-        {previewData && (
-          <div className="mb-6">
-            {/* Main Sample Code Display - Compact */}
-            <div className="bg-gradient-to-r from-indigo-600 to-blue-600 rounded-xl shadow-lg p-4 mb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-white bg-opacity-20 p-2 rounded-lg backdrop-blur-sm">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-white text-xs font-medium opacity-90">
-                      {isEditMode ? "Sample Code" : "Next Sample Code"}
-                    </p>
-                    <span className="text-2xl font-black text-white tracking-wider">
-                      {isEditMode ? existingSample?.sample_code : previewData?.next_sample_code}
-                    </span>
-                  </div>
-                </div>
-                {totalUnits > 0 && (
-                  <div className="bg-white bg-opacity-20 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                    <span className="text-white font-bold text-sm">
-                      {totalUnits} {totalUnits === 1 ? "Unit" : "Units"}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-          </div>
-        )}
-
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Sample-Level Fields */}

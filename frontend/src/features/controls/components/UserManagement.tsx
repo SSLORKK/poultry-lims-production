@@ -34,6 +34,29 @@ const UserManagement = () => {
     },
   });
 
+  // Helper function to extract error message from API response
+  const getErrorMessage = (error: any): string => {
+    const detail = error.response?.data?.detail;
+    if (!detail) return 'An error occurred';
+    
+    // If detail is a string, return it directly
+    if (typeof detail === 'string') return detail;
+    
+    // If detail is an array (Pydantic validation errors)
+    if (Array.isArray(detail)) {
+      return detail.map((err: any) => {
+        if (typeof err === 'string') return err;
+        if (err.msg) return err.msg;
+        return JSON.stringify(err);
+      }).join('\n');
+    }
+    
+    // If detail is an object with msg property
+    if (detail.msg) return detail.msg;
+    
+    return JSON.stringify(detail);
+  };
+
   const createMutation = useMutation({
     mutationFn: async (userData: typeof formData) => {
       const response = await apiClient.post('/users/', userData);
@@ -46,7 +69,7 @@ const UserManagement = () => {
       alert('User created successfully!');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.detail || 'Failed to create user');
+      alert(getErrorMessage(error));
     },
   });
 
@@ -62,7 +85,7 @@ const UserManagement = () => {
       alert('User updated successfully!');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.detail || 'Failed to update user');
+      alert(getErrorMessage(error));
     },
   });
 
@@ -75,7 +98,7 @@ const UserManagement = () => {
       alert('User deleted successfully!');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.detail || 'Failed to delete user');
+      alert(getErrorMessage(error));
     },
   });
 

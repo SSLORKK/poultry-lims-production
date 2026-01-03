@@ -88,6 +88,13 @@ const PermissionsEditor = ({ userId, onClose }: PermissionsEditorProps) => {
   };
 
   const handleSave = () => {
+    // Validate that at least one screen has read access
+    const hasAnyReadAccess = permissions.some(p => p.can_read);
+    if (!hasAnyReadAccess) {
+      alert('Please select at least one screen with Read access before saving.');
+      return;
+    }
+    
     updateMutation.mutate(permissions);
   };
 

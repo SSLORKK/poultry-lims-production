@@ -83,6 +83,7 @@ class DiseaseKitStats(BaseModel):
     test_count: int
     positive_count: int
     negative_count: int
+    wells_count: int = 0  # Wells count per disease (for Serology)
 
 
 class ReportsResponse(BaseModel):
@@ -228,7 +229,8 @@ def get_comprehensive_reports(
     disease_kit_data = defaultdict(lambda: {
         'test_count': 0,
         'positive_count': 0,
-        'negative_count': 0
+        'negative_count': 0,
+        'wells_count': 0
     })
     
     total_positive = 0
@@ -337,27 +339,37 @@ def get_comprehensive_reports(
         # Process Serology data
         if unit.serology_data:
             diseases_list = unit.serology_data.diseases_list
-            wells_count = unit.serology_data.number_of_wells or 0
-            
-            # Track wells count per company
-            company_data[company]['serology_wells_total'] += wells_count
             
             if isinstance(diseases_list, str):
                 diseases_list = json.loads(diseases_list)
+            
+            # Calculate total wells from per-disease wells counts
+            unit_wells_total = 0
             
             # For each disease, use the disease-specific test_count and kit_type
             for disease_item in diseases_list:
                 disease = disease_item.get('disease', 'Unknown')
                 # Use disease-specific test_count (default to 1 if not set)
                 disease_test_count = disease_item.get('test_count', 1) or 1
-                # Use disease-specific kit_type, fallback to unit-level, then Unknown
-                disease_kit_type = disease_item.get('kit_type', '') or unit.serology_data.kit_type or 'Unknown'
+                # Use disease-specific kit_type - only use 'Unknown' if not set at all
+                disease_kit_type = disease_item.get('kit_type', '')
+                if not disease_kit_type:
+                    disease_kit_type = unit.serology_data.kit_type or 'Unknown'
+                # Get disease-specific wells_count
+                disease_wells_count = disease_item.get('wells_count', 0) or 0
+                
+                unit_wells_total += disease_wells_count
                 
                 disease_kit_data[disease]['test_count'] += disease_test_count
+                disease_kit_data[disease]['wells_count'] += disease_wells_count
                 
                 # Track per company
                 company_data[company]['serology_diseases'][disease]['kit_type'] = disease_kit_type
                 company_data[company]['serology_diseases'][disease]['count'] += disease_test_count
+                company_data[company]['serology_diseases'][disease]['wells_count'] = company_data[company]['serology_diseases'][disease].get('wells_count', 0) + disease_wells_count
+            
+            # Track wells count per company (sum of per-disease wells)
+            company_data[company]['serology_wells_total'] += unit_wells_total
         
         # Process Microbiology data
         if unit.microbiology_data:
@@ -564,7 +576,8 @@ def get_comprehensive_reports(
                 kit_type=kit_type or 'Unknown',
                 test_count=data['test_count'],
                 positive_count=data['positive_count'],
-                negative_count=data['negative_count']
+                negative_count=data['negative_count'],
+                wells_count=data['wells_count']
             )
         )
     

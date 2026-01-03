@@ -253,7 +253,7 @@ export const AllSamples = () => {
           house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
           age: unit.age,
           source: unit.source || '-',
-          technician: 'N/A',
+          technician: unit.pcr_data?.technician_name || unit.serology_data?.technician_name || unit.microbiology_data?.technician_name || '-',
           notes: unit.notes || '',
           sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
           status: sample.status,
@@ -1309,6 +1309,7 @@ export const AllSamples = () => {
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">House</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Age</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Source</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Technician</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Department</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Sample Type</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Status</th>
@@ -1338,6 +1339,7 @@ export const AllSamples = () => {
                       <td className="border border-gray-300 px-2 py-2">{row.house}</td>
                       <td className="border border-gray-300 px-2 py-2">{row.age ?? '-'}</td>
                       <td className="border border-gray-300 px-2 py-2">{row.source}</td>
+                      <td className="border border-gray-300 px-2 py-2">{row.technician}</td>
                       <td className="border border-gray-300 px-2 py-2">
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${row.department === 'PCR' ? 'bg-blue-100 text-blue-800' :
                           row.department === 'Serology' ? 'bg-green-100 text-green-800' :

@@ -65,6 +65,7 @@ export function PCRCOA() {
   const [labSupervisorPIN, setLabSupervisorPIN] = useState<string>('');
   const [labManager, setLabManager] = useState<string>('');
   const [labManagerPIN, setLabManagerPIN] = useState<string>('');
+  const [verifyingPIN, setVerifyingPIN] = useState<boolean>(false);
   const [notes, setNotes] = useState<string>('');
   const [status, setStatus] = useState<string>('draft');
   const [loading, setLoading] = useState(true);
@@ -380,7 +381,8 @@ export function PCRCOA() {
   };
 
   const verifyPIN = async (pin: string, field: 'testedBy' | 'reviewedBy' | 'labSupervisor' | 'labManager') => {
-    if (!pin.trim()) return;
+    if (!pin.trim() || verifyingPIN) return;
+    setVerifyingPIN(true);
     
     try {
       const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
@@ -417,6 +419,8 @@ export function PCRCOA() {
     } catch (err) {
       console.error('Failed to verify PIN:', err);
       setNotification({ type: 'error', message: 'PIN verification failed. Please check your connection and try again.' });
+    } finally {
+      setVerifyingPIN(false);
     }
   };
 

@@ -49,6 +49,9 @@ class UnitRepository:
     def get_by_department_id(self, department_id: int) -> List[Unit]:
         return self.db.query(Unit).filter(Unit.department_id == department_id).all()
     
+    def get_by_unit_code(self, unit_code: str) -> Optional[Unit]:
+        return self.db.query(Unit).filter(Unit.unit_code == unit_code).first()
+    
     def update(self, unit_id: int, **kwargs) -> Optional[Unit]:
         unit = self.get_by_id(unit_id)
         if not unit:

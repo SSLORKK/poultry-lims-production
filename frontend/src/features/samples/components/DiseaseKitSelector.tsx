@@ -4,6 +4,7 @@ interface DiseaseKitItem {
   disease: string;
   kit_type: string;
   test_count?: number;
+  wells_count?: number;
 }
 
 interface DiseaseKitSelectorProps {
@@ -13,6 +14,8 @@ interface DiseaseKitSelectorProps {
   onChange: (diseases: DiseaseKitItem[]) => void;
   departmentName: string;
   defaultKitTypes?: Record<string, string>; // disease name -> default kit type
+  defaultWellsCounts?: Record<string, number>; // disease name -> default wells count
+  showWellsCount?: boolean; // Show wells count input (for Serology)
 }
 
 export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
@@ -22,6 +25,8 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
   onChange,
   departmentName,
   defaultKitTypes = {},
+  defaultWellsCounts = {},
+  showWellsCount = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState<'bottom' | 'top'>('bottom');
@@ -71,7 +76,9 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
     } else {
       // Apply default kit type if available
       const defaultKit = defaultKitTypes[diseaseName] || '';
-      onChange([...selectedDiseases, { disease: diseaseName, kit_type: defaultKit, test_count: 1 }]);
+      // Apply default wells count if available
+      const defaultWells = defaultWellsCounts[diseaseName] || undefined;
+      onChange([...selectedDiseases, { disease: diseaseName, kit_type: defaultKit, test_count: 1, wells_count: defaultWells }]);
     }
   };
 
@@ -80,7 +87,7 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
       selectedDiseases.map(d => {
         if (d.disease === diseaseName) {
           const currentCount = d.test_count || 1;
-          const newCount = Math.max(1, currentCount + delta);
+          const newCount = Math.max(1, Math.min(100, currentCount + delta));
           return { ...d, test_count: newCount };
         }
         return d;
@@ -94,6 +101,19 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
         d.disease === diseaseName ? { ...d, kit_type: kitType } : d
       )
     );
+  };
+
+  const handleWellsCountChange = (diseaseName: string, wellsCount: number) => {
+    onChange(
+      selectedDiseases.map(d =>
+        d.disease === diseaseName ? { ...d, wells_count: Math.max(0, Math.min(384, wellsCount)) } : d
+      )
+    );
+  };
+
+  const getWellsCountForDisease = (diseaseName: string) => {
+    const found = selectedDiseases.find(d => d.disease === diseaseName);
+    return found?.wells_count || 0;
   };
 
   const handleRemoveDisease = (diseaseName: string) => {
@@ -135,6 +155,9 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
               <span>{item.disease}</span>
               {item.kit_type && (
                 <span className="text-xs opacity-75 font-normal">• {item.kit_type}</span>
+              )}
+              {showWellsCount && item.wells_count !== undefined && item.wells_count > 0 && (
+                <span className="text-xs opacity-75 font-normal">• {item.wells_count} wells</span>
               )}
               <button
                 type="button"
@@ -208,19 +231,44 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
                         }}
                         onClick={(e) => e.stopPropagation()}
                         disabled={!isDiseaseSelected(disease.name)}
+                        required={isDiseaseSelected(disease.name)}
                         className={`flex-1 text-sm border-2 rounded-lg px-2 py-1.5 transition-all ${
-                          isDiseaseSelected(disease.name) 
-                            ? 'border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500' 
+                          isDiseaseSelected(disease.name)
+                            ? 'border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
                             : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
                         }`}
                       >
-                        <option value="">Kit type...</option>
+                        <option value="">Select kit type...</option>
                         {availableKitTypes.map((kit) => (
                           <option key={kit.id} value={kit.name}>
                             {kit.name}
                           </option>
                         ))}
                       </select>
+
+                      {/* Wells Count Input - Only for Serology */}
+                      {showWellsCount && (
+                        <input
+                          type="number"
+                          min="0"
+                          value={getWellsCountForDisease(disease.name) || ''}
+                          onChange={(e) => {
+                            if (!isDiseaseSelected(disease.name)) {
+                              handleDiseaseToggle(disease.name);
+                            }
+                            handleWellsCountChange(disease.name, parseInt(e.target.value) || 0);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          disabled={!isDiseaseSelected(disease.name)}
+                          placeholder="Wells"
+                          className={`w-16 text-sm border-2 rounded-lg px-2 py-1.5 text-center transition-all ${
+                            isDiseaseSelected(disease.name)
+                              ? 'border-gray-300 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                              : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                          }`}
+                        />
+                      )}
 
                       {/* Test Counter - Always visible but only enabled when selected */}
                       <div className="flex items-center gap-1 flex-shrink-0">

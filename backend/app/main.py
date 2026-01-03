@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 import traceback
 import logging
+import os
 from app.core.config import settings
 from app.api.v1.routers import auth, users, departments, samples, statistics, controls, pcr_coa, microbiology_coa, serology_coa, reports, drive, drive_admin, edit_history
 from app.db.base import Base
@@ -26,15 +28,35 @@ from app.models import microbiology_coa as microbiology_coa_model
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    # Configure for large file uploads (2GB max)
+    max_upload_size=2 * 1024 * 1024 * 1024  # 2GB in bytes
 )
 
+# Security Headers Middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        # Security headers to prevent common attacks
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        # Add HSTS header in production
+        if settings.ENVIRONMENT == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS Configuration - use specific origins, not wildcard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 # Add Gzip compression for responses > 1KB (50-90% size reduction)
@@ -71,36 +93,40 @@ def health_check():
     return {"status": "healthy"}
 
 
-# Global exception handler for detailed error messages
+# Global exception handler - sanitized for production
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Handle all unhandled exceptions with detailed error info"""
-    # Get the full traceback
+    """Handle all unhandled exceptions with sanitized error info"""
+    # Get the full traceback for logging
     tb = traceback.format_exc()
     
-    # Log the error with full details
+    # Always log the full error details server-side
     logger.error(f"Unhandled exception on {request.method} {request.url.path}")
     logger.error(f"Error type: {type(exc).__name__}")
     logger.error(f"Error message: {str(exc)}")
     logger.error(f"Traceback:\n{tb}")
     
-    # Determine the error location from traceback
-    error_location = "Unknown"
-    tb_lines = tb.split("\n")
-    for i, line in enumerate(tb_lines):
-        if "File" in line and "/app/" in line:
-            error_location = line.strip()
+    # Check environment for response detail level
+    is_development = settings.ENVIRONMENT == "development"
     
-    # Return detailed error response
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": True,
-            "error_type": type(exc).__name__,
-            "message": str(exc),
-            "location": error_location,
-            "path": str(request.url.path),
-            "method": request.method,
-            "detail": "An internal server error occurred. Check backend logs for full traceback."
-        }
-    )
+    if is_development:
+        # More details in development for debugging
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": True,
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+                "detail": "Internal server error - check logs for details"
+            }
+        )
+    else:
+        # Sanitized response in production - no sensitive info
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": True,
+                "message": "An unexpected error occurred",
+                "detail": "Please contact support if the problem persists"
+            }
+        )

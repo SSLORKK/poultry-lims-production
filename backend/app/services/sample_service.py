@@ -33,7 +33,11 @@ class SampleService:
                                       age=age, sample_type=sample_type)
     
     def create_sample(self, sample_data: SampleCreate, user_id: int) -> Optional[Sample]:
-        # Validate all departments exist upfront before creating anything
+        # PHASE 1: Pre-validate and cache all data upfront before creating anything
+        from app.models.dropdown_data import KitType
+        
+        # Cache departments
+        dept_cache = {}
         for unit_data in sample_data.units:
             department = self.dept_repo.get_by_id(unit_data.department_id)
             if not department:
@@ -41,13 +45,64 @@ class SampleService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Department with ID {unit_data.department_id} not found"
                 )
+            dept_cache[unit_data.department_id] = department
         
+        # Pre-fetch and cache all kit types by department (reduces queries inside loop)
+        kit_types_cache = {}
+        dept_ids = list(dept_cache.keys())
+        all_kit_types = self.db.query(KitType).filter(KitType.department_id.in_(dept_ids)).all()
+        for kt in all_kit_types:
+            if kt.department_id not in kit_types_cache:
+                kit_types_cache[kt.department_id] = set()
+            kit_types_cache[kt.department_id].add(kt.name)
+        
+        # PHASE 2: Validate all kit types before starting transaction
+        for idx, unit_data in enumerate(sample_data.units):
+            dept = dept_cache[unit_data.department_id]
+            valid_kits = kit_types_cache.get(dept.id, set())
+            
+            if unit_data.pcr_data and str(dept.code) == "PCR":
+                for disease_item in unit_data.pcr_data.diseases_list or []:
+                    if disease_item.kit_type not in valid_kits:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Unit {idx+1}: Invalid kit type '{disease_item.kit_type}' for disease '{disease_item.disease}'"
+                        )
+            
+            if unit_data.serology_data and str(dept.code) == "SER":
+                for disease_item in unit_data.serology_data.diseases_list or []:
+                    if disease_item.kit_type not in valid_kits:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Unit {idx+1}: Invalid kit type '{disease_item.kit_type}' for disease '{disease_item.disease}'"
+                        )
+        
+        # PHASE 3: Create records (validation already done)
         try:
-            # Use reserved sample number if exists, otherwise increment normally
-            sample_number = self.counter_repo.increment_sample_counter_with_reservation(user_id)
             current_year = datetime.now().year
             year_short = current_year % 100  # Get last 2 digits of year
+            
+            # Get next sample number WITHOUT incrementing counter yet
+            sample_number = self.counter_repo.get_next_sample_number(year=current_year)
             sample_code = f"SMP{year_short:02d}-{sample_number}"
+            
+            # Check if sample_code already exists (handle counter desync) - use FOR UPDATE to lock
+            existing_sample = self.sample_repo.get_by_sample_code(sample_code)
+            max_attempts = 100  # Prevent infinite loop
+            attempts = 0
+            while existing_sample and attempts < max_attempts:
+                attempts += 1
+                # Sample code already exists, sync counter and try again
+                self.counter_repo.sync_sample_counter(year=current_year)
+                sample_number = self.counter_repo.get_next_sample_number(year=current_year)
+                sample_code = f"SMP{year_short:02d}-{sample_number}"
+                existing_sample = self.sample_repo.get_by_sample_code(sample_code)
+            
+            if attempts >= max_attempts:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Unable to generate unique sample code after multiple attempts. Please contact administrator."
+                )
             
             # Create sample with sample-level poultry fields only
             sample = Sample(
@@ -64,6 +119,9 @@ class SampleService:
             self.db.add(sample)
             self.db.flush()  # Flush to get the sample.id
             
+            # Note: Counter is NOT updated here - get_next_sample_number scans actual database
+            # so counter updates are not needed and would cause issues if transaction fails
+            
             # Create units with unit-specific fields and department codes
             for unit_data in sample_data.units:
                 # Department is guaranteed to exist (validated earlier)
@@ -71,9 +129,25 @@ class SampleService:
                 if not department:
                     continue  # Skip if somehow not found (shouldn't happen)
                 
-                # Generate unit code
-                unit_counter = self.counter_repo.increment_unit_counter(unit_data.department_id)
-                unit_code = f"{department.code}-{unit_counter}"
+                # Generate unit code with year to prevent cross-year conflicts
+                unit_counter = self.counter_repo.get_next_unit_number(unit_data.department_id, year=current_year)
+                unit_code = f"{department.code}{year_short:02d}-{unit_counter}"
+                
+                # Check if unit_code already exists (handle counter desync)
+                existing_unit = self.unit_repo.get_by_unit_code(unit_code)
+                unit_attempts = 0
+                while existing_unit and unit_attempts < max_attempts:
+                    unit_attempts += 1
+                    # Unit code already exists, get next number and try again
+                    unit_counter = self.counter_repo.get_next_unit_number(unit_data.department_id, year=current_year)
+                    unit_code = f"{department.code}{year_short:02d}-{unit_counter}"
+                    existing_unit = self.unit_repo.get_by_unit_code(unit_code)
+                
+                if unit_attempts >= max_attempts:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Unable to generate unique unit code for department {department.code} after multiple attempts."
+                    )
                 
                 # Create unit with unit-specific fields
                 unit = self.unit_repo.create(
@@ -91,8 +165,19 @@ class SampleService:
                 # Flush to get unit.id for department data
                 self.db.flush()
                 
+                # Note: Counter is NOT updated here - get_next_unit_number scans actual database
+                # so counter updates are not needed and would cause issues if transaction fails
+                
                 # Create department-specific data linked to this unit
+                # Note: Kit type validation already done in PHASE 2 (upfront validation)
                 if unit_data.pcr_data is not None and str(department.code) == "PCR":
+                    # Validate required fields
+                    if not unit_data.pcr_data.extraction or unit_data.pcr_data.extraction <= 0:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Extraction value is required and must be greater than 0 for PCR"
+                        )
+                    
                     # Convert DiseaseKitItem objects to dict for JSON storage
                     diseases_list_json = [item.model_dump() for item in unit_data.pcr_data.diseases_list] if unit_data.pcr_data.diseases_list else []
                     pcr_data = PCRData(
@@ -107,17 +192,22 @@ class SampleService:
                     self.db.add(pcr_data)
                 
                 if unit_data.serology_data is not None and str(department.code) == "SER":
+                    # Note: Kit type validation already done in PHASE 2 (upfront validation)
                     # Convert DiseaseKitItem objects to dict for JSON storage
                     diseases_list_json = [item.model_dump() for item in unit_data.serology_data.diseases_list] if unit_data.serology_data.diseases_list else []
                     # Calculate tests_count from diseases_list (sum of test_count from each disease)
                     calculated_tests_count = sum(
                         item.test_count or 1 for item in unit_data.serology_data.diseases_list
                     ) if unit_data.serology_data.diseases_list else 0
+                    # Calculate number_of_wells from diseases_list (sum of wells_count from each disease)
+                    calculated_wells_count = sum(
+                        item.wells_count or 0 for item in unit_data.serology_data.diseases_list
+                    ) if unit_data.serology_data.diseases_list else 0
                     serology_data = SerologyData(
                         unit_id=unit.id,
                         diseases_list=diseases_list_json,
                         kit_type=unit_data.serology_data.kit_type,
-                        number_of_wells=unit_data.serology_data.number_of_wells,
+                        number_of_wells=calculated_wells_count if calculated_wells_count > 0 else unit_data.serology_data.number_of_wells,
                         tests_count=calculated_tests_count if calculated_tests_count > 0 else unit_data.serology_data.tests_count,
                         technician_name=unit_data.serology_data.technician_name
                     )
@@ -453,8 +543,26 @@ class SampleService:
                     processed_unit_ids.add(unit_data.id)
                 else:
                     # Create new unit (only for newly added units during edit)
-                    unit_counter = self.counter_repo.increment_unit_counter(unit_data.department_id)
-                    unit_code = f"{department.code}-{unit_counter}"
+                    unit_counter = self.counter_repo.get_next_unit_number(unit_data.department_id, year=sample.year)
+                    year_short = sample.year % 100
+                    unit_code = f"{department.code}{year_short:02d}-{unit_counter}"
+                    
+                    # Check if unit_code already exists (handle counter desync)
+                    existing_unit = self.unit_repo.get_by_unit_code(unit_code)
+                    unit_attempts = 0
+                    max_unit_attempts = 100
+                    while existing_unit and unit_attempts < max_unit_attempts:
+                        unit_attempts += 1
+                        # Unit code already exists, get next number and try again
+                        unit_counter = self.counter_repo.get_next_unit_number(unit_data.department_id, year=sample.year)
+                        unit_code = f"{department.code}{year_short:02d}-{unit_counter}"
+                        existing_unit = self.unit_repo.get_by_unit_code(unit_code)
+                    
+                    if unit_attempts >= max_unit_attempts:
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Unable to generate unique unit code for department {department.code} after multiple attempts."
+                        )
                     
                     unit = self.unit_repo.create(
                         sample_id=sample.id,  # type: ignore[arg-type]
@@ -469,6 +577,9 @@ class SampleService:
                     )
                     
                     self.db.flush()
+                    
+                    # Note: Counter is NOT updated here - get_next_unit_number scans actual database
+                    # so counter updates are not needed and would cause issues if transaction fails
                     
                     # Create department-specific data for new unit
                     if unit_data.pcr_data is not None and str(department.code) == "PCR":
@@ -530,4 +641,53 @@ class SampleService:
         return sample
     
     def delete_sample(self, sample_id: int) -> bool:
-        return self.sample_repo.delete(sample_id)
+        """Delete a sample with smart counter decrement logic"""
+        sample = self.sample_repo.get_by_id(sample_id)
+        if not sample:
+            return False
+        
+        # Extract sample number from sample_code (format: SMPYY-XXXX)
+        sample_number = None
+        if sample.sample_code and sample.sample_code.startswith('SMP'):
+            try:
+                parts = sample.sample_code.split('-')
+                if len(parts) == 2:
+                    sample_number = int(parts[1])
+            except (ValueError, IndexError):
+                pass
+        
+        # Group units by department for smart unit counter decrement
+        units_by_dept = {}
+        for unit in sample.units:
+            dept_id = unit.department_id
+            # Extract unit number from unit_code (format: DEPT-YY-XXXX)
+            unit_number = None
+            if unit.unit_code:
+                try:
+                    parts = unit.unit_code.split('-')
+                    if len(parts) == 3:
+                        unit_number = int(parts[2])
+                except (ValueError, IndexError):
+                    pass
+            
+            if dept_id not in units_by_dept:
+                units_by_dept[dept_id] = []
+            if unit_number is not None:
+                units_by_dept[dept_id].append(unit_number)
+        
+        # Delete the sample (cascade will delete units and related data)
+        success = self.sample_repo.delete(sample_id)
+        
+        if success:
+            # Smart decrement sample counter if sample was deleted
+            if sample_number is not None:
+                self.counter_repo.decrement_sample_counter(sample_number, sample.year)
+            
+            # Smart decrement unit counters for each department
+            for dept_id, unit_numbers in units_by_dept.items():
+                if unit_numbers:
+                    # Find the highest unit number for this department
+                    max_unit_number = max(unit_numbers)
+                    self.counter_repo.decrement_unit_counter(dept_id, max_unit_number, sample.year)
+        
+        return success

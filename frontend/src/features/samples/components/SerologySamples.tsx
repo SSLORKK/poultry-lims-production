@@ -27,6 +27,7 @@ interface UnitRow {
   samplesNumber: number | null;
   testsCount: number | null;
   diseases: string;
+  diseasesWithWells: { disease: string; wells: number | null }[];  // Wells per disease
   numberOfWells: number | null;
   coaStatus: string | null;
 }
@@ -309,6 +310,10 @@ export const SerologySamples = () => {
       sample.units?.forEach((unit: any) => {
         if (unit.department_id === 2) {
           const diseases = unit.serology_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
+          const diseasesWithWells = unit.serology_data?.diseases_list?.map((d: any) => ({
+            disease: d.disease,
+            wells: d.wells_count || null
+          })) || [];
 
           // Combine sample notes (status changes) and unit notes
           const combinedNotes = [sample.notes, unit.notes].filter(Boolean).join('\n');
@@ -336,6 +341,7 @@ export const SerologySamples = () => {
             samplesNumber: unit.samples_number,
             testsCount,
             diseases,
+            diseasesWithWells,
             numberOfWells: unit.serology_data?.number_of_wells || null,
             coaStatus: unit.coa_status || null,
           });
@@ -630,7 +636,8 @@ export const SerologySamples = () => {
         'Technician': row.technician,
         'Sample Type': row.sampleType,
         'Diseases': row.diseases,
-        'Number of Wells': row.numberOfWells ?? '-',
+        'Wells per Disease': row.diseasesWithWells.map(d => `${d.disease}: ${d.wells ?? '-'}`).join(', '),
+        'Total Wells': row.diseasesWithWells.reduce((sum, d) => sum + (d.wells || 0), 0) || row.numberOfWells || '-',
         'Samples Number': row.samplesNumber ?? '-',
         'Tests Count': row.testsCount ?? '-',
         'Status': row.status,
@@ -657,7 +664,7 @@ export const SerologySamples = () => {
     setExportDropdownOpen(false);
 
     try {
-      const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Flock', 'Cycle', 'House', 'Age', 'Source', 'Technician', 'Sample Type', 'Diseases', 'Number of Wells', 'Samples Number', 'Tests Count', 'Status', 'Notes'];
+      const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Flock', 'Cycle', 'House', 'Age', 'Source', 'Technician', 'Sample Type', 'Diseases', 'Wells per Disease', 'Total Wells', 'Samples Number', 'Tests Count', 'Status', 'Notes'];
 
       const csvRows = [
         headers.join(','),
@@ -675,7 +682,8 @@ export const SerologySamples = () => {
           `"${row.technician}"`,
           `"${row.sampleType}"`,
           `"${row.diseases}"`,
-          `"${row.numberOfWells ?? '-'}"`,
+          `"${row.diseasesWithWells.map(d => `${d.disease}: ${d.wells ?? '-'}`).join(', ')}"`,
+          `"${row.diseasesWithWells.reduce((sum, d) => sum + (d.wells || 0), 0) || row.numberOfWells || '-'}"`,
           `"${row.samplesNumber ?? '-'}"`,
           `"${row.testsCount ?? '-'}"`,
           `"${row.status}"`,
@@ -1545,7 +1553,8 @@ export const SerologySamples = () => {
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Technician</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Sample Type</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Diseases</th>
-                    <th className="border border-gray-300 px-2 py-2 text-left font-semibold">No. Wells</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Wells per Disease</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Total Wells</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">No. Samples</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">No. Tests</th>
                     <th className="border border-gray-300 px-2 py-2 text-left font-semibold">Note</th>
@@ -1620,7 +1629,23 @@ export const SerologySamples = () => {
                       <td className="border border-gray-300 px-2 py-2">{row.technician}</td>
                       <td className="border border-gray-300 px-2 py-2">{row.sampleType}</td>
                       <td className="border border-gray-300 px-2 py-2 text-xs">{row.diseases}</td>
-                      <td className="border border-gray-300 px-2 py-2 text-center">{row.numberOfWells ?? '-'}</td>
+                      <td className="border border-gray-300 px-2 py-2 text-xs">
+                        {row.diseasesWithWells.length > 0 ? (
+                          <div className="space-y-0.5">
+                            {row.diseasesWithWells.map((d, idx) => (
+                              <div key={idx} className="flex items-center gap-1">
+                                <span className="font-medium">{d.disease}:</span>
+                                <span className="text-green-600 font-semibold">{d.wells ?? '-'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : '-'}
+                      </td>
+                      <td className="border border-gray-300 px-2 py-2 text-center font-semibold text-green-700">
+                        {row.diseasesWithWells.length > 0 
+                          ? row.diseasesWithWells.reduce((sum, d) => sum + (d.wells || 0), 0) || row.numberOfWells || '-'
+                          : row.numberOfWells ?? '-'}
+                      </td>
                       <td className="border border-gray-300 px-2 py-2 text-center">
                         {row.samplesNumber ?? '-'}
                       </td>

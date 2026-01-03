@@ -13,11 +13,21 @@ type Department = {
 
 type TabType = 'company' | 'farm' | 'flock' | 'cycle' | 'status' | 'house' | 'source' | 'sample_type' | 'disease' | 'kit_type' | 'technician' | 'extraction_method' | 'signature' | 'users' | 'culture_isolation_types' | 'pathogenic_fungi_mold' | 'culture_screened_pathogens' | 'ast_disks' | 'ast_disks_fastidious' | 'ast_disks_staphylococcus' | 'ast_disks_enterococcus';
 
+type CategoryType = 'general' | 'samples' | 'microbiology' | 'users';
+
 type CompanyType = {
   id: number;
   name: string;
   is_active: boolean;
 };
+
+// Tab categories for better organization
+const tabCategories: { key: CategoryType; label: string; color: string }[] = [
+  { key: 'general', label: 'General', color: 'blue' },
+  { key: 'samples', label: 'Sample Data', color: 'green' },
+  { key: 'microbiology', label: 'Microbiology', color: 'purple' },
+  { key: 'users', label: 'User Management', color: 'orange' },
+];
 
 const Controls = () => {
   const { canRead, isLoading: permissionsLoading } = usePermissions();
@@ -28,6 +38,7 @@ const Controls = () => {
     return <Navigate to="/" replace />;
   }
 
+  const [activeCategory, setActiveCategory] = useState<CategoryType>('general');
   const [activeTab, setActiveTab] = useState<TabType>('company');
   const [newItemName, setNewItemName] = useState('');
   const [newItemPIN, setNewItemPIN] = useState('');
@@ -35,6 +46,7 @@ const Controls = () => {
   const [selectedCompanyForFarm, setSelectedCompanyForFarm] = useState<number | null>(null);
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   
   // AST Disk specific fields
   const [astRValue, setAstRValue] = useState('');
@@ -47,6 +59,8 @@ const Controls = () => {
   const [editRValue, setEditRValue] = useState('');
   const [editIValue, setEditIValue] = useState('');
   const [editSValue, setEditSValue] = useState('');
+  const [editSignatureImage, setEditSignatureImage] = useState<string | null>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   
   const queryClient = useQueryClient();
 
@@ -106,29 +120,36 @@ const Controls = () => {
     }
   }, [companies, selectedCompanyForFarm]);
 
-  const tabs: { key: TabType; label: string; isDepartmentSpecific: boolean; isCompanySpecific?: boolean; endpoint: string }[] = [
-    { key: 'company', label: 'Companies', isDepartmentSpecific: false, endpoint: '/controls/companies' },
-    { key: 'farm', label: 'Farms', isDepartmentSpecific: false, isCompanySpecific: true, endpoint: '/controls/farms' },
-    { key: 'flock', label: 'Flocks', isDepartmentSpecific: false, endpoint: '/controls/flocks' },
-    { key: 'cycle', label: 'Cycles', isDepartmentSpecific: false, endpoint: '/controls/cycles' },
-    { key: 'status', label: 'Status', isDepartmentSpecific: false, endpoint: '/controls/statuses' },
-    { key: 'house', label: 'Houses', isDepartmentSpecific: false, endpoint: '/controls/houses' },
-    { key: 'source', label: 'Sources', isDepartmentSpecific: false, endpoint: '/controls/sources' },
-    { key: 'technician', label: 'Technicians', isDepartmentSpecific: false, endpoint: '/controls/technicians' },
-    { key: 'extraction_method', label: 'Extraction Methods', isDepartmentSpecific: false, endpoint: '/controls/extraction-methods' },
-    { key: 'signature', label: 'Signatures', isDepartmentSpecific: false, endpoint: '/controls/signatures' },
-    { key: 'users', label: 'Users', isDepartmentSpecific: false, endpoint: '/users' },
-    { key: 'sample_type', label: 'Sample Types', isDepartmentSpecific: true, endpoint: '/controls/sample-types' },
-    { key: 'disease', label: 'Diseases', isDepartmentSpecific: true, endpoint: '/controls/diseases' },
-    { key: 'kit_type', label: 'Kit Types', isDepartmentSpecific: true, endpoint: '/controls/kit-types' },
-    { key: 'culture_isolation_types', label: 'Culture Isolation Types', isDepartmentSpecific: false, endpoint: '/controls/culture-isolation-types' },
-    { key: 'pathogenic_fungi_mold', label: 'Pathogenic Fungi & Mold', isDepartmentSpecific: false, endpoint: '/controls/pathogenic-fungi-mold' },
-    { key: 'culture_screened_pathogens', label: 'Culture Screened Pathogens', isDepartmentSpecific: false, endpoint: '/controls/culture-screened-pathogens' },
-    { key: 'ast_disks', label: 'AST Disks (Enterobacteriaceae)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks' },
-    { key: 'ast_disks_fastidious', label: 'AST Disks (Fastidious M.o.)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-fastidious' },
-    { key: 'ast_disks_staphylococcus', label: 'AST Disks (Staphylococcus)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-staphylococcus' },
-    { key: 'ast_disks_enterococcus', label: 'AST Disks (Enterococcus)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-enterococcus' },
+  const tabs: { key: TabType; label: string; isDepartmentSpecific: boolean; isCompanySpecific?: boolean; endpoint: string; category: CategoryType }[] = [
+    // General
+    { key: 'company', label: 'Companies', isDepartmentSpecific: false, endpoint: '/controls/companies', category: 'general' },
+    { key: 'farm', label: 'Farms', isDepartmentSpecific: false, isCompanySpecific: true, endpoint: '/controls/farms', category: 'general' },
+    { key: 'flock', label: 'Flocks', isDepartmentSpecific: false, endpoint: '/controls/flocks', category: 'general' },
+    { key: 'cycle', label: 'Cycles', isDepartmentSpecific: false, endpoint: '/controls/cycles', category: 'general' },
+    { key: 'status', label: 'Status', isDepartmentSpecific: false, endpoint: '/controls/statuses', category: 'general' },
+    { key: 'house', label: 'Houses', isDepartmentSpecific: false, endpoint: '/controls/houses', category: 'general' },
+    { key: 'source', label: 'Sources', isDepartmentSpecific: false, endpoint: '/controls/sources', category: 'general' },
+    { key: 'technician', label: 'Technicians', isDepartmentSpecific: false, endpoint: '/controls/technicians', category: 'general' },
+    { key: 'extraction_method', label: 'Extraction Methods', isDepartmentSpecific: false, endpoint: '/controls/extraction-methods', category: 'general' },
+    { key: 'signature', label: 'Signatures', isDepartmentSpecific: false, endpoint: '/controls/signatures', category: 'general' },
+    // Samples
+    { key: 'sample_type', label: 'Sample Types', isDepartmentSpecific: true, endpoint: '/controls/sample-types', category: 'samples' },
+    { key: 'disease', label: 'Diseases', isDepartmentSpecific: true, endpoint: '/controls/diseases', category: 'samples' },
+    { key: 'kit_type', label: 'Kit Types', isDepartmentSpecific: true, endpoint: '/controls/kit-types', category: 'samples' },
+    // Microbiology
+    { key: 'culture_isolation_types', label: 'Culture Isolation Types', isDepartmentSpecific: false, endpoint: '/controls/culture-isolation-types', category: 'microbiology' },
+    { key: 'pathogenic_fungi_mold', label: 'Pathogenic Fungi & Mold', isDepartmentSpecific: false, endpoint: '/controls/pathogenic-fungi-mold', category: 'microbiology' },
+    { key: 'culture_screened_pathogens', label: 'Culture Screened Pathogens', isDepartmentSpecific: false, endpoint: '/controls/culture-screened-pathogens', category: 'microbiology' },
+    { key: 'ast_disks', label: 'AST Disks (Enterobacteriaceae)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks', category: 'microbiology' },
+    { key: 'ast_disks_fastidious', label: 'AST Disks (Fastidious)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-fastidious', category: 'microbiology' },
+    { key: 'ast_disks_staphylococcus', label: 'AST Disks (Staphylococcus)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-staphylococcus', category: 'microbiology' },
+    { key: 'ast_disks_enterococcus', label: 'AST Disks (Enterococcus)', isDepartmentSpecific: false, endpoint: '/controls/ast-disks-enterococcus', category: 'microbiology' },
+    // Users
+    { key: 'users', label: 'Users', isDepartmentSpecific: false, endpoint: '/users', category: 'users' },
   ];
+
+  // Filter tabs by category
+  const filteredTabs = tabs.filter(tab => tab.category === activeCategory);
 
   const currentTab = tabs.find(tab => tab.key === activeTab)!;
 
@@ -202,6 +223,9 @@ const Controls = () => {
       setEditIValue(item.i_value || '');
       setEditSValue(item.s_value || '');
     }
+    if (activeTab === 'signature') {
+      setEditSignatureImage(item.signature_image || null);
+    }
   };
 
   const handleSaveEdit = (id: number) => {
@@ -215,6 +239,10 @@ const Controls = () => {
       data.s_value = editSValue || null;
     }
     
+    if (activeTab === 'signature' && editSignatureImage) {
+      data.signature_image = editSignatureImage;
+    }
+    
     updateMutation.mutate({ id, data });
   };
 
@@ -224,6 +252,39 @@ const Controls = () => {
     setEditRValue('');
     setEditIValue('');
     setEditSValue('');
+    setEditSignatureImage(null);
+  };
+
+  // Handle edit signature image upload
+  const handleEditSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file (PNG, JPG, etc.)');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image size should be less than 2MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setEditSignatureImage(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearEditSignature = () => {
+    setEditSignatureImage(null);
+    if (editFileInputRef.current) {
+      editFileInputRef.current.value = '';
+    }
   };
 
   const handleAdd = () => {
@@ -302,50 +363,102 @@ const Controls = () => {
     }
   }, [selectedDepartment, filteredDepartments, currentTab.isDepartmentSpecific]);
 
+  // Get category color classes
+  const getCategoryColors = (category: CategoryType, isActive: boolean) => {
+    const colors = {
+      general: isActive 
+        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30' 
+        : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:shadow-md',
+      samples: isActive 
+        ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg shadow-green-500/30' 
+        : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:shadow-md',
+      microbiology: isActive 
+        ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg shadow-purple-500/30' 
+        : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:shadow-md',
+      users: isActive 
+        ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30' 
+        : 'bg-white text-orange-600 border-2 border-orange-200 hover:border-orange-400 hover:shadow-md',
+    };
+    return colors[category];
+  };
+
   return (
-    <div className="p-6">
+    <div className="p-6 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+      {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Data Controls</h1>
-        <p className="text-gray-600">Manage dropdown options for all fields across the system</p>
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent mb-2">
+          Data Controls
+        </h1>
+        <p className="text-gray-500 text-lg">Manage dropdown options for all fields across the system</p>
       </div>
 
-      {/* Tabs */}
-      <div className="mb-6 border-b border-gray-200">
-        <div className="flex overflow-x-auto">
-          {tabs.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => {
-                setActiveTab(tab.key);
+      {/* Category Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {tabCategories.map((category) => (
+          <button
+            key={category.key}
+            onClick={() => {
+              setActiveCategory(category.key);
+              // Set first tab of category as active
+              const firstTab = tabs.find(t => t.category === category.key);
+              if (firstTab) {
+                setActiveTab(firstTab.key);
                 setNewItemName('');
-              }}
-              className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                activeTab === tab.key
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+                setIsAddFormOpen(false);
+              }
+            }}
+            className={`p-5 rounded-xl transition-all duration-300 transform hover:scale-105 ${getCategoryColors(category.key, activeCategory === category.key)}`}
+          >
+            <div className="font-bold text-lg">{category.label}</div>
+            <div className="text-sm opacity-80">
+              {tabs.filter(t => t.category === category.key).length} items
+            </div>
+          </button>
+        ))}
       </div>
+
+      {/* Sub-tabs for selected category */}
+      {activeCategory !== 'users' && (
+        <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="flex flex-wrap gap-2">
+            {filteredTabs.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setActiveTab(tab.key);
+                  setNewItemName('');
+                  setIsAddFormOpen(false);
+                }}
+                className={`px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
+                  activeTab === tab.key
+                    ? 'bg-gradient-to-r from-gray-800 to-gray-700 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:shadow'
+                }`}
+              >
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* User Management Tab */}
-      {activeTab === 'users' ? (
-        <UserManagement />
+      {activeTab === 'users' || activeCategory === 'users' ? (
+        <div className="animate-fadeIn">
+          <UserManagement />
+        </div>
       ) : (
-        <>
+        <div className="animate-fadeIn">
           {/* Department Filter (for department-specific tabs) */}
           {currentTab.isDepartmentSpecific && (
-            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Filter by Department:
+            <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-5 shadow-sm">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Filter by Department
               </label>
               <select
                 value={selectedDepartment ?? ''}
                 onChange={(e) => setSelectedDepartment(Number(e.target.value))}
-                className="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full md:w-64 px-4 py-3 border-2 border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
               >
                 {filteredDepartments.map(dept => (
                   <option key={dept.id} value={dept.id}>
@@ -354,8 +467,8 @@ const Controls = () => {
                 ))}
               </select>
               {activeTab === 'kit_type' && (
-                <p className="text-xs text-gray-600 mt-2">
-                  * Kit Types are only available for PCR and Serology departments
+                <p className="text-xs text-blue-600 mt-3 font-medium">
+                  ℹ️ Kit Types are only available for PCR and Serology departments
                 </p>
               )}
             </div>
@@ -363,56 +476,76 @@ const Controls = () => {
 
           {/* Company Sub-tabs (for farm tab) */}
           {activeTab === 'farm' && companies.length > 0 && (
-            <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Company:
+            <div className="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-5 shadow-sm">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Select Company
               </label>
               <div className="flex flex-wrap gap-2">
                 {companies.filter(c => c.is_active).map(company => (
                   <button
                     key={company.id}
                     onClick={() => setSelectedCompanyForFarm(company.id)}
-                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
                       selectedCompanyForFarm === company.id
-                        ? 'bg-green-600 text-white'
-                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md transform scale-105'
+                        : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-green-400 hover:shadow'
                     }`}
                   >
                     {company.name}
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-gray-600 mt-2">
-                * Farms are organized by company. Select a company to view/add its farms.
+              <p className="text-xs text-green-600 mt-3 font-medium">
+                Farms are organized by company. Select a company to view/add its farms.
               </p>
             </div>
           )}
 
-          {/* Add New Item Form */}
-          <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Add New {currentTab.label.slice(0, -1)}
-            </h2>
-            <div className="flex flex-col gap-3">
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={newItemName}
-                  onChange={(e) => setNewItemName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !activeTab.includes('signature') && handleAdd()}
-                  placeholder={`Enter ${currentTab.label.toLowerCase().slice(0, -1)} name...`}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {activeTab !== 'signature' && (
-                  <button
-                    onClick={handleAdd}
-                    disabled={!newItemName.trim() || createMutation.isPending}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
-                  >
-                    {createMutation.isPending ? 'Adding...' : 'Add'}
-                  </button>
-                )}
+          {/* Add New Item Form - Collapsible Card */}
+          <div className="mb-6">
+            <button
+              onClick={() => setIsAddFormOpen(!isAddFormOpen)}
+              className="w-full flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg flex items-center justify-center text-white text-xl font-bold">
+                  +
+                </div>
+                <span className="font-semibold text-gray-800">Add New {currentTab.label.slice(0, -1)}</span>
               </div>
+              <svg
+                className={`w-5 h-5 text-gray-500 transition-transform duration-300 ${isAddFormOpen ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {/* Expandable Form */}
+            <div className={`overflow-hidden transition-all duration-300 ${isAddFormOpen ? 'max-h-[800px] mt-4' : 'max-h-0'}`}>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex flex-col gap-4">
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && !activeTab.includes('signature') && handleAdd()}
+                      placeholder={`Enter ${currentTab.label.toLowerCase().slice(0, -1)} name...`}
+                      className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    />
+                    {activeTab !== 'signature' && !activeTab.includes('ast_disks') && (
+                      <button
+                        onClick={handleAdd}
+                        disabled={!newItemName.trim() || createMutation.isPending}
+                        className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all font-semibold shadow-md hover:shadow-lg"
+                      >
+                        {createMutation.isPending ? 'Adding...' : 'Add'}
+                      </button>
+                    )}
+                  </div>
               
               {/* PIN field and Signature Canvas for signature tab */}
               {activeTab === 'signature' && (
@@ -479,7 +612,7 @@ const Controls = () => {
                       />
                     </div>
                     {signatureImage && (
-                      <p className="text-xs text-green-600 mt-1">✓ Signature image uploaded</p>
+                      <p className="text-xs text-green-600 mt-1">Signature image uploaded</p>
                     )}
                   </div>
 
@@ -537,36 +670,41 @@ const Controls = () => {
                   </div>
                 </div>
               )}
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Items List */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {currentTab.label} List ({items.length})
-              </h2>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-800">
+                  {currentTab.label} List
+                </h2>
+                <span className="px-3 py-1 bg-white rounded-full text-sm font-semibold text-gray-600 shadow-sm">
+                  {items.length} items
+                </span>
+              </div>
             </div>
             <div className="p-6">
               {isLoading ? (
-                <div className="text-center py-12">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <p className="mt-2 text-gray-600">Loading...</p>
+                <div className="text-center py-16">
+                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div>
+                  <p className="mt-4 text-gray-500 font-medium">Loading {currentTab.label.toLowerCase()}...</p>
                 </div>
               ) : items.length === 0 ? (
-                <div className="text-center py-12">
-                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                  </svg>
-                  <p className="mt-2 text-gray-600">No {currentTab.label.toLowerCase()} found</p>
-                  <p className="text-sm text-gray-500">Add one using the form above</p>
+                <div className="text-center py-16">
+                  <p className="text-gray-600 font-semibold text-lg">No {currentTab.label.toLowerCase()} found</p>
+                  <p className="text-sm text-gray-400 mt-1">Click the "Add New" button above to create one</p>
                 </div>
               ) : (
-                <div className="grid gap-2">
-                  {items.map(item => (
+                <div className="grid gap-3">
+                  {items.map((item, index) => (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                      className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100 hover:shadow-md hover:border-gray-200 transition-all duration-200"
+                      style={{ animationDelay: `${index * 50}ms` }}
                     >
                       {editingItem === item.id ? (
                         /* Edit Mode */
@@ -600,6 +738,41 @@ const Controls = () => {
                                 onChange={(e) => setEditSValue(e.target.value)}
                                 placeholder="S"
                                 className="w-16 px-2 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 text-sm text-center"
+                              />
+                            </div>
+                          )}
+                          {activeTab === 'signature' && (
+                            <div className="flex items-center gap-3">
+                              {editSignatureImage ? (
+                                <div className="relative">
+                                  <img 
+                                    src={editSignatureImage} 
+                                    alt="Signature Preview" 
+                                    className="h-12 w-auto border border-gray-300 rounded bg-white p-1"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={clearEditSignature}
+                                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs hover:bg-red-600"
+                                  >
+                                    X
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => editFileInputRef.current?.click()}
+                                  className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                                >
+                                  Change Image
+                                </button>
+                              )}
+                              <input
+                                ref={editFileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleEditSignatureUpload}
+                                className="hidden"
                               />
                             </div>
                           )}
@@ -645,16 +818,16 @@ const Controls = () => {
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleEdit(item)}
-                              className="px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                              className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-200"
                             >
-                              Edit
+                              ✏️ Edit
                             </button>
                             <button
                               onClick={() => handleDelete(item.id)}
                               disabled={deleteMutation.isPending}
-                              className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
+                              className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-all duration-200 disabled:opacity-50"
                             >
-                              Delete
+                              🗑️ Delete
                             </button>
                           </div>
                         </>
@@ -665,7 +838,7 @@ const Controls = () => {
               )}
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

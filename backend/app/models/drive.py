@@ -110,10 +110,11 @@ class DriveItem(Base):
     created_by = Column(String(255), nullable=True, index=True)
     updated_by = Column(String(255), nullable=True)
     
-    # Soft delete
+    # Soft delete / Recycle Bin
     is_deleted = Column(Boolean, default=False, index=True)
     deleted_at = Column(DateTime, nullable=True)
     deleted_by = Column(String(255), nullable=True)
+    original_parent_id = Column(Integer, nullable=True)  # Store original location for restore
     
     # Description/notes
     description = Column(Text, nullable=True)

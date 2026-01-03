@@ -29,9 +29,22 @@ class DriveService:
 
     def upload_file(self, file_name: str, file_content: bytes, mime_type: str, 
                     parent_id: Optional[int], created_by: str) -> DriveItem:
-        # Generate unique filename
+        # Check for duplicate file name in the same folder
+        final_name = file_name
+        counter = 1
+        while self.repository.get_by_name(final_name, parent_id):
+            # Extract name and extension
+            name_parts = file_name.rsplit('.', 1)
+            if len(name_parts) == 2:
+                base_name, extension = name_parts
+                final_name = f"{base_name} ({counter}).{extension}"
+            else:
+                final_name = f"{file_name} ({counter})"
+            counter += 1
+        
+        # Generate unique filename for storage
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        safe_name = "".join(c for c in file_name if c.isalnum() or c in "._-")
+        safe_name = "".join(c for c in final_name if c.isalnum() or c in "._-")
         unique_name = f"{timestamp}_{safe_name}"
         
         # Create folder structure based on parent
@@ -47,7 +60,7 @@ class DriveService:
         
         # Create database record
         file_item = DriveItem(
-            name=file_name,
+            name=final_name,
             type="file",
             mime_type=mime_type,
             size=len(file_content),
@@ -148,3 +161,62 @@ class DriveService:
             updated_by=created_by
         )
         return self.repository.create(folder)
+
+    # ============= RECYCLE BIN METHODS =============
+
+    def get_recycle_bin_contents(self) -> List[DriveItem]:
+        """Get all items in recycle bin"""
+        return self.repository.get_all_deleted_items()
+
+    def search_recycle_bin(self, query: str) -> List[DriveItem]:
+        """Search items in recycle bin"""
+        return self.repository.search_deleted(query)
+
+    def restore_item(self, item_id: int, restored_by: str) -> Optional[DriveItem]:
+        """Restore an item from recycle bin"""
+        # Get item even if deleted
+        item = self.db.query(DriveItem).filter(
+            DriveItem.id == item_id,
+            DriveItem.is_deleted == True
+        ).first()
+        
+        if not item:
+            return None
+        
+        return self.repository.restore_item(item, restored_by)
+
+    def permanent_delete(self, item_id: int) -> bool:
+        """Permanently delete an item from recycle bin"""
+        # Get item even if deleted
+        item = self.db.query(DriveItem).filter(
+            DriveItem.id == item_id,
+            DriveItem.is_deleted == True
+        ).first()
+        
+        if not item:
+            return False
+        
+        # Delete physical file if exists
+        if item.type == "file" and item.path and os.path.exists(item.path):
+            try:
+                os.remove(item.path)
+            except Exception:
+                pass
+        
+        return self.repository.hard_delete(item)
+
+    def empty_recycle_bin(self) -> int:
+        """Empty entire recycle bin, return count of deleted items"""
+        deleted_items = self.repository.get_all_deleted_items()
+        count = len(deleted_items)
+        
+        for item in deleted_items:
+            # Delete physical file if exists
+            if item.type == "file" and item.path and os.path.exists(item.path):
+                try:
+                    os.remove(item.path)
+                except Exception:
+                    pass
+            self.repository.hard_delete(item)
+        
+        return count

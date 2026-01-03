@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.models.user import User, UserRole
+from app.models.permission import UserPermission
 from app.core.security import get_password_hash
 
 def init_database():
@@ -25,18 +26,49 @@ def init_database():
     from app.models import pcr_coa as pcr_coa_model
     from app.models import microbiology_coa as microbiology_coa_model
     from app.models.department import Department
+    from sqlalchemy import text
     
-    # Create all tables
+    # Create all tables using SQLAlchemy's create_all
     Base.metadata.create_all(bind=engine)
-    print("✓ Tables created successfully")
+    print("✓ Database tables created successfully")
     
     # Create default admin user and departments
     db = SessionLocal()
     try:
+        # All screens that admin should have access to
+        admin_screens = [
+            'Dashboard',
+            'All Samples',
+            'Register Sample',
+            'PCR Samples',
+            'Serology Samples',
+            'Microbiology Samples',
+            'Database - PCR',
+            'Database - Serology',
+            'Database - Microbiology',
+            'Drive',
+            'Drive Admin',
+            'Controls'
+        ]
+        
         # Check if admin user already exists
         existing_admin = db.query(User).filter(User.username == "sslork").first()
         if existing_admin:
             print("✓ Admin user already exists")
+            # Check if admin has permissions, add if missing
+            existing_perms = db.query(UserPermission).filter(UserPermission.user_id == existing_admin.id).count()
+            if existing_perms == 0:
+                print("⚠ Admin user has no permissions, adding all permissions...")
+                for screen in admin_screens:
+                    permission = UserPermission(
+                        user_id=existing_admin.id,
+                        screen_name=screen,
+                        can_read=True,
+                        can_write=True
+                    )
+                    db.add(permission)
+                db.commit()
+                print("✓ Admin permissions granted for all screens")
         else:
             # Create admin user
             hashed_password = get_password_hash("sslork634827@@##")
@@ -47,8 +79,21 @@ def init_database():
                 role=UserRole.admin
             )
             db.add(admin_user)
+            db.flush()  # Get admin_user.id
+            
+            # Add all permissions for admin user
+            for screen in admin_screens:
+                permission = UserPermission(
+                    user_id=admin_user.id,
+                    screen_name=screen,
+                    can_read=True,
+                    can_write=True
+                )
+                db.add(permission)
+            
             db.commit()
             print("✓ Admin user created successfully")
+            print("✓ Admin permissions granted for all screens")
             print("\n" + "="*50)
             print("Default Admin Credentials:")
             print("  Username: sslork")

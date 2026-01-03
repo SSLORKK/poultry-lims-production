@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { serverStatus, isServerDownGracePeriod } from '../services/apiClient';
 
 interface QueryErrorHandlerOptions {
   onError?: (error: any) => void;
@@ -12,6 +13,7 @@ const auth401State = {
   lastTime: 0,
   threshold: 5, // Require 5 consecutive 401s within 60 seconds (more forgiving)
   timeWindow: 60000, // 60 seconds
+  serverDownIgnoreCount: 0, // Track ignored errors during server downtime
 };
 
 // Check if token is expired by decoding JWT
@@ -51,14 +53,34 @@ export const useQueryErrorHandler = (options: QueryErrorHandlerOptions = {}) => 
       if (event?.type === 'updated' && event.query.state.status === 'error') {
         const error = event.query.state.error;
         
+        // CRITICAL: Never logout if server is down or recovering
+        if ((error as any)?.isServerDown || (error as any)?.isNetworkError || (error as any)?.isServerRecovering) {
+          console.info('Server down/recovering - NOT triggering logout');
+          auth401State.serverDownIgnoreCount++;
+          return; // Don't process auth errors when server is down
+        }
+        
         // Handle 401 errors with smart retry logic
         if ((error as any)?.response?.status === 401) {
           const currentPath = window.location.pathname;
           if (currentPath !== '/login' && !handledRef.current) {
+            
+            // CRITICAL: Check if server is down or in grace period - NEVER logout
+            if (serverStatus.isDown || isServerDownGracePeriod()) {
+              console.info('401 during server downtime - ignoring, NOT logging out');
+              auth401State.serverDownIgnoreCount++;
+              return;
+            }
+            
             const now = Date.now();
             
             // Check if token is actually expired
             if (isTokenExpired()) {
+              // Double-check server is actually reachable before logging out
+              if (serverStatus.isDown) {
+                console.info('Token appears expired but server is down - waiting');
+                return;
+              }
               console.info('Token expired, redirecting to login');
               handledRef.current = true;
               localStorage.removeItem('token');
@@ -76,7 +98,8 @@ export const useQueryErrorHandler = (options: QueryErrorHandlerOptions = {}) => 
             auth401State.lastTime = now;
             
             // Only logout after multiple consecutive 401s (indicates real auth issue)
-            if (auth401State.count >= auth401State.threshold) {
+            // AND server must be confirmed up
+            if (auth401State.count >= auth401State.threshold && !serverStatus.isDown) {
               console.warn(`Multiple 401 errors (${auth401State.count}), session likely invalid`);
               handledRef.current = true;
               localStorage.removeItem('token');
