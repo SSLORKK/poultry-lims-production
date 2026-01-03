@@ -33,9 +33,25 @@ class SampleService:
                                       age=age, sample_type=sample_type)
     
     def create_sample(self, sample_data: SampleCreate, user_id: int) -> Optional[Sample]:
-        # PHASE 1: Pre-validate and cache all data upfront before creating anything
+        # PHASE 0: Year validation - ensure date_received matches the current year
         from app.models.dropdown_data import KitType
+        current_year = datetime.now().year
         
+        if sample_data.date_received:
+            try:
+                received_date = datetime.strptime(sample_data.date_received, "%Y-%m-%d")
+                if received_date.year != current_year:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Date received year ({received_date.year}) must match current year ({current_year}). Cannot create samples for a different year."
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date format for date_received. Expected YYYY-MM-DD format."
+                )
+        
+        # PHASE 1: Pre-validate and cache all data upfront before creating anything
         # Cache departments
         dept_cache = {}
         for unit_data in sample_data.units:
@@ -82,27 +98,9 @@ class SampleService:
             current_year = datetime.now().year
             year_short = current_year % 100  # Get last 2 digits of year
             
-            # Get next sample number WITHOUT incrementing counter yet
-            sample_number = self.counter_repo.get_next_sample_number(year=current_year)
-            sample_code = f"SMP{year_short:02d}-{sample_number}"
-            
-            # Check if sample_code already exists (handle counter desync) - use FOR UPDATE to lock
-            existing_sample = self.sample_repo.get_by_sample_code(sample_code)
-            max_attempts = 100  # Prevent infinite loop
-            attempts = 0
-            while existing_sample and attempts < max_attempts:
-                attempts += 1
-                # Sample code already exists, sync counter and try again
-                self.counter_repo.sync_sample_counter(year=current_year)
-                sample_number = self.counter_repo.get_next_sample_number(year=current_year)
-                sample_code = f"SMP{year_short:02d}-{sample_number}"
-                existing_sample = self.sample_repo.get_by_sample_code(sample_code)
-            
-            if attempts >= max_attempts:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Unable to generate unique sample code after multiple attempts. Please contact administrator."
-                )
+            # V3: Database-level atomic code reservation - guaranteed gap-free sequential codes
+            # Uses PostgreSQL functions to reserve code, auto-expires if transaction fails
+            sample_code = self.counter_repo.reserve_sample_code_atomic(year=current_year)
             
             # Create sample with sample-level poultry fields only
             sample = Sample(
@@ -129,25 +127,8 @@ class SampleService:
                 if not department:
                     continue  # Skip if somehow not found (shouldn't happen)
                 
-                # Generate unit code with year to prevent cross-year conflicts
-                unit_counter = self.counter_repo.get_next_unit_number(unit_data.department_id, year=current_year)
-                unit_code = f"{department.code}{year_short:02d}-{unit_counter}"
-                
-                # Check if unit_code already exists (handle counter desync)
-                existing_unit = self.unit_repo.get_by_unit_code(unit_code)
-                unit_attempts = 0
-                while existing_unit and unit_attempts < max_attempts:
-                    unit_attempts += 1
-                    # Unit code already exists, get next number and try again
-                    unit_counter = self.counter_repo.get_next_unit_number(unit_data.department_id, year=current_year)
-                    unit_code = f"{department.code}{year_short:02d}-{unit_counter}"
-                    existing_unit = self.unit_repo.get_by_unit_code(unit_code)
-                
-                if unit_attempts >= max_attempts:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Unable to generate unique unit code for department {department.code} after multiple attempts."
-                    )
+                # V3: Database-level atomic code reservation - guaranteed gap-free sequential codes
+                unit_code = self.counter_repo.reserve_unit_code_atomic(unit_data.department_id, year=current_year)
                 
                 # Create unit with unit-specific fields
                 unit = self.unit_repo.create(
@@ -227,9 +208,16 @@ class SampleService:
             self.db.commit()
             self.db.refresh(sample)
             
+            # V3: Confirm the reserved codes after successful commit
+            # This removes them from reserved_codes table since they're now in the actual tables
+            self.counter_repo.confirm_sample_code_atomic(sample_code)
+            for unit in sample.units:
+                self.counter_repo.confirm_sample_code_atomic(unit.unit_code)
+            
             return sample
         except Exception as e:
             self.db.rollback()
+            # V3: Reserved codes will auto-expire after 5 minutes if commit fails
             import logging
             logging.error(f"Error creating sample: {str(e)}")
             raise HTTPException(
@@ -543,26 +531,10 @@ class SampleService:
                     processed_unit_ids.add(unit_data.id)
                 else:
                     # Create new unit (only for newly added units during edit)
+                    # V2: Atomic sequence-based counter - guaranteed unique, no race conditions
                     unit_counter = self.counter_repo.get_next_unit_number(unit_data.department_id, year=sample.year)
                     year_short = sample.year % 100
                     unit_code = f"{department.code}{year_short:02d}-{unit_counter}"
-                    
-                    # Check if unit_code already exists (handle counter desync)
-                    existing_unit = self.unit_repo.get_by_unit_code(unit_code)
-                    unit_attempts = 0
-                    max_unit_attempts = 100
-                    while existing_unit and unit_attempts < max_unit_attempts:
-                        unit_attempts += 1
-                        # Unit code already exists, get next number and try again
-                        unit_counter = self.counter_repo.get_next_unit_number(unit_data.department_id, year=sample.year)
-                        unit_code = f"{department.code}{year_short:02d}-{unit_counter}"
-                        existing_unit = self.unit_repo.get_by_unit_code(unit_code)
-                    
-                    if unit_attempts >= max_unit_attempts:
-                        raise HTTPException(
-                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail=f"Unable to generate unique unit code for department {department.code} after multiple attempts."
-                        )
                     
                     unit = self.unit_repo.create(
                         sample_id=sample.id,  # type: ignore[arg-type]

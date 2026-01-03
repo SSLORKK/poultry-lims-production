@@ -29,6 +29,7 @@ export interface DiseaseKitItem {
   disease: string;
   kit_type: string;
   test_count?: number;
+  wells_count?: number;
 }
 
 interface PCRData {
@@ -1036,13 +1037,12 @@ function MicrobiologyFields({
       .map((loc) => loc.trim())
       .filter((loc) => loc);
     const currentLocations = unit.microbiology_data?.index_list || [];
-    const uniqueLocations = [
-      ...new Set([...currentLocations, ...newLocations]),
-    ];
+    // Keep all locations including duplicates
+    const allLocations = [...currentLocations, ...newLocations];
     updateUnit(globalIndex, {
       microbiology_data: {
         ...unit.microbiology_data!,
-        index_list: uniqueLocations,
+        index_list: allLocations,
       },
     });
     setBulkLocations("");
@@ -1713,6 +1713,70 @@ export const UnifiedSampleRegistration = () => {
     return fieldMappings[fieldName] || fieldName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  // Function to format edit history values nicely (not as raw JSON)
+  const formatEditValue = (value: string | null, fieldName: string): string => {
+    if (!value || value === '-' || value === 'None' || value === 'null') return '-';
+    
+    // Try to parse JSON arrays/objects
+    try {
+      // Check if it looks like a JSON array or object
+      if ((value.startsWith('[') && value.endsWith(']')) || (value.startsWith('{') && value.endsWith('}'))) {
+        const parsed = JSON.parse(value.replace(/'/g, '"'));
+        
+        // Handle diseases_list - extract disease names
+        if (fieldName.includes('diseases_list') && Array.isArray(parsed)) {
+          if (parsed.length === 0) return '-';
+          // Check if items have 'disease' property (DiseaseKitItem format)
+          if (parsed[0] && typeof parsed[0] === 'object' && 'disease' in parsed[0]) {
+            return parsed.map((d: any) => {
+              let text = d.disease;
+              if (d.kit_type) text += ` (${d.kit_type})`;
+              if (d.test_count && d.test_count > 1) text += ` x${d.test_count}`;
+              if (d.wells_count) text += ` [${d.wells_count} wells]`;
+              return text;
+            }).join(', ');
+          }
+          // Simple string array
+          return parsed.join(', ');
+        }
+        
+        // Handle index_list (microbiology locations)
+        if (fieldName.includes('index_list') && Array.isArray(parsed)) {
+          if (parsed.length === 0) return '-';
+          return parsed.join(', ');
+        }
+        
+        // Handle house, source, sample_type arrays
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0) return '-';
+          return parsed.join(', ');
+        }
+        
+        // Handle objects - stringify nicely
+        if (typeof parsed === 'object') {
+          return Object.entries(parsed)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(', ');
+        }
+      }
+    } catch (e) {
+      // Not valid JSON, return as-is but clean up Python-style formatting
+    }
+    
+    // Clean up Python-style list/dict formatting
+    let cleaned = value
+      .replace(/^\[|\]$/g, '') // Remove outer brackets
+      .replace(/^{|}$/g, '') // Remove outer braces
+      .replace(/'/g, '') // Remove single quotes
+      .replace(/"disease":\s*/g, '')
+      .replace(/"kit_type":\s*/g, 'Kit: ')
+      .replace(/"test_count":\s*/g, 'Tests: ')
+      .replace(/"wells_count":\s*/g, 'Wells: ')
+      .trim();
+    
+    return cleaned || '-';
+  };
+
   // Function to fetch and show detailed edit history
   const showDetailedEditHistory = async () => {
     if (!editSampleId) return;
@@ -1793,12 +1857,18 @@ export const UnifiedSampleRegistration = () => {
           }
 
           if (unit.serology_data) {
+            // Ensure diseases_list items have wells_count field
+            const diseasesListWithWells = (unit.serology_data.diseases_list || []).map((d: DiseaseKitItem) => ({
+              ...d,
+              wells_count: d.wells_count || 0
+            }));
+            
             // Auto-calculate tests_count from diseases_list (sum of test_count from each disease)
-            const calculatedTestsCount = (unit.serology_data.diseases_list || []).reduce(
+            const calculatedTestsCount = diseasesListWithWells.reduce(
               (sum: number, d: DiseaseKitItem) => sum + (d.test_count || 0), 0
             );
             unitData.serology_data = {
-              diseases_list: unit.serology_data.diseases_list || [],
+              diseases_list: diseasesListWithWells,
               kit_type: unit.serology_data.kit_type || "",
               number_of_wells: unit.serology_data.number_of_wells || 0,
               tests_count: calculatedTestsCount > 0 ? calculatedTestsCount : null,
@@ -3504,8 +3574,8 @@ export const UnifiedSampleRegistration = () => {
                           {formatFieldName(edit.field_name)}
                           {edit.unit_code && <span className="text-xs text-blue-600 block">Unit: {edit.unit_code}</span>}
                         </td>
-                        <td className="border border-gray-300 px-3 py-2 text-red-700 bg-red-50 break-words max-w-[150px]">{edit.old_value || '-'}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-green-700 bg-green-50 break-words max-w-[150px]">{edit.new_value || '-'}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-red-700 bg-red-50 break-words max-w-[150px]">{formatEditValue(edit.old_value, edit.field_name)}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-green-700 bg-green-50 break-words max-w-[150px]">{formatEditValue(edit.new_value, edit.field_name)}</td>
                         <td className="border border-gray-300 px-3 py-2">{edit.edited_by}</td>
                         <td className="border border-gray-300 px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{new Date(edit.edited_at).toLocaleString()}</td>
                       </tr>

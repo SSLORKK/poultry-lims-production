@@ -368,6 +368,10 @@ def get_comprehensive_reports(
                 company_data[company]['serology_diseases'][disease]['count'] += disease_test_count
                 company_data[company]['serology_diseases'][disease]['wells_count'] = company_data[company]['serology_diseases'][disease].get('wells_count', 0) + disease_wells_count
             
+            # Fallback: If no wells in diseases_list, use number_of_wells from serology_data
+            if unit_wells_total == 0 and unit.serology_data.number_of_wells:
+                unit_wells_total = unit.serology_data.number_of_wells
+            
             # Track wells count per company (sum of per-disease wells)
             company_data[company]['serology_wells_total'] += unit_wells_total
         

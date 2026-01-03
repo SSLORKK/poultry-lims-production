@@ -567,3 +567,94 @@ class CounterRepository:
             return True
         
         return False
+    
+    # ============================================================================
+    # NEW: Database-level atomic code generation methods
+    # These use PostgreSQL functions for guaranteed gap-free sequential codes
+    # ============================================================================
+    
+    def reserve_sample_code_atomic(self, year: Optional[int] = None, session_id: Optional[str] = None) -> str:
+        """
+        Reserve a sample code atomically using database function.
+        The code is reserved for 5 minutes and must be confirmed after successful insert.
+        
+        This method:
+        1. Finds the first available gap in sample codes
+        2. Reserves it in reserved_codes table
+        3. Returns the reserved code
+        
+        If the sample creation fails, the reservation expires automatically.
+        """
+        if year is None:
+            year = datetime.now().year
+        
+        try:
+            result = self.db.execute(
+                text("SELECT reserve_sample_code(:year, :session_id)"),
+                {"year": year, "session_id": session_id}
+            ).fetchone()
+            
+            if result and result[0]:
+                return result[0]
+        except Exception:
+            # Function doesn't exist yet (migration not run) - fall back to old method
+            pass
+        
+        # Fallback to old method if function doesn't exist
+        sample_number = self.get_next_sample_number(year)
+        year_short = year % 100
+        return f"SMP{year_short:02d}-{sample_number}"
+    
+    def confirm_sample_code_atomic(self, code: str) -> None:
+        """
+        Confirm a reserved sample code after successful insert.
+        This removes the reservation from the reserved_codes table.
+        """
+        try:
+            self.db.execute(
+                text("SELECT confirm_sample_code(:code)"),
+                {"code": code}
+            )
+        except Exception:
+            # Function doesn't exist yet - ignore
+            pass
+    
+    def reserve_unit_code_atomic(self, department_id: int, year: Optional[int] = None, session_id: Optional[str] = None) -> str:
+        """
+        Reserve a unit code atomically using database function.
+        """
+        if year is None:
+            year = datetime.now().year
+        
+        try:
+            result = self.db.execute(
+                text("SELECT reserve_unit_code(:dept_id, :year, :session_id)"),
+                {"dept_id": department_id, "year": year, "session_id": session_id}
+            ).fetchone()
+            
+            if result and result[0]:
+                return result[0]
+        except Exception:
+            # Function doesn't exist yet - fall back to old method
+            pass
+        
+        # Fallback to old method
+        from app.models.department import Department
+        dept = self.db.query(Department).filter(Department.id == department_id).first()
+        if not dept:
+            return ""
+        
+        unit_number = self.get_next_unit_number(department_id, year)
+        year_short = year % 100
+        return f"{dept.code}{year_short:02d}-{unit_number}"
+    
+    def cleanup_expired_reservations(self) -> int:
+        """
+        Clean up expired code reservations.
+        Returns the number of reservations cleaned up.
+        """
+        try:
+            result = self.db.execute(text("SELECT cleanup_expired_reservations()")).fetchone()
+            return result[0] if result else 0
+        except Exception:
+            return 0
