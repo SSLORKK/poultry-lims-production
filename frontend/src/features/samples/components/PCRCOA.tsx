@@ -100,11 +100,13 @@ export function PCRCOA() {
 
   const initializeTestResults = useCallback((unit: UnitData) => {
     const results: { [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string; neg_control: string }> } = {};
+    const unitSampleTypes = unit.sample_type || [];
     
     unit.pcr_data?.diseases_list?.forEach((diseaseItem, index) => {
       const emptyValues: { [sampleType: string]: string } = {};
-      unit.sample_type?.forEach((_, idx) => {
-        emptyValues[`col_${idx}`] = '';
+      // Use actual sample type names as keys for consistency
+      unitSampleTypes.forEach((st) => {
+        emptyValues[st] = '';
       });
       // Use unique key with index to handle duplicate diseases
       const diseaseKey = `${diseaseItem.disease}|||${index}`;
@@ -114,9 +116,9 @@ export function PCRCOA() {
     });
     
     setTestResults(results);
-    setSampleTypes(unit.sample_type || []);
+    setSampleTypes(unitSampleTypes);
     // Initialize house values array with empty strings for each sample type
-    setHouseValues(new Array(unit.sample_type?.length || 0).fill(''));
+    setHouseValues(new Array(unitSampleTypes.length).fill(''));
     setTestedBy(unit.pcr_data?.technician_name || '');
   }, []);
 
@@ -295,16 +297,17 @@ export function PCRCOA() {
   // Remove a sample type column by index
   const removeSampleTypeColumn = (index: number) => {
     if (sampleTypes.length <= 1) return; // Keep at least one
-    setSampleTypes(prev => prev.filter((_, i) => i !== index));
+    const removedSampleType = sampleTypes[index];
+    const newSampleTypes = sampleTypes.filter((_, i) => i !== index);
+    setSampleTypes(newSampleTypes);
     setHouseValues(prev => prev.filter((_, i) => i !== index));
     setTestResults(prev => {
       const updated = { ...prev };
       Object.keys(updated).forEach(disease => {
         updated[disease] = updated[disease].map(pool => {
-          const valuesArray = Object.values(pool.values);
-          const newValuesArray = valuesArray.filter((_, i) => i !== index);
-          const newValues: { [key: string]: string } = {};
-          newValuesArray.forEach((val, i) => { newValues[`col_${i}`] = val; });
+          // Remove the specific sample type key from values
+          const newValues = { ...pool.values };
+          delete newValues[removedSampleType];
           return { ...pool, values: newValues };
         });
       });
@@ -314,9 +317,17 @@ export function PCRCOA() {
 
   // Duplicate a specific sample type column
   const duplicateSampleType = (sampleType: string, index: number) => {
-    // Just copy the name as-is without adding numbers
+    // Create a unique name for the duplicated sample type
+    const baseName = sampleType.replace(/\s*\(\d+\)$/, '');
+    let counter = 2;
+    let newName = `${baseName} (${counter})`;
+    while (sampleTypes.includes(newName)) {
+      counter++;
+      newName = `${baseName} (${counter})`;
+    }
+    
     const newSampleTypes = [...sampleTypes];
-    newSampleTypes.splice(index + 1, 0, sampleType);
+    newSampleTypes.splice(index + 1, 0, newName);
     setSampleTypes(newSampleTypes);
     // Add new house value at the new index position
     setHouseValues(prev => {
@@ -328,14 +339,9 @@ export function PCRCOA() {
       const updated = { ...prev };
       Object.keys(updated).forEach(disease => {
         updated[disease] = updated[disease].map(pool => {
-          // Convert values to array, insert duplicate, then back to object with new indices
-          const valuesArray = newSampleTypes.map((_, i) => {
-            if (i <= index) return Object.values(pool.values)[i] || '';
-            if (i === index + 1) return Object.values(pool.values)[index] || '';
-            return Object.values(pool.values)[i - 1] || '';
-          });
-          const newValues: { [key: string]: string } = {};
-          newSampleTypes.forEach((_, i) => { newValues[`col_${i}`] = valuesArray[i] || ''; });
+          // Copy value from the original sample type to the new one
+          const newValues = { ...pool.values };
+          newValues[newName] = pool.values[sampleType] || '';
           return { ...pool, values: newValues };
         });
       });
