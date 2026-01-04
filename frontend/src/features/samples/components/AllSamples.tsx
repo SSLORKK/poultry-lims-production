@@ -252,7 +252,7 @@ export const AllSamples = () => {
           cycle: sample.cycle || '-',
           house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
           age: unit.age,
-          source: unit.source || '-',
+          source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
           technician: unit.pcr_data?.technician_name || unit.serology_data?.technician_name || unit.microbiology_data?.technician_name || '-',
           notes: unit.notes || '',
           sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',

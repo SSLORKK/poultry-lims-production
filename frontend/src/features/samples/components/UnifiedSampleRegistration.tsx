@@ -2215,39 +2215,33 @@ export const UnifiedSampleRegistration = () => {
     const unitToDuplicate = units[index];
     const duplicatedUnit = JSON.parse(JSON.stringify(unitToDuplicate)); // Deep clone
     
-    // Generate new unit code by finding the highest existing number and incrementing
-    const departmentId = unitToDuplicate.department_id;
-    const deptInfo = getDepartmentInfo(departmentId);
-    const departmentCode = deptInfo.code || 'UNK';
-    
-    // Find the highest unit code number for this department across all units
-    const sameDepUnits = units.filter(u => u.department_id === departmentId);
-    let maxNumber = 0;
-    sameDepUnits.forEach(u => {
-      if (u.unit_code) {
-        const match = u.unit_code.match(/-(\d+)$/);
-        if (match) {
-          const num = parseInt(match[1]);
-          if (num > maxNumber) maxNumber = num;
-        }
-      }
-    });
-    
-    // Increment from the highest found number
-    const nextNumber = maxNumber + 1;
-    duplicatedUnit.unit_code = `${departmentCode}-${nextNumber}`;
-    
     // Remove id for new unit (will be assigned by backend)
     delete duplicatedUnit.id;
     
     const newUnits = [...units];
     newUnits.splice(index + 1, 0, duplicatedUnit); // Insert after current unit
+    
+    // Renumber all units of each department sequentially
+    // Group units by department and renumber them
+    const departmentCounters: { [deptId: number]: number } = {};
+    newUnits.forEach((unit) => {
+      const deptId = unit.department_id;
+      if (!departmentCounters[deptId]) {
+        departmentCounters[deptId] = 1;
+      }
+      const deptInfo = getDepartmentInfo(deptId);
+      const departmentCode = deptInfo.code || 'UNK';
+      unit.unit_code = `${departmentCode}-${departmentCounters[deptId]}`;
+      departmentCounters[deptId]++;
+    });
+    
     setUnits(newUnits);
     
     // Expand the new unit
     setExpandedUnits(prev => new Set([...prev, index + 1]));
     
-    setNotification({ type: 'success', message: `Unit duplicated with code ${duplicatedUnit.unit_code}` });
+    const newUnitCode = newUnits[index + 1].unit_code;
+    setNotification({ type: 'success', message: `Unit duplicated with code ${newUnitCode}` });
   };
 
   // Create sample mutation

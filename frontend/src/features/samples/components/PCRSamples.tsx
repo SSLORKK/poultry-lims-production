@@ -321,6 +321,16 @@ export const PCRSamples = () => {
       sample.units?.forEach((unit: any) => {
         if (unit.department_id === 1) {
           const diseases = unit.pcr_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
+          // Get kit types from diseases_list (each disease has its own kit_type)
+          const kitTypesFromDiseases = unit.pcr_data?.diseases_list
+            ?.map((d: any) => d.kit_type)
+            .filter((kt: string) => kt && kt.trim() !== '')
+            || [];
+          // Use unique kit types, fallback to top-level kit_type for older data
+          const uniqueKitTypes = [...new Set(kitTypesFromDiseases)];
+          const kitType = uniqueKitTypes.length > 0 
+            ? uniqueKitTypes.join(', ') 
+            : (unit.pcr_data?.kit_type || '-');
 
           rows.push({
             sampleId: sample.id,
@@ -343,7 +353,7 @@ export const PCRSamples = () => {
             extraction: unit.pcr_data?.extraction || null,  // Samples count (No. Samples)
             detection: unit.pcr_data?.detection || null,  // Detection value - Total Tests = Sum of Detection values
             diseases,
-            kitType: unit.pcr_data?.kit_type || '-',
+            kitType,
             technicianName: unit.pcr_data?.technician_name || 'N/A',
             extractionMethod: unit.pcr_data?.extraction_method || '-',
             coaStatus: unit.coa_status || null,
@@ -492,8 +502,19 @@ export const PCRSamples = () => {
     const kitTypes = new Set<string>();
     samples.forEach((sample) => {
       sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.pcr_data?.kit_type) {
-          kitTypes.add(unit.pcr_data.kit_type);
+        if (unit.department_id === 1) {
+          // Get kit types from diseases_list (each disease has its own kit_type)
+          if (unit.pcr_data?.diseases_list) {
+            unit.pcr_data.diseases_list.forEach((d: any) => {
+              if (d.kit_type && d.kit_type.trim() !== '') {
+                kitTypes.add(d.kit_type);
+              }
+            });
+          }
+          // Also check top-level kit_type for older data
+          if (unit.pcr_data?.kit_type) {
+            kitTypes.add(unit.pcr_data.kit_type);
+          }
         }
       });
     });
