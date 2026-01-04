@@ -104,20 +104,53 @@ class PermissionRepository:
         self.db.commit()
     
     def create_default_permissions(self, user_id: int, role: str) -> List[UserPermission]:
-        """Create default permissions - only Drive screen by default"""
-        # Default: Only give access to Drive screen
-        permissions_data = [
-            {
-                'screen_name': 'Drive',
-                'can_read': True,
-                'can_write': False  # Read-only by default
-            }
+        """Create default permissions for all screens based on role"""
+        # All available screens in the system
+        ALL_SCREENS = [
+            'Dashboard',
+            'All Samples',
+            'Register Sample',
+            'PCR Samples',
+            'Serology Samples',
+            'Microbiology Samples',
+            'Database - PCR',
+            'Database - Serology',
+            'Database - Microbiology',
+            'Drive',
+            'Drive Admin',
+            'Controls',
+            'Reports'
         ]
         
-        # Set permissions and sync Drive permission
+        # Create permissions for all screens - default to no access
+        # Admin can then configure specific access via Permissions Editor
+        permissions_data = []
+        for screen in ALL_SCREENS:
+            # Default: No access for new users (admin will configure)
+            can_read = False
+            can_write = False
+            
+            # Give Dashboard read access by default for all roles
+            if screen == 'Dashboard':
+                can_read = True
+            
+            # Admin role gets full access to everything
+            if role == 'admin':
+                can_read = True
+                can_write = True
+            
+            permissions_data.append({
+                'screen_name': screen,
+                'can_read': can_read,
+                'can_write': can_write
+            })
+        
+        # Set permissions
         result = self.set_user_permissions(user_id, permissions_data)
         
         # Sync Drive permission with DrivePermission table
-        self.sync_drive_permission(user_id, True, False)
+        drive_perm = next((p for p in permissions_data if p['screen_name'] == 'Drive'), None)
+        if drive_perm:
+            self.sync_drive_permission(user_id, drive_perm['can_read'], drive_perm['can_write'])
         
         return result

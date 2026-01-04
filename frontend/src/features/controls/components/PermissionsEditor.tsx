@@ -25,7 +25,8 @@ const SCREENS = [
   'Database - Microbiology',
   'Drive',
   'Drive Admin',
-  'Controls'
+  'Controls',
+  'Reports'
 ];
 
 const PermissionsEditor = ({ userId, onClose }: PermissionsEditorProps) => {
