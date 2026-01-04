@@ -357,8 +357,12 @@ export const SerologySamples = () => {
         }
       });
     });
-    // Sort by unit code A-Z (ascending alphabetically)
-    return rows.sort((a, b) => a.unitCode.localeCompare(b.unitCode));
+    // Sort by unit code numerically (1, 2, 3... not 1, 11, 2...)
+    return rows.sort((a, b) => {
+      const numA = parseInt(a.unitCode.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.unitCode.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
   }, [samples]);
 
   // Persist selected unit to localStorage when changed

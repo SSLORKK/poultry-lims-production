@@ -419,8 +419,12 @@ export const MicrobiologySamples = () => {
         }
       });
     });
-    // Sort by unit code A-Z (ascending alphabetically)
-    return rows.sort((a, b) => a.unitCode.localeCompare(b.unitCode));
+    // Sort by unit code numerically (1, 2, 3... not 1, 11, 2...)
+    return rows.sort((a, b) => {
+      const numA = parseInt(a.unitCode.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.unitCode.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
   }, [samples, coaHiddenIndexes]);
 
   // Auto-select persisted unit when data loads

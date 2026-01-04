@@ -104,9 +104,9 @@ export function PCRCOA() {
     
     unit.pcr_data?.diseases_list?.forEach((diseaseItem, index) => {
       const emptyValues: { [sampleType: string]: string } = {};
-      // Use actual sample type names as keys for consistency
-      unitSampleTypes.forEach((st) => {
-        emptyValues[st] = '';
+      // Use column index as keys to support duplicate sample type names
+      unitSampleTypes.forEach((_, colIdx) => {
+        emptyValues[`col_${colIdx}`] = '';
       });
       // Use unique key with index to handle duplicate diseases
       const diseaseKey = `${diseaseItem.disease}|||${index}`;
@@ -150,13 +150,32 @@ export function PCRCOA() {
           // First, check if data uses new indexed format or old format
           const hasIndexedKeys = Object.keys(raw || {}).some(key => key.includes('|||'));
           
+          // Helper to convert values to col_${index} format
+          const normalizeValues = (poolValues: any) => {
+            const newValues: { [key: string]: string } = {};
+            // Check if values already use col_ format
+            const hasColFormat = Object.keys(poolValues || {}).some(k => k.startsWith('col_'));
+            if (hasColFormat) {
+              // Already in col_ format, use as-is
+              Object.entries(poolValues || {}).forEach(([k, v]) => {
+                newValues[k] = String(v || '');
+              });
+            } else {
+              // Convert from sample type names to col_ format
+              sampleTypes.forEach((st, idx) => {
+                newValues[`col_${idx}`] = poolValues?.[st] || '';
+              });
+            }
+            return newValues;
+          };
+          
           if (hasIndexedKeys) {
-            // New format with indexed keys - use as is
+            // New format with indexed keys
             Object.entries(raw || {}).forEach(([diseaseKey, value]: [string, any]) => {
               if (Array.isArray(value)) {
                 normalized[diseaseKey] = value.map((pool) => ({
                   houses: pool.houses || '',
-                  values: { ...sampleTypes.reduce((acc, st) => ({ ...acc, [st]: pool.values?.[st] || '' }), {}) },
+                  values: normalizeValues(pool.values),
                   pos_control: pool.pos_control || '',
                   neg_control: pool.neg_control || 'confirmed'
                 }));
@@ -166,31 +185,29 @@ export function PCRCOA() {
             });
           } else {
             // Old format without indexed keys - migrate to indexed format
-            // Track how many times each disease name has been seen
             const diseaseCount: { [disease: string]: number } = {};
             diseasesList.forEach((item: { disease: string }, idx: number) => {
               const diseaseName = item.disease;
               const count = diseaseCount[diseaseName] || 0;
               const diseaseKey = `${diseaseName}|||${idx}`;
               
-              // Try to find data for this disease (use first occurrence for duplicates)
               const rawValue = count === 0 ? raw?.[diseaseName] : undefined;
               
               if (rawValue && Array.isArray(rawValue)) {
                 normalized[diseaseKey] = rawValue.map((pool) => ({
                   houses: pool.houses || '',
-                  values: { ...sampleTypes.reduce((acc, st) => ({ ...acc, [st]: pool.values?.[st] || '' }), {}) },
+                  values: normalizeValues(pool.values),
                   pos_control: pool.pos_control || '',
                   neg_control: pool.neg_control || 'confirmed'
                 }));
               } else if (rawValue && typeof rawValue === 'object') {
                 const houses = rawValue.indices || '';
                 const pos_control = rawValue.pos_control || '';
-                const values: { [sampleType: string]: string } = {};
-                sampleTypes.forEach(st => { values[st] = rawValue[st] || ''; });
-                normalized[diseaseKey] = [{ houses, values, pos_control, neg_control: 'confirmed' }];
+                normalized[diseaseKey] = [{ houses, values: normalizeValues(rawValue), pos_control, neg_control: 'confirmed' }];
               } else {
-                normalized[diseaseKey] = [{ houses: '', values: {}, pos_control: '', neg_control: 'confirmed' }];
+                const emptyValues: { [key: string]: string } = {};
+                sampleTypes.forEach((_, idx) => { emptyValues[`col_${idx}`] = ''; });
+                normalized[diseaseKey] = [{ houses: '', values: emptyValues, pos_control: '', neg_control: 'confirmed' }];
               }
               
               diseaseCount[diseaseName] = count + 1;
@@ -297,7 +314,6 @@ export function PCRCOA() {
   // Remove a sample type column by index
   const removeSampleTypeColumn = (index: number) => {
     if (sampleTypes.length <= 1) return; // Keep at least one
-    const removedSampleType = sampleTypes[index];
     const newSampleTypes = sampleTypes.filter((_, i) => i !== index);
     setSampleTypes(newSampleTypes);
     setHouseValues(prev => prev.filter((_, i) => i !== index));
@@ -305,9 +321,13 @@ export function PCRCOA() {
       const updated = { ...prev };
       Object.keys(updated).forEach(disease => {
         updated[disease] = updated[disease].map(pool => {
-          // Remove the specific sample type key from values
-          const newValues = { ...pool.values };
-          delete newValues[removedSampleType];
+          // Rebuild values with new indices after removing the column
+          const valuesArray = Object.keys(pool.values)
+            .sort((a, b) => parseInt(a.replace('col_', '')) - parseInt(b.replace('col_', '')))
+            .map(key => pool.values[key]);
+          const filteredArray = valuesArray.filter((_, i) => i !== index);
+          const newValues: { [key: string]: string } = {};
+          filteredArray.forEach((val, i) => { newValues[`col_${i}`] = val; });
           return { ...pool, values: newValues };
         });
       });
@@ -317,17 +337,9 @@ export function PCRCOA() {
 
   // Duplicate a specific sample type column
   const duplicateSampleType = (sampleType: string, index: number) => {
-    // Create a unique name for the duplicated sample type
-    const baseName = sampleType.replace(/\s*\(\d+\)$/, '');
-    let counter = 2;
-    let newName = `${baseName} (${counter})`;
-    while (sampleTypes.includes(newName)) {
-      counter++;
-      newName = `${baseName} (${counter})`;
-    }
-    
+    // Use same name for duplicated column (no numbers added)
     const newSampleTypes = [...sampleTypes];
-    newSampleTypes.splice(index + 1, 0, newName);
+    newSampleTypes.splice(index + 1, 0, sampleType);
     setSampleTypes(newSampleTypes);
     // Add new house value at the new index position
     setHouseValues(prev => {
@@ -335,13 +347,20 @@ export function PCRCOA() {
       newHouseValues.splice(index + 1, 0, prev[index] || '');
       return newHouseValues;
     });
+    // Add new column values with reindexing
     setTestResults(prev => {
       const updated = { ...prev };
       Object.keys(updated).forEach(disease => {
         updated[disease] = updated[disease].map(pool => {
-          // Copy value from the original sample type to the new one
-          const newValues = { ...pool.values };
-          newValues[newName] = pool.values[sampleType] || '';
+          // Get values as array sorted by column index
+          const valuesArray = Object.keys(pool.values)
+            .sort((a, b) => parseInt(a.replace('col_', '')) - parseInt(b.replace('col_', '')))
+            .map(key => pool.values[key]);
+          // Insert copy of value at the duplicated position
+          valuesArray.splice(index + 1, 0, valuesArray[index] || '');
+          // Rebuild values object with new indices
+          const newValues: { [key: string]: string } = {};
+          valuesArray.forEach((val, i) => { newValues[`col_${i}`] = val; });
           return { ...pool, values: newValues };
         });
       });
@@ -1320,7 +1339,7 @@ export function PCRCOA() {
                           <button
                             type="button"
                             onClick={() => duplicateSampleType(sampleType, stIndex)}
-                            className="text-blue-600 hover:text-blue-800 font-bold text-sm"
+                            className="text-blue-600 hover:text-blue-800 font-bold text-lg bg-blue-100 hover:bg-blue-200 rounded-full w-6 h-6 flex items-center justify-center"
                             title="Duplicate this column"
                           >
                             +
@@ -1375,12 +1394,12 @@ export function PCRCOA() {
                         <td className="border border-gray-300 px-4 py-2 font-medium">
                           {diseaseItem.disease}
                         </td>
-                        {sampleTypes.map((sampleType) => (
-                          <td key={`${diseaseKey}-${sampleType}`} className="border border-gray-300 px-2 py-2">
+                        {sampleTypes.map((_sampleType, colIndex) => (
+                          <td key={`${diseaseKey}-col-${colIndex}`} className="border border-gray-300 px-2 py-2">
                             <input
                               type="text"
-                              value={pool.values?.[sampleType] || ''}
-                              onChange={(e) => handleResultChange(diseaseKey, 0, sampleType, e.target.value)}
+                              value={pool.values?.[`col_${colIndex}`] || ''}
+                              onChange={(e) => handleResultChange(diseaseKey, 0, `col_${colIndex}`, e.target.value)}
                               placeholder=""
                               className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-center"
                             />
