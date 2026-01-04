@@ -77,13 +77,9 @@ export function PCRCOA() {
 
   // Ordered diseases list for drag and drop reordering
   const [orderedDiseases, setOrderedDiseases] = useState<Array<{ disease: string; kit_type: string }>>([]);
-  const [draggedDiseaseIndex, setDraggedDiseaseIndex] = useState<number | null>(null);
   
   // House values per column index (for the House row) - each column has independent house value
   const [houseValues, setHouseValues] = useState<string[]>([]);
-  
-  // Sample type column drag state for reordering
-  const [draggedSampleTypeIndex, setDraggedSampleTypeIndex] = useState<number | null>(null);
 
   // Auto-dismiss notification after 4 seconds
   useEffect(() => {
@@ -311,74 +307,6 @@ export function PCRCOA() {
     });
   };
 
-  // Sample type column drag handlers
-  const handleSampleTypeDragStart = (index: number) => {
-    setDraggedSampleTypeIndex(index);
-  };
-
-  const handleSampleTypeDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    if (draggedSampleTypeIndex === null || draggedSampleTypeIndex === index) return;
-    
-    const newSampleTypes = [...sampleTypes];
-    const draggedItem = newSampleTypes[draggedSampleTypeIndex];
-    newSampleTypes.splice(draggedSampleTypeIndex, 1);
-    newSampleTypes.splice(index, 0, draggedItem);
-    setSampleTypes(newSampleTypes);
-    
-    // Also reorder house values
-    setHouseValues(prev => {
-      const newHouseValues = [...prev];
-      const draggedHouse = newHouseValues[draggedSampleTypeIndex];
-      newHouseValues.splice(draggedSampleTypeIndex, 1);
-      newHouseValues.splice(index, 0, draggedHouse);
-      return newHouseValues;
-    });
-    
-    setDraggedSampleTypeIndex(index);
-  };
-
-  const handleSampleTypeDragEnd = () => {
-    setDraggedSampleTypeIndex(null);
-  };
-
-  // Drag and drop handlers for disease reordering
-  const handleDragStart = (index: number) => {
-    setDraggedDiseaseIndex(index);
-  };
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    if (draggedDiseaseIndex === null || draggedDiseaseIndex === index) return;
-    
-    // Reorder diseases
-    const newOrder = [...orderedDiseases];
-    const draggedItem = newOrder[draggedDiseaseIndex];
-    newOrder.splice(draggedDiseaseIndex, 1);
-    newOrder.splice(index, 0, draggedItem);
-    setOrderedDiseases(newOrder);
-    setDraggedDiseaseIndex(index);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedDiseaseIndex(null);
-  };
-
-  // Move disease up in the order
-  const moveDiseaseUp = (index: number) => {
-    if (index === 0) return;
-    const newOrder = [...orderedDiseases];
-    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
-    setOrderedDiseases(newOrder);
-  };
-
-  // Move disease down in the order
-  const moveDiseaseDown = (index: number) => {
-    if (index === orderedDiseases.length - 1) return;
-    const newOrder = [...orderedDiseases];
-    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-    setOrderedDiseases(newOrder);
-  };
 
   const verifyPIN = async (pin: string, field: 'testedBy' | 'reviewedBy' | 'labSupervisor' | 'labManager') => {
     if (!pin.trim() || verifyingPIN) return;
@@ -1332,7 +1260,7 @@ export function PCRCOA() {
           )}
           
           <div className="overflow-x-auto">
-            <p className="text-xs text-gray-500 mb-2 italic">💡 Drag columns to reorder. Click (+) to duplicate sample type.</p>
+            <p className="text-xs text-gray-500 mb-2 italic">💡 Click (+) to duplicate sample type column.</p>
             <table className="min-w-full border-collapse border border-gray-300">
               <thead>
                 {/* Header Row - Sample Types with House inputs */}
@@ -1341,11 +1269,7 @@ export function PCRCOA() {
                   {sampleTypes.map((sampleType, stIndex) => (
                     <th 
                       key={`${sampleType}-${stIndex}`} 
-                      className={`border border-gray-300 px-2 py-2 text-center font-semibold cursor-grab ${draggedSampleTypeIndex === stIndex ? 'bg-blue-200' : ''}`}
-                      draggable
-                      onDragStart={() => handleSampleTypeDragStart(stIndex)}
-                      onDragOver={(e) => handleSampleTypeDragOver(e, stIndex)}
-                      onDragEnd={handleSampleTypeDragEnd}
+                      className="border border-gray-300 px-2 py-2 text-center font-semibold"
                     >
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center justify-center gap-1">
@@ -1394,47 +1318,17 @@ export function PCRCOA() {
                   // Use orderedDiseases for rendering to maintain user-defined order
                   const diseasesToRender = orderedDiseases.length > 0 ? orderedDiseases : diseases;
                   
-                  return diseasesToRender.map((diseaseItem, diseaseIndex) => {
+                  return diseasesToRender.map((diseaseItem) => {
                     const pools = testResults[diseaseItem.disease] || [];
                     const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
                     
                     return (
                       <tr 
                         key={diseaseItem.disease}
-                        className={`hover:bg-gray-50 ${draggedDiseaseIndex === diseaseIndex ? 'bg-blue-50' : ''}`}
-                        draggable
-                        onDragStart={() => handleDragStart(diseaseIndex)}
-                        onDragOver={(e) => handleDragOver(e, diseaseIndex)}
-                        onDragEnd={handleDragEnd}
+                        className="hover:bg-gray-50"
                       >
                         <td className="border border-gray-300 px-4 py-2 font-medium">
-                          <div className="flex items-center gap-2">
-                            <div className="flex flex-col gap-0.5">
-                              <button
-                                type="button"
-                                onClick={() => moveDiseaseUp(diseaseIndex)}
-                                disabled={diseaseIndex === 0}
-                                className={`p-0.5 rounded ${diseaseIndex === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
-                                title="Move up"
-                              >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                </svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => moveDiseaseDown(diseaseIndex)}
-                                disabled={diseaseIndex === diseasesToRender.length - 1}
-                                className={`p-0.5 rounded ${diseaseIndex === diseasesToRender.length - 1 ? 'text-gray-300' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'}`}
-                                title="Move down"
-                              >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </button>
-                            </div>
-                            <span className="cursor-grab">{diseaseItem.disease}</span>
-                          </div>
+                          {diseaseItem.disease}
                         </td>
                         {sampleTypes.map((sampleType) => (
                           <td key={`${diseaseItem.disease}-${sampleType}`} className="border border-gray-300 px-2 py-2">

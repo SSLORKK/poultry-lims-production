@@ -589,16 +589,25 @@ class CounterRepository:
             year = datetime.now().year
         
         try:
+            # Use SAVEPOINT so we can rollback just this operation if it fails
+            # without aborting the entire transaction
+            self.db.execute(text("SAVEPOINT reserve_sample_sp"))
             result = self.db.execute(
                 text("SELECT reserve_sample_code(:year, :session_id)"),
                 {"year": year, "session_id": session_id}
             ).fetchone()
             
             if result and result[0]:
+                self.db.execute(text("RELEASE SAVEPOINT reserve_sample_sp"))
                 return result[0]
+            # If no result, rollback savepoint and use fallback
+            self.db.execute(text("ROLLBACK TO SAVEPOINT reserve_sample_sp"))
         except Exception:
-            # Function doesn't exist yet (migration not run) - fall back to old method
-            pass
+            # Function doesn't exist yet (migration not run) - rollback savepoint and fall back
+            try:
+                self.db.execute(text("ROLLBACK TO SAVEPOINT reserve_sample_sp"))
+            except Exception:
+                pass
         
         # Fallback to old method if function doesn't exist
         sample_number = self.get_next_sample_number(year)
@@ -611,13 +620,20 @@ class CounterRepository:
         This removes the reservation from the reserved_codes table.
         """
         try:
+            # Use SAVEPOINT so we can rollback just this operation if it fails
+            # without aborting the entire transaction
+            self.db.execute(text("SAVEPOINT confirm_sample_sp"))
             self.db.execute(
                 text("SELECT confirm_sample_code(:code)"),
                 {"code": code}
             )
+            self.db.execute(text("RELEASE SAVEPOINT confirm_sample_sp"))
         except Exception:
-            # Function doesn't exist yet - ignore
-            pass
+            # Function doesn't exist yet - rollback savepoint and ignore
+            try:
+                self.db.execute(text("ROLLBACK TO SAVEPOINT confirm_sample_sp"))
+            except Exception:
+                pass
     
     def reserve_unit_code_atomic(self, department_id: int, year: Optional[int] = None, session_id: Optional[str] = None) -> str:
         """
@@ -627,16 +643,25 @@ class CounterRepository:
             year = datetime.now().year
         
         try:
+            # Use SAVEPOINT so we can rollback just this operation if it fails
+            # without aborting the entire transaction
+            self.db.execute(text("SAVEPOINT reserve_unit_sp"))
             result = self.db.execute(
                 text("SELECT reserve_unit_code(:dept_id, :year, :session_id)"),
                 {"dept_id": department_id, "year": year, "session_id": session_id}
             ).fetchone()
             
             if result and result[0]:
+                self.db.execute(text("RELEASE SAVEPOINT reserve_unit_sp"))
                 return result[0]
+            # If no result, rollback savepoint and use fallback
+            self.db.execute(text("ROLLBACK TO SAVEPOINT reserve_unit_sp"))
         except Exception:
-            # Function doesn't exist yet - fall back to old method
-            pass
+            # Function doesn't exist yet - rollback savepoint and fall back
+            try:
+                self.db.execute(text("ROLLBACK TO SAVEPOINT reserve_unit_sp"))
+            except Exception:
+                pass
         
         # Fallback to old method
         from app.models.department import Department
@@ -654,7 +679,14 @@ class CounterRepository:
         Returns the number of reservations cleaned up.
         """
         try:
+            # Use SAVEPOINT so we can rollback just this operation if it fails
+            self.db.execute(text("SAVEPOINT cleanup_reservations_sp"))
             result = self.db.execute(text("SELECT cleanup_expired_reservations()")).fetchone()
+            self.db.execute(text("RELEASE SAVEPOINT cleanup_reservations_sp"))
             return result[0] if result else 0
         except Exception:
+            try:
+                self.db.execute(text("ROLLBACK TO SAVEPOINT cleanup_reservations_sp"))
+            except Exception:
+                pass
             return 0

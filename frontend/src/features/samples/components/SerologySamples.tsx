@@ -98,6 +98,15 @@ export const SerologySamples = () => {
     open: false,
     note: '',
   });
+  const [wellsDialog, setWellsDialog] = useState<{ open: boolean; title: string; items: { disease: string; wells: number | null }[] }>({
+    open: false,
+    title: '',
+    items: [],
+  });
+  const [diseasesDialog, setDiseasesDialog] = useState<{ open: boolean; diseases: string }>({
+    open: false,
+    diseases: '',
+  });
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   // Load persisted selected unit from localStorage
@@ -1628,17 +1637,39 @@ export const SerologySamples = () => {
                       <td className="border border-gray-300 px-2 py-2">{row.source}</td>
                       <td className="border border-gray-300 px-2 py-2">{row.technician}</td>
                       <td className="border border-gray-300 px-2 py-2">{row.sampleType}</td>
-                      <td className="border border-gray-300 px-2 py-2 text-xs">{row.diseases}</td>
-                      <td className="border border-gray-300 px-2 py-2 text-xs">
+                      <td className="border border-gray-300 px-2 py-2 text-xs" onClick={(e) => e.stopPropagation()}>
+                        {row.diseases && row.diseases !== '-' ? (
+                          row.diseases.split(', ').length > 3 ? (
+                            <button
+                              onClick={() => setDiseasesDialog({ open: true, diseases: row.diseases })}
+                              className="text-blue-600 hover:text-blue-800 text-sm underline"
+                            >
+                              View ({row.diseases.split(', ').length})
+                            </button>
+                          ) : (
+                            row.diseases
+                          )
+                        ) : '-'}
+                      </td>
+                      <td className="border border-gray-300 px-2 py-2 text-xs" onClick={(e) => e.stopPropagation()}>
                         {row.diseasesWithWells.length > 0 ? (
-                          <div className="space-y-0.5">
-                            {row.diseasesWithWells.map((d, idx) => (
-                              <div key={idx} className="flex items-center gap-1">
-                                <span className="font-medium">{d.disease}:</span>
-                                <span className="text-green-600 font-semibold">{d.wells ?? '-'}</span>
-                              </div>
-                            ))}
-                          </div>
+                          row.diseasesWithWells.length > 3 ? (
+                            <button
+                              onClick={() => setWellsDialog({ open: true, title: row.unitCode, items: row.diseasesWithWells })}
+                              className="text-blue-600 hover:text-blue-800 text-sm underline"
+                            >
+                              View ({row.diseasesWithWells.length})
+                            </button>
+                          ) : (
+                            <div className="space-y-0.5">
+                              {row.diseasesWithWells.map((d, idx) => (
+                                <div key={idx} className="flex items-center gap-1">
+                                  <span className="font-medium">{d.disease}:</span>
+                                  <span className="text-green-600 font-semibold">{d.wells ?? '-'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )
                         ) : '-'}
                       </td>
                       <td className="border border-gray-300 px-2 py-2 text-center font-semibold text-green-700">
@@ -2121,6 +2152,106 @@ export const SerologySamples = () => {
                   Update Status
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diseases List Dialog */}
+      {diseasesDialog.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setDiseasesDialog({ open: false, diseases: '' })}>
+          <div
+            className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Diseases List</h3>
+              <button
+                onClick={() => setDiseasesDialog({ open: false, diseases: '' })}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="bg-gray-50 p-4 rounded border border-gray-200 min-h-[100px] max-h-[400px] overflow-y-auto">
+              <div className="space-y-2">
+                {diseasesDialog.diseases.split(', ').map((disease, idx) => (
+                  <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-white rounded border border-gray-200">
+                    <span className="w-6 h-6 flex items-center justify-center bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+                      {idx + 1}
+                    </span>
+                    <span className="text-gray-800">{disease}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setDiseasesDialog({ open: false, diseases: '' })}
+                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wells per Disease Dialog */}
+      {wellsDialog.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setWellsDialog({ open: false, title: '', items: [] })}>
+          <div
+            className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Wells per Disease - {wellsDialog.title}</h3>
+              <button
+                onClick={() => setWellsDialog({ open: false, title: '', items: [] })}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="bg-gray-50 p-4 rounded border border-gray-200 min-h-[100px] max-h-[400px] overflow-y-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-300">
+                    <th className="text-left py-2 px-3 font-semibold text-gray-700">Disease</th>
+                    <th className="text-center py-2 px-3 font-semibold text-gray-700">Wells</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {wellsDialog.items.map((item, idx) => (
+                    <tr key={idx} className="border-b border-gray-200 hover:bg-gray-100">
+                      <td className="py-2 px-3 text-gray-800">{item.disease}</td>
+                      <td className="py-2 px-3 text-center">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800">
+                          {item.wells ?? '-'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-gray-100 font-semibold">
+                    <td className="py-2 px-3 text-gray-800">Total</td>
+                    <td className="py-2 px-3 text-center">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-green-200 text-green-900">
+                        {wellsDialog.items.reduce((sum, item) => sum + (item.wells || 0), 0)}
+                      </span>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setWellsDialog({ open: false, title: '', items: [] })}
+                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

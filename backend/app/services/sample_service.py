@@ -39,13 +39,24 @@ class SampleService:
         
         if sample_data.date_received:
             try:
-                received_date = datetime.strptime(sample_data.date_received, "%Y-%m-%d")
+                # Handle both string and datetime.date inputs
+                date_val = sample_data.date_received
+                if isinstance(date_val, str):
+                    received_date = datetime.strptime(date_val, "%Y-%m-%d")
+                elif hasattr(date_val, 'year'):
+                    # It's already a date or datetime object
+                    received_date = datetime(date_val.year, date_val.month, date_val.day)
+                else:
+                    received_date = datetime.strptime(str(date_val), "%Y-%m-%d")
+                
                 if received_date.year != current_year:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Date received year ({received_date.year}) must match current year ({current_year}). Cannot create samples for a different year."
                     )
-            except ValueError:
+            except HTTPException:
+                raise
+            except Exception as e:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid date format for date_received. Expected YYYY-MM-DD format."

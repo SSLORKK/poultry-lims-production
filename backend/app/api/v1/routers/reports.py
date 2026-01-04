@@ -360,8 +360,10 @@ def get_comprehensive_reports(
                 
                 unit_wells_total += disease_wells_count
                 
-                disease_kit_data[disease]['test_count'] += disease_test_count
-                disease_kit_data[disease]['wells_count'] += disease_wells_count
+                # Use disease|||kit_type as key for proper kit_type tracking (same as PCR)
+                disease_kit_key = f"{disease}|||{disease_kit_type}"
+                disease_kit_data[disease_kit_key]['test_count'] += disease_test_count
+                disease_kit_data[disease_kit_key]['wells_count'] += disease_wells_count
                 
                 # Track per company
                 company_data[company]['serology_diseases'][disease]['kit_type'] = disease_kit_type
