@@ -95,15 +95,20 @@ export function PCRCOA() {
   const [labSupervisorSignatureImage, setLabSupervisorSignatureImage] = useState<string | null>(null);
   const [labManagerSignatureImage, setLabManagerSignatureImage] = useState<string | null>(null);
 
+  // Generate unique key for disease to handle duplicates (same disease name, different kit types)
+  const getDiseaseKey = (disease: string, index: number) => `${disease}|||${index}`;
+
   const initializeTestResults = useCallback((unit: UnitData) => {
     const results: { [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string; neg_control: string }> } = {};
     
-    unit.pcr_data?.diseases_list?.forEach((diseaseItem) => {
+    unit.pcr_data?.diseases_list?.forEach((diseaseItem, index) => {
       const emptyValues: { [sampleType: string]: string } = {};
       unit.sample_type?.forEach((_, idx) => {
         emptyValues[`col_${idx}`] = '';
       });
-      results[diseaseItem.disease] = [
+      // Use unique key with index to handle duplicate diseases
+      const diseaseKey = `${diseaseItem.disease}|||${index}`;
+      results[diseaseKey] = [
         { houses: '', values: emptyValues, pos_control: '', neg_control: 'confirmed' }
       ];
     });
@@ -135,29 +140,60 @@ export function PCRCOA() {
         const coa = coaResponse.data;
         setCoaData(coa);
 
-        // Normalize test results to new structure
+        // Normalize test results to new structure with indexed keys
+        const diseasesList = unitResponse.data?.pcr_data?.diseases_list || [];
         const normalize = (raw: any, sampleTypes: string[]) => {
           const normalized: { [disease: string]: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string; neg_control: string }> } = {};
-          Object.entries(raw || {}).forEach(([disease, value]: [string, any]) => {
-            if (Array.isArray(value)) {
-              // New format: array of pools
-              normalized[disease] = value.map((pool) => ({
-                houses: pool.houses || '',
-                values: { ...sampleTypes.reduce((acc, st) => ({ ...acc, [st]: pool.values?.[st] || '' }), {}) },
-                pos_control: pool.pos_control || '',
-                neg_control: pool.neg_control || 'confirmed'
-              }));
-            } else if (value && typeof value === 'object') {
-              // Old format: single object - convert to single pool
-              const houses = value.indices || '';
-              const pos_control = value.pos_control || '';
-              const values: { [sampleType: string]: string } = {};
-              sampleTypes.forEach(st => { values[st] = value[st] || ''; });
-              normalized[disease] = [{ houses, values, pos_control, neg_control: 'confirmed' }];
-            } else {
-              normalized[disease] = [];
-            }
-          });
+          
+          // First, check if data uses new indexed format or old format
+          const hasIndexedKeys = Object.keys(raw || {}).some(key => key.includes('|||'));
+          
+          if (hasIndexedKeys) {
+            // New format with indexed keys - use as is
+            Object.entries(raw || {}).forEach(([diseaseKey, value]: [string, any]) => {
+              if (Array.isArray(value)) {
+                normalized[diseaseKey] = value.map((pool) => ({
+                  houses: pool.houses || '',
+                  values: { ...sampleTypes.reduce((acc, st) => ({ ...acc, [st]: pool.values?.[st] || '' }), {}) },
+                  pos_control: pool.pos_control || '',
+                  neg_control: pool.neg_control || 'confirmed'
+                }));
+              } else {
+                normalized[diseaseKey] = [];
+              }
+            });
+          } else {
+            // Old format without indexed keys - migrate to indexed format
+            // Track how many times each disease name has been seen
+            const diseaseCount: { [disease: string]: number } = {};
+            diseasesList.forEach((item: { disease: string }, idx: number) => {
+              const diseaseName = item.disease;
+              const count = diseaseCount[diseaseName] || 0;
+              const diseaseKey = `${diseaseName}|||${idx}`;
+              
+              // Try to find data for this disease (use first occurrence for duplicates)
+              const rawValue = count === 0 ? raw?.[diseaseName] : undefined;
+              
+              if (rawValue && Array.isArray(rawValue)) {
+                normalized[diseaseKey] = rawValue.map((pool) => ({
+                  houses: pool.houses || '',
+                  values: { ...sampleTypes.reduce((acc, st) => ({ ...acc, [st]: pool.values?.[st] || '' }), {}) },
+                  pos_control: pool.pos_control || '',
+                  neg_control: pool.neg_control || 'confirmed'
+                }));
+              } else if (rawValue && typeof rawValue === 'object') {
+                const houses = rawValue.indices || '';
+                const pos_control = rawValue.pos_control || '';
+                const values: { [sampleType: string]: string } = {};
+                sampleTypes.forEach(st => { values[st] = rawValue[st] || ''; });
+                normalized[diseaseKey] = [{ houses, values, pos_control, neg_control: 'confirmed' }];
+              } else {
+                normalized[diseaseKey] = [{ houses: '', values: {}, pos_control: '', neg_control: 'confirmed' }];
+              }
+              
+              diseaseCount[diseaseName] = count + 1;
+            });
+          }
           return normalized;
         };
 
@@ -590,9 +626,10 @@ export function PCRCOA() {
       .map(([kit, diseaseList]) => `${kit} for (${diseaseList.join(', ')})`)
       .join(' | ');
     
-    // Helper to get pools for a disease
-    const getPools = (disease: string) => {
-      const value = testResults[disease];
+    // Helper to get pools for a disease using unique key with index
+    const getPools = (disease: string, index: number) => {
+      const diseaseKey = getDiseaseKey(disease, index);
+      const value = testResults[diseaseKey];
       if (Array.isArray(value)) return value;
       return [];
     };
@@ -607,8 +644,8 @@ export function PCRCOA() {
     }).join('');
 
     // Generate disease rows for test results
-    const tableRows = diseases.map(diseaseItem => {
-      const pools = getPools(diseaseItem.disease);
+    const tableRows = diseases.map((diseaseItem, diseaseIndex) => {
+      const pools = getPools(diseaseItem.disease, diseaseIndex);
       const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
       const sampleTypeCells = pdfSampleTypes.map(st => {
         const result = pool.values?.[st] || 'NA';
@@ -1318,24 +1355,26 @@ export function PCRCOA() {
                   // Use orderedDiseases for rendering to maintain user-defined order
                   const diseasesToRender = orderedDiseases.length > 0 ? orderedDiseases : diseases;
                   
-                  return diseasesToRender.map((diseaseItem) => {
-                    const pools = testResults[diseaseItem.disease] || [];
+                  return diseasesToRender.map((diseaseItem, diseaseIndex) => {
+                    // Use unique key with index to handle duplicate diseases
+                    const diseaseKey = getDiseaseKey(diseaseItem.disease, diseaseIndex);
+                    const pools = testResults[diseaseKey] || [];
                     const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
                     
                     return (
                       <tr 
-                        key={diseaseItem.disease}
+                        key={diseaseKey}
                         className="hover:bg-gray-50"
                       >
                         <td className="border border-gray-300 px-4 py-2 font-medium">
                           {diseaseItem.disease}
                         </td>
                         {sampleTypes.map((sampleType) => (
-                          <td key={`${diseaseItem.disease}-${sampleType}`} className="border border-gray-300 px-2 py-2">
+                          <td key={`${diseaseKey}-${sampleType}`} className="border border-gray-300 px-2 py-2">
                             <input
                               type="text"
                               value={pool.values?.[sampleType] || ''}
-                              onChange={(e) => handleResultChange(diseaseItem.disease, 0, sampleType, e.target.value)}
+                              onChange={(e) => handleResultChange(diseaseKey, 0, sampleType, e.target.value)}
                               placeholder=""
                               className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-center"
                             />
@@ -1347,9 +1386,9 @@ export function PCRCOA() {
                             value={pool.pos_control || ''}
                             onChange={(e) => {
                               setTestResults(prev => {
-                                const pools = [...(prev[diseaseItem.disease] || [])];
+                                const pools = [...(prev[diseaseKey] || [])];
                                 pools[0] = { ...pools[0], pos_control: e.target.value };
-                                return { ...prev, [diseaseItem.disease]: pools };
+                                return { ...prev, [diseaseKey]: pools };
                               });
                             }}
                             placeholder=""
@@ -1362,9 +1401,9 @@ export function PCRCOA() {
                             value={pool.neg_control || 'Confirmed'}
                             onChange={(e) => {
                               setTestResults(prev => {
-                                const pools = [...(prev[diseaseItem.disease] || [])];
+                                const pools = [...(prev[diseaseKey] || [])];
                                 pools[0] = { ...pools[0], neg_control: e.target.value };
-                                return { ...prev, [diseaseItem.disease]: pools };
+                                return { ...prev, [diseaseKey]: pools };
                               });
                             }}
                             placeholder=""

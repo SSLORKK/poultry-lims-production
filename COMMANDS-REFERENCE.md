@@ -12,8 +12,20 @@ NAS IP:        192.168.55.92
 NAS User:      alihassan
 ```
 
----
+#
+--------------------------------------------------------------------------------------------------------------------
+# Pull latest images from Docker Hub
+sudo docker pull sslorkk/poultry-lims-backend:latest
+sudo docker pull sslorkk/poultry-lims-frontend:latest
 
+# Restart services
+cd /volume3/docker/poultry-lims
+sudo docker-compose down
+sudo docker-compose up -d
+
+# Check status
+sudo docker-compose ps
+-------------------------------------------------------------------------------------------------------------------------
 ## 🐳 DOCKER HUB COMMANDS
 
 ### Build Images

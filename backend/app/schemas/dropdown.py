@@ -68,6 +68,12 @@ class SignatureCreate(BaseModel):
     signature_image: Optional[str] = None  # Base64 encoded handwritten signature image
 
 
+class SignatureUpdate(BaseModel):
+    name: Optional[str] = None
+    pin: Optional[str] = None  # Plain text PIN, will be hashed on server if provided
+    signature_image: Optional[str] = None  # Base64 encoded handwritten signature image
+
+
 class SignatureResponse(BaseModel):
     id: int
     name: str

@@ -8,7 +8,7 @@ from app.api.v1.deps import get_current_user
 from app.schemas.dropdown import (
     DropdownCreate, DropdownResponse, DropdownUpdate,
     DepartmentDropdownCreate, DepartmentDropdownResponse, DepartmentDropdownUpdate,
-    SignatureCreate, SignatureResponse, PINVerifyRequest, PINVerifyResponse,
+    SignatureCreate, SignatureUpdate, SignatureResponse, PINVerifyRequest, PINVerifyResponse,
     FarmCreate, FarmResponse
 )
 from app.repositories.dropdown_repository import DropdownRepository, DepartmentDropdownRepository
@@ -674,6 +674,37 @@ def create_signature(
     db.commit()
     db.refresh(signature)
     
+    return signature
+
+
+@router.put("/signatures/{item_id}", response_model=SignatureResponse)
+def update_signature(
+    item_id: int,
+    data: SignatureUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update an existing signature"""
+    signature = db.query(Signature).filter(Signature.id == item_id).first()
+    if not signature:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    
+    # Update fields if provided
+    if data.name is not None:
+        signature.name = data.name
+    
+    if data.pin is not None and data.pin.strip():
+        # Hash the new PIN
+        pin_bytes = data.pin.encode('utf-8')
+        salt = bcrypt.gensalt()
+        pin_hash = bcrypt.hashpw(pin_bytes, salt)
+        signature.pin_hash = pin_hash.decode('utf-8')
+    
+    if data.signature_image is not None:
+        signature.signature_image = data.signature_image
+    
+    db.commit()
+    db.refresh(signature)
     return signature
 
 
