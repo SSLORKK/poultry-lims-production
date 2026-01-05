@@ -534,7 +534,7 @@ export const SerologySamples = () => {
       filtered = filtered.filter((row) => selectedTechnicians.includes(row.technician));
     }
 
-    return filtered.reverse();
+    return filtered;
   }, [unitRows, selectedHouses, selectedCycles, selectedDiseases, selectedTechnicians]);
 
   // For backend pagination, we show the data as-is (already paginated by backend)

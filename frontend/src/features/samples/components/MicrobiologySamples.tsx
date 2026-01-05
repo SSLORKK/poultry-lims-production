@@ -618,7 +618,7 @@ export const MicrobiologySamples = () => {
       filtered = filtered.filter((row) => selectedFumigations.includes(row.fumigation));
     }
 
-    return filtered.reverse();
+    return filtered;
   }, [unitRows, startDate, endDate, selectedSources, selectedStatuses, selectedHouses,
     selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations]);
 

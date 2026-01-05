@@ -604,7 +604,7 @@ export const PCRSamples = () => {
       filtered = filtered.filter((row) => selectedExtractionMethods.includes(row.extractionMethod));
     }
 
-    return filtered.reverse();
+    return filtered;
   }, [unitRows, startDate, endDate, selectedSources, selectedStatuses, selectedHouses,
     selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods]);
 

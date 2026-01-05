@@ -395,7 +395,7 @@ export const AllSamples = () => {
       filtered = filtered.filter((row) => selectedDepartments.includes(row.department));
     }
 
-    return filtered.reverse();
+    return filtered;
   }, [unitRows, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDepartments]);
 
   // For backend pagination, we show the data as-is (already paginated by backend)
