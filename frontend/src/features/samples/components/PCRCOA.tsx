@@ -431,8 +431,8 @@ export function PCRCOA() {
       setSaving(true);
       setError(null);
 
-      // For technicians, status is "need_approval". For managers/admins, keep current status.
-      const saveStatus = canApprove ? status : 'need_approval';
+      // Save keeps existing status or sets to 'draft' for new COAs - only Approve changes to 'completed'
+      const saveStatus = coaData?.id ? (status || 'draft') : 'draft';
 
       if (coaData?.id) {
         // Update existing COA - payload without unit_id
@@ -467,13 +467,8 @@ export function PCRCOA() {
         await apiClient.post('/pcr-coa/', createPayload);
       }
 
-      // Update unit coa_status based on role
-      const coaStatus = canApprove ? 'completed' : 'need_approval';
-      await apiClient.patch(`/units/${unitId}`, { coa_status: coaStatus });
-
-      // Update parent sample status based on role
-      const sampleStatus = canApprove ? 'Completed' : 'Need Approval';
-      await apiClient.patch(`/samples/${unitData.sample.id}`, { status: sampleStatus });
+      // Save only updates coa_status to 'draft' - 'completed' is set by Approve button
+      await apiClient.patch(`/units/${unitId}`, { coa_status: 'draft' });
 
       setNotification({ type: 'success', message: 'Certificate of Analysis saved successfully!' });
       setTimeout(() => navigate('/pcr/samples'), 1500);
@@ -529,6 +524,8 @@ export function PCRCOA() {
       // Save with completed status
       const approvePayload = {
         test_results: testResults,
+        sample_types: sampleTypes,
+        house_values: houseValues,
         date_tested: dateTested || null,
         tested_by: testedBy || null,
         reviewed_by: reviewedBy || null,
