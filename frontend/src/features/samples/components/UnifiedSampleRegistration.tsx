@@ -1505,7 +1505,7 @@ export const UnifiedSampleRegistration = () => {
   
   // Defaults panel state and values (persisted in localStorage)
   const [showDefaultsPanel, setShowDefaultsPanel] = useState(false);
-  const [originalDefaults, setOriginalDefaults] = useState<typeof fieldDefaults | null>(null);
+  const [originalDefaultsSnapshot, setOriginalDefaultsSnapshot] = useState<string>('');
   
   // Load defaults from localStorage
   const loadDefaults = () => {
@@ -1538,22 +1538,25 @@ export const UnifiedSampleRegistration = () => {
     setShowDefaultsPanel(false); // Close panel after saving
   };
   
-  // Detect if defaults have changed
+  // Detect if defaults have changed (compare current with snapshot taken when panel opened)
   const hasDefaultsChanged = useMemo(() => {
-    if (!originalDefaults) return false;
-    return JSON.stringify(fieldDefaults) !== JSON.stringify(originalDefaults);
-  }, [fieldDefaults, originalDefaults]);
+    if (!originalDefaultsSnapshot) return false;
+    return JSON.stringify(fieldDefaults) !== originalDefaultsSnapshot;
+  }, [fieldDefaults, originalDefaultsSnapshot]);
 
-  // Store original defaults ONLY when panel opens (not on fieldDefaults change)
-  useEffect(() => {
-    if (showDefaultsPanel && !originalDefaults) {
-      // Deep copy to avoid reference issues
-      setOriginalDefaults(JSON.parse(JSON.stringify(fieldDefaults)));
-    } else if (!showDefaultsPanel && originalDefaults) {
-      setOriginalDefaults(null);
+  // Toggle defaults panel and capture snapshot when opening
+  const toggleDefaultsPanel = () => {
+    if (!showDefaultsPanel) {
+      // Opening panel - capture current state as snapshot
+      setOriginalDefaultsSnapshot(JSON.stringify(fieldDefaults));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showDefaultsPanel]);
+    setShowDefaultsPanel(!showDefaultsPanel);
+  };
+
+  // Close defaults panel (used by overlay and close button)
+  const closeDefaultsPanel = () => {
+    setShowDefaultsPanel(false);
+  };
   useEffect(() => {
     if (notification) {
       const timer = setTimeout(() => setNotification(null), 4000);
@@ -2557,7 +2560,7 @@ export const UnifiedSampleRegistration = () => {
       {/* Defaults Panel Toggle Button - Fixed on right */}
       <button
         type="button"
-        onClick={() => setShowDefaultsPanel(!showDefaultsPanel)}
+        onClick={toggleDefaultsPanel}
         className={`fixed right-0 top-1/2 -translate-y-1/2 z-40 p-3 rounded-l-xl shadow-lg transition-all duration-300 ${
           showDefaultsPanel 
             ? 'bg-gray-700 text-white' 
@@ -2588,7 +2591,7 @@ export const UnifiedSampleRegistration = () => {
               </h3>
               <button
                 type="button"
-                onClick={() => setShowDefaultsPanel(false)}
+                onClick={closeDefaultsPanel}
                 className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
               >
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2780,7 +2783,7 @@ export const UnifiedSampleRegistration = () => {
       {showDefaultsPanel && (
         <div 
           className="fixed inset-0 bg-black/20 z-40"
-          onClick={() => setShowDefaultsPanel(false)}
+          onClick={closeDefaultsPanel}
         />
       )}
 
