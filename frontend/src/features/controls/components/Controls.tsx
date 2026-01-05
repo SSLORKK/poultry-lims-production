@@ -536,7 +536,7 @@ const Controls = () => {
                       placeholder={`Enter ${currentTab.label.toLowerCase().slice(0, -1)} name...`}
                       className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
-                    {activeTab !== 'signature' && !activeTab.includes('ast_disks') && (
+                    {activeTab !== 'signature' && (
                       <button
                         onClick={handleAdd}
                         disabled={!newItemName.trim() || createMutation.isPending}

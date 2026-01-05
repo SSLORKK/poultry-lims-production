@@ -265,7 +265,12 @@ export const AllSamples = () => {
         });
       });
     });
-    return rows;
+    // Sort by unit code numerically (1, 2, 3... not 1, 11, 2...)
+    return rows.sort((a, b) => {
+      const numA = parseInt(a.unitCode.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.unitCode.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
   }, [samples]);
 
   // Extract unique values for filter dropdowns (matching PCRSamples pattern)
@@ -1294,8 +1299,79 @@ export const AllSamples = () => {
               )}
           </div>
         ) : (
-          <>
-            <div className="overflow-x-auto border rounded-lg" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+          <>            
+            {/* Mobile Card View */}
+            <div className="lg:hidden space-y-3">
+              {filteredRows.map((row: UnitRow) => (
+                <div
+                  key={`mobile-${row.sampleId}-${row.unitId}`}
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-4"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-gray-700 text-base">{row.unitCode}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-semibold $
+                          row.department === 'PCR' ? 'bg-blue-100 text-blue-700' :
+                          row.department === 'Serology' ? 'bg-green-100 text-green-700' :
+                          row.department === 'Microbiology' ? 'bg-purple-100 text-purple-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {row.department}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-semibold $
+                          row.status === 'completed' ? 'bg-green-100 text-green-700' :
+                          row.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-500">{formatDate(row.dateReceived)}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <div><span className="text-gray-500 text-xs">Company</span><p className="font-medium text-gray-800 truncate">{row.company}</p></div>
+                    <div><span className="text-gray-500 text-xs">Farm</span><p className="font-medium text-gray-800 truncate">{row.farm}</p></div>
+                    <div><span className="text-gray-500 text-xs">Flock / Cycle</span><p className="font-medium text-gray-800">{row.flock} / {row.cycle}</p></div>
+                    <div><span className="text-gray-500 text-xs">House / Age</span><p className="font-medium text-gray-800">{row.house} / {row.age ?? '-'}</p></div>
+                    <div><span className="text-gray-500 text-xs">Source</span><p className="font-medium text-gray-800 truncate">{row.source}</p></div>
+                    <div><span className="text-gray-500 text-xs">Sample Type</span><p className="font-medium text-gray-800 truncate">{row.sampleType}</p></div>
+                    <div><span className="text-gray-500 text-xs">Technician</span><p className="font-medium text-gray-800 truncate">{row.technician}</p></div>
+                    <div><span className="text-gray-500 text-xs">Status</span><p className="font-medium text-gray-800">{row.status}</p></div>
+                  </div>
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center gap-4 text-xs">
+                      <div className="text-center">
+                        <span className="block font-bold text-gray-700">{row.samplesNumber ?? '-'}</span>
+                        <span className="text-gray-500">Samples</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="block font-bold text-gray-700">{row.subSamplesNumber ?? '-'}</span>
+                        <span className="text-gray-500">Sub</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="block font-bold text-blue-600">{row.testsCount ?? '-'}</span>
+                        <span className="text-gray-500">Tests</span>
+                      </div>
+                    </div>
+                    {row.notes && (
+                      <button
+                        onClick={() => setNoteDialog({ open: true, note: row.notes })}
+                        className="text-blue-600 text-xs font-medium"
+                      >
+                        View Note
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden lg:block overflow-x-auto border rounded-lg" style={{ maxHeight: 'calc(100vh - 300px)' }}>
               <table className="min-w-full border-collapse text-sm whitespace-nowrap">
                 <thead className="sticky top-0 z-10 bg-gray-100 shadow-sm">
                   <tr>

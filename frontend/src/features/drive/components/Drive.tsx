@@ -872,17 +872,17 @@ const Drive = () => {
         </div>
       )}
 
-      <div className="p-6">
+      <div className="p-3 sm:p-4 lg:p-6 pb-20 lg:pb-6">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-4 lg:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              <svg className="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 flex items-center gap-2 sm:gap-3">
+              <svg className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
               </svg>
               Drive
             </h1>
-            <p className="text-gray-500 mt-1">Manage and access your files securely</p>
+            <p className="text-gray-500 mt-1 text-sm sm:text-base">Manage and access your files securely</p>
           </div>
           {/* Admin Recycle Bin Link */}
           {(user?.role === 'admin') && (
@@ -1359,7 +1359,7 @@ const Drive = () => {
             </div>
           ) : viewMode === 'grid' ? (
             /* Grid View */
-            <div className="p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div className="p-3 sm:p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
               {displayItems.map((item) => (
                 <div
                   key={item.id}

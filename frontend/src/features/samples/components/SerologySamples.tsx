@@ -1547,7 +1547,99 @@ export const SerologySamples = () => {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto max-h-[600px] relative border rounded-lg">
+            {/* Mobile Card View */}
+            <div className="lg:hidden space-y-3">
+              {filteredRows.map((row: UnitRow) => (
+                <div
+                  key={`mobile-${row.sampleId}-${row.unitId}`}
+                  onClick={() => setSelectedRow(row)}
+                  className={`bg-white rounded-xl shadow-sm border-2 p-4 cursor-pointer transition-all active:scale-[0.98] ${
+                    selectedRow?.unitId === row.unitId
+                      ? 'border-green-500 bg-green-50 ring-2 ring-green-200'
+                      : 'border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-green-700 text-base">{row.unitCode}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          row.status?.toLowerCase() === 'completed' || row.status?.toLowerCase() === 'complete'
+                            ? 'bg-green-100 text-green-700'
+                            : row.status?.toLowerCase() === 'in_progress' || row.status?.toLowerCase() === 'in progress'
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </div>
+                    <span className="text-xs text-gray-500">{formatDate(row.dateReceived)}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-500 text-xs">Company</span>
+                      <p className="font-medium text-gray-800 truncate">{row.company}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-xs">Farm</span>
+                      <p className="font-medium text-gray-800 truncate">{row.farm}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-xs">Flock / Cycle</span>
+                      <p className="font-medium text-gray-800">{row.flock} / {row.cycle}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-xs">House / Age</span>
+                      <p className="font-medium text-gray-800">{row.house} / {row.age ?? '-'}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-xs">Source</span>
+                      <p className="font-medium text-gray-800 truncate">{row.source}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-xs">Sample Type</span>
+                      <p className="font-medium text-gray-800 truncate">{row.sampleType}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-xs">Technician</span>
+                      <p className="font-medium text-gray-800 truncate">{row.technician}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-xs">Samples</span>
+                      <p className="font-medium text-gray-800">{row.samplesNumber ?? '-'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-gray-500 text-xs">Diseases</span>
+                      <p className="font-medium text-gray-800 text-xs line-clamp-2">{row.diseases}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center gap-4 text-xs">
+                      <div className="text-center">
+                        <span className="block font-bold text-gray-700">{row.numberOfWells ?? '-'}</span>
+                        <span className="text-gray-500">Wells</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="block font-bold text-green-600">{row.testsCount ?? '-'}</span>
+                        <span className="text-gray-500">Tests</span>
+                      </div>
+                    </div>
+                    {row.notes && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setNoteDialog({ open: true, note: row.notes }); }}
+                        className="text-green-600 text-xs font-medium"
+                      >
+                        View Note
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden lg:block overflow-x-auto max-h-[600px] relative border rounded-lg">
               <table className="w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-green-100 shadow-sm">
                   <tr>

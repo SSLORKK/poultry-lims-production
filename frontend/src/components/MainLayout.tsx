@@ -3,7 +3,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { ProfileDropdown } from './common/ProfileDropdown';
 import { NotificationIcon } from './common/NotificationIcon';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 export const MainLayout = () => {
   const location = useLocation();
@@ -18,17 +18,74 @@ export const MainLayout = () => {
   // Default sidebar closed on mobile (< 1024px), open on desktop
   const [sidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
 
-  // Handle responsive sidebar behavior on window resize
+  // Mobile scroll state for hiding/showing bars
+  const [barsVisible, setBarsVisible] = useState(true);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
+  const lastScrollY = useRef(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const ticking = useRef(false);
+
+  // Handle scroll direction detection on the actual scrolling container
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current || !isMobile) return;
+    
+    if (!ticking.current) {
+      window.requestAnimationFrame(() => {
+        const currentScrollY = scrollContainerRef.current?.scrollTop || 0;
+        const scrollThreshold = 10;
+        const scrollDelta = currentScrollY - lastScrollY.current;
+
+        // Show bars when at top
+        if (currentScrollY <= 10) {
+          setBarsVisible(true);
+        }
+        // Hide when scrolling down significantly
+        else if (scrollDelta > scrollThreshold) {
+          setBarsVisible(false);
+        }
+        // Show when scrolling up significantly
+        else if (scrollDelta < -scrollThreshold) {
+          setBarsVisible(true);
+        }
+
+        lastScrollY.current = currentScrollY;
+        ticking.current = false;
+      });
+      ticking.current = true;
+    }
+  }, [isMobile]);
+
+  // Attach scroll listener to content container
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+      return () => scrollContainer.removeEventListener('scroll', handleScroll);
+    }
+  }, [handleScroll]);
+
+  // Handle responsive behavior on window resize
   useEffect(() => {
     const handleResize = () => {
       const isDesktop = window.innerWidth >= 1024;
-      // Auto-close sidebar on mobile, auto-open on desktop
+      setIsMobile(!isDesktop);
       setSidebarOpen(isDesktop);
+      // Always show bars on desktop
+      if (isDesktop) setBarsVisible(true);
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Reset bars visibility and scroll position on route change
+  useEffect(() => {
+    setBarsVisible(true);
+    lastScrollY.current = 0;
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [location.pathname]);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({
@@ -106,11 +163,11 @@ export const MainLayout = () => {
         ></div>
       )}
 
-      {/* Sidebar Drawer */}
+      {/* Sidebar Drawer - stops above bottom nav on mobile when visible */}
       <div
-        className={`fixed inset-y-0 left-0 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col z-30 transform transition-all duration-300 ease-in-out shadow-2xl ${
+        className={`fixed top-0 left-0 lg:bottom-0 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col z-30 transform transition-all duration-300 ease-in-out shadow-2xl ${
           sidebarOpen ? 'w-72 translate-x-0' : 'lg:w-20 w-72 lg:translate-x-0 -translate-x-full'
-        }`}
+        } ${isMobile && barsVisible ? 'bottom-16' : isMobile ? 'bottom-0' : ''}`}
       >
         {/* Logo/Header with gradient */}
         <div className={`border-b border-slate-700/50 bg-gradient-to-r from-blue-600/20 to-purple-600/20 ${sidebarOpen ? 'p-6' : 'p-4 flex justify-center'}`}>
@@ -503,12 +560,14 @@ export const MainLayout = () => {
           sidebarOpen ? 'lg:ml-72 ml-0' : 'lg:ml-20 ml-0'
         }`}
       >
-        {/* Top Bar with Hamburger Menu */}
-        <div className="bg-white/80 backdrop-blur-md shadow-sm border-b border-gray-200/50 px-6 py-4 flex items-center justify-between relative z-50">
-          <div className="flex items-center">
+        {/* Top Bar with Hamburger Menu - Fixed on mobile */}
+        <div className={`sticky top-0 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200/50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between z-40 transition-all duration-300 ease-out ${
+          isMobile && !barsVisible ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'
+        }`}>
+          <div className="flex items-center min-w-0">
             <button
               onClick={toggleSidebar}
-              className="p-2 rounded-xl hover:bg-gray-100 transition-all duration-200 hover:scale-105"
+              className="p-2 rounded-xl hover:bg-gray-100 transition-all duration-200 hover:scale-105 flex-shrink-0"
               aria-label="Toggle sidebar"
             >
               <svg
@@ -525,38 +584,45 @@ export const MainLayout = () => {
                 />
               </svg>
             </button>
-            <div className="ml-4">
-              <h2 className="text-lg font-semibold text-gray-800">
+            <div className="ml-3 lg:ml-4 min-w-0">
+              <h2 className="text-base lg:text-lg font-semibold text-gray-800 truncate">
                 {location.pathname === '/dashboard' && 'Dashboard'}
                 {location.pathname === '/reports' && 'Reports'}
                 {location.pathname === '/register-sample' && 'Register Sample'}
                 {location.pathname === '/all-samples' && 'All Samples'}
                 {location.pathname === '/database' && 'Database'}
                 {location.pathname === '/drive' && 'Drive'}
+                {location.pathname === '/drive-admin' && 'Drive Admin'}
                 {location.pathname === '/pcr/samples' && 'PCR Samples'}
                 {location.pathname === '/serology/samples' && 'Serology Samples'}
                 {location.pathname === '/microbiology/samples' && 'Microbiology Samples'}
                 {location.pathname === '/microbiology/technical-data-sheet' && 'Technical Data Sheet'}
                 {location.pathname === '/controls' && 'Controls'}
-                {location.pathname.includes('/pcr-coa') && 'PCR Certificate of Analysis'}
+                {location.pathname.includes('/pcr-coa') && 'PCR COA'}
+                {location.pathname.includes('/microbiology-coa') && 'Microbiology COA'}
               </h2>
             </div>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 lg:space-x-4 flex-shrink-0">
             <NotificationIcon count={0} />
             {user && !userLoading && <ProfileDropdown user={user} />}
           </div>
         </div>
 
-        {/* Page Content */}
-        <div className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-gray-100 pb-20 lg:pb-0">
+        {/* Page Content - Scrollable container */}
+        <div 
+          ref={scrollContainerRef}
+          className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-gray-100 pb-20 lg:pb-4"
+        >
           <Outlet />
         </div>
       </div>
 
       {/* Mobile Bottom Navigation Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg lg:hidden z-50 safe-area-bottom">
+      <div className={`fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-lg lg:hidden z-40 safe-area-bottom transition-all duration-300 ease-out ${
+        barsVisible ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'
+      }`}>
         <div className="flex items-center justify-around h-16">
           {/* Dashboard */}
           {hasAnyPermission('Dashboard') && (
@@ -674,6 +740,15 @@ export const MainLayout = () => {
           button, a {
             touch-action: manipulation;
           }
+          
+          /* Hide scrollbar on mobile for cleaner look */
+          .overflow-auto::-webkit-scrollbar {
+            display: none;
+          }
+          .overflow-auto {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+          }
         }
         
         /* Smooth scrolling on mobile */
@@ -681,6 +756,17 @@ export const MainLayout = () => {
           .flex-1.overflow-auto {
             -webkit-overflow-scrolling: touch;
             overscroll-behavior-y: contain;
+            scroll-behavior: smooth;
+          }
+        }
+        
+        /* Ensure content doesn't jump when bars hide/show */
+        @media (max-width: 1023px) {
+          .sticky {
+            will-change: transform, opacity;
+          }
+          .fixed {
+            will-change: transform, opacity;
           }
         }
       `}</style>

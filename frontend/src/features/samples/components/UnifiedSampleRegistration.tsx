@@ -1505,26 +1505,29 @@ export const UnifiedSampleRegistration = () => {
   
   // Defaults panel state and values (persisted in localStorage)
   const [showDefaultsPanel, setShowDefaultsPanel] = useState(false);
+  const [originalDefaults, setOriginalDefaults] = useState<typeof fieldDefaults | null>(null);
   
   // Load defaults from localStorage
   const loadDefaults = () => {
+    const defaultValues = {
+      pcr_extraction_method: '',
+      pcr_disease_kit_defaults: {} as Record<string, string>,
+      serology_disease_kit_defaults: {} as Record<string, string>,
+      serology_disease_wells_defaults: {} as Record<string, string>,
+      serology_wells: '',
+    };
     try {
       const stored = localStorage.getItem('sample_registration_defaults');
       if (stored) {
-        return JSON.parse(stored);
+        const parsedStored = JSON.parse(stored);
+        // Merge stored values with defaults to ensure all keys exist
+        return { ...defaultValues, ...parsedStored };
       }
     } catch (e) {
       console.error('Error loading defaults:', e);
     }
-    return {
-      pcr_extraction_method: '',
-      pcr_disease_kit_defaults: {} as Record<string, string>, // disease name -> default kit type
-      serology_disease_kit_defaults: {} as Record<string, string>, // disease name -> default kit type
-      serology_disease_wells_defaults: {} as Record<string, string>, // disease name -> default wells count
-      serology_wells: '',
-    };
+    return defaultValues;
   };
-  
   const [fieldDefaults, setFieldDefaults] = useState(loadDefaults);
   
   // Save defaults to localStorage whenever they change
@@ -1532,9 +1535,25 @@ export const UnifiedSampleRegistration = () => {
     setFieldDefaults(newDefaults);
     localStorage.setItem('sample_registration_defaults', JSON.stringify(newDefaults));
     setNotification({ type: 'success', message: 'Default values saved!' });
+    setShowDefaultsPanel(false); // Close panel after saving
   };
   
-  // Auto-hide notification after 4 seconds
+  // Detect if defaults have changed
+  const hasDefaultsChanged = useMemo(() => {
+    if (!originalDefaults) return false;
+    return JSON.stringify(fieldDefaults) !== JSON.stringify(originalDefaults);
+  }, [fieldDefaults, originalDefaults]);
+
+  // Store original defaults ONLY when panel opens (not on fieldDefaults change)
+  useEffect(() => {
+    if (showDefaultsPanel && !originalDefaults) {
+      // Deep copy to avoid reference issues
+      setOriginalDefaults(JSON.parse(JSON.stringify(fieldDefaults)));
+    } else if (!showDefaultsPanel && originalDefaults) {
+      setOriginalDefaults(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDefaultsPanel]);
   useEffect(() => {
     if (notification) {
       const timer = setTimeout(() => setNotification(null), 4000);
@@ -1596,7 +1615,11 @@ export const UnifiedSampleRegistration = () => {
     if (deptInfo.code === "PCR" && unit.pcr_data) {
       deptComplete = !!(unit.pcr_data.diseases_list && unit.pcr_data.diseases_list.length > 0);
     } else if (deptInfo.code === "SER" && unit.serology_data) {
-      deptComplete = !!(unit.serology_data.diseases_list && unit.serology_data.diseases_list.length > 0 && unit.serology_data.number_of_wells > 0);
+      // Calculate total wells from all diseases
+      const totalWells = (unit.serology_data.diseases_list || []).reduce(
+        (sum, d) => sum + (d.wells_count || 0), 0
+      );
+      deptComplete = !!(unit.serology_data.diseases_list && unit.serology_data.diseases_list.length > 0 && totalWells > 0);
     } else if (deptInfo.code === "MIC" && unit.microbiology_data) {
       deptComplete = !!(unit.microbiology_data.diseases_list && unit.microbiology_data.diseases_list.length > 0 && unit.microbiology_data.index_list && unit.microbiology_data.index_list.length > 0);
     }
@@ -2361,7 +2384,11 @@ export const UnifiedSampleRegistration = () => {
         } else if (unit.serology_data.diseases_list.some(d => !d.kit_type || d.kit_type.trim() === '')) {
           errors.push(`${unitLabel}: Kit Type is required for all selected diseases`);
         }
-        if (!unit.serology_data.number_of_wells || unit.serology_data.number_of_wells <= 0) {
+        // Calculate total wells from all diseases
+        const totalWells = (unit.serology_data.diseases_list || []).reduce(
+          (sum: number, d: DiseaseKitItem) => sum + (d.wells_count || 0), 0
+        );
+        if (totalWells <= 0) {
           errors.push(`${unitLabel}: Number of wells must be greater than 0`);
         }
         // Check if diseases have test_count defined (auto-calculated)
@@ -2720,7 +2747,12 @@ export const UnifiedSampleRegistration = () => {
             <button
               type="button"
               onClick={() => saveDefaults(fieldDefaults)}
-              className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
+              disabled={!hasDefaultsChanged}
+              className={`w-full py-2.5 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg ${
+                hasDefaultsChanged
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
             >
               Save Defaults
             </button>
@@ -2731,6 +2763,7 @@ export const UnifiedSampleRegistration = () => {
                   pcr_extraction_method: '',
                   pcr_disease_kit_defaults: {},
                   serology_disease_kit_defaults: {},
+                  serology_disease_wells_defaults: {},
                   serology_wells: '',
                 };
                 saveDefaults(emptyDefaults);
