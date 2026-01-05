@@ -34,6 +34,8 @@ interface COAData {
   id?: number;
   unit_id: number;
   test_results: { [disease: string]: { [sampleType: string]: string } };
+  sample_types?: string[] | null;
+  house_values?: string[] | null;
   date_tested: string | null;
   tested_by: string | null;
   reviewed_by: string | null;
@@ -216,11 +218,17 @@ export function PCRCOA() {
           return normalized;
         };
 
-        const initialSampleTypes = unitResponse.data?.sample_type || [];
-        setSampleTypes(initialSampleTypes);
-        // Initialize house values array with empty strings for each sample type
-        setHouseValues(new Array(initialSampleTypes.length).fill(''));
-        setTestResults(normalize(coa.test_results, initialSampleTypes));
+        // Use saved sample_types from COA if available (for duplicated columns), otherwise use unit's sample_type
+        const savedSampleTypes = coa.sample_types && coa.sample_types.length > 0 
+          ? coa.sample_types 
+          : (unitResponse.data?.sample_type || []);
+        setSampleTypes(savedSampleTypes);
+        // Use saved house_values from COA if available, otherwise initialize with empty strings
+        const savedHouseValues = coa.house_values && coa.house_values.length === savedSampleTypes.length
+          ? coa.house_values
+          : new Array(savedSampleTypes.length).fill('');
+        setHouseValues(savedHouseValues);
+        setTestResults(normalize(coa.test_results, savedSampleTypes));
         setDateTested(coa.date_tested || '');
         setTestedBy(coa.tested_by || '');
         setReviewedBy(coa.reviewed_by || '');
@@ -430,6 +438,8 @@ export function PCRCOA() {
         // Update existing COA - payload without unit_id
         const updatePayload = {
           test_results: testResults,
+          sample_types: sampleTypes,
+          house_values: houseValues,
           date_tested: dateTested || null,
           tested_by: testedBy || null,
           reviewed_by: reviewedBy || null,
@@ -444,6 +454,8 @@ export function PCRCOA() {
         const createPayload = {
           unit_id: parseInt(unitId!),
           test_results: testResults,
+          sample_types: sampleTypes,
+          house_values: houseValues,
           date_tested: dateTested || null,
           tested_by: testedBy || null,
           reviewed_by: reviewedBy || null,

@@ -12,6 +12,8 @@ class TestResultPool(BaseModel):
 
 class PCRCOABase(BaseModel):
     test_results: Optional[Dict[str, Any]] = {}  # Accepts both old format and new pooled format
+    sample_types: Optional[List[str]] = None  # Stores column configuration for duplicated columns
+    house_values: Optional[List[str]] = None  # Stores house values per column
     date_tested: Optional[date] = None
     tested_by: Optional[str] = None
     reviewed_by: Optional[str] = None
@@ -27,6 +29,8 @@ class PCRCOACreate(PCRCOABase):
 
 class PCRCOAUpdate(BaseModel):
     test_results: Optional[Dict[str, Any]] = None  # Accepts both old format and new pooled format
+    sample_types: Optional[List[str]] = None  # Stores column configuration for duplicated columns
+    house_values: Optional[List[str]] = None  # Stores house values per column
     date_tested: Optional[date] = None
     tested_by: Optional[str] = None
     reviewed_by: Optional[str] = None

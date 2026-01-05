@@ -12,6 +12,8 @@ class PCRCOA(Base):
     
     # COA specific fields
     test_results = Column(JSON, nullable=True)  # Structure: {disease: {sample_type: result}}
+    sample_types = Column(JSON, nullable=True)  # Stores column configuration for duplicated columns
+    house_values = Column(JSON, nullable=True)  # Stores house values per column
     date_tested = Column(Date, nullable=True, index=True)
     tested_by = Column(String(255), nullable=True)
     reviewed_by = Column(String(255), nullable=True)
