@@ -36,6 +36,7 @@ interface PCRData {
   diseases_list: DiseaseKitItem[];
   kit_type: string;
   technician_name?: string;
+  technician_signature_image?: string | null;
   extraction_method?: string;
   extraction?: number;
   detection?: number;
@@ -47,6 +48,7 @@ interface SerologyData {
   number_of_wells: number;
   tests_count?: number;
   technician_name?: string;
+  technician_signature_image?: string | null;
 }
 
 interface MicrobiologyData {
@@ -55,6 +57,7 @@ interface MicrobiologyData {
   fumigation: string;
   index_list: string[];
   technician_name?: string;
+  technician_signature_image?: string | null;
 }
 
 interface UnitData {
@@ -596,7 +599,7 @@ function PCRFields({
   };
 
   const verifyTechnicianPIN = async (pin: string) => {
-    if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
+    if (!pin || pin.length < 6 || verifyingPIN) return; // Prevent double calls, PIN must be 6-8 digits
     setVerifyingPIN(true);
     
     // Store current scroll position to prevent auto-scroll
@@ -610,6 +613,7 @@ function PCRFields({
           pcr_data: {
             ...unit.pcr_data!,
             technician_name: response.data.name,
+            technician_signature_image: response.data.signature_image || null,
           },
         });
         setTechnicianPIN('');
@@ -623,9 +627,13 @@ function PCRFields({
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('PIN verification failed:', error);
-      setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      if (error.response?.status === 401) {
+        setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
+      } else {
+        setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      }
       setTechnicianPIN('');
     }
     setVerifyingPIN(false);
@@ -828,7 +836,7 @@ function SerologyFields({
   };
 
   const verifyTechnicianPIN = async (pin: string) => {
-    if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
+    if (!pin || pin.length < 6 || verifyingPIN) return; // Prevent double calls, PIN must be 6-8 digits
     setVerifyingPIN(true);
     
     // Store current scroll position to prevent auto-scroll
@@ -842,6 +850,7 @@ function SerologyFields({
           serology_data: {
             ...unit.serology_data!,
             technician_name: response.data.name,
+            technician_signature_image: response.data.signature_image || null,
           },
         });
         setTechnicianPIN('');
@@ -855,9 +864,13 @@ function SerologyFields({
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('PIN verification failed:', error);
-      setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      if (error.response?.status === 401) {
+        setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
+      } else {
+        setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      }
       setTechnicianPIN('');
     }
     setVerifyingPIN(false);
@@ -971,7 +984,7 @@ function MicrobiologyFields({
   const [verifyingPIN, setVerifyingPIN] = useState(false);
 
   const verifyTechnicianPIN = async (pin: string) => {
-    if (!pin || pin.length < 4 || verifyingPIN) return; // Prevent double calls
+    if (!pin || pin.length < 6 || verifyingPIN) return; // Prevent double calls, PIN must be 6-8 digits
     setVerifyingPIN(true);
     
     // Store current scroll position to prevent auto-scroll
@@ -985,6 +998,7 @@ function MicrobiologyFields({
           microbiology_data: {
             ...unit.microbiology_data!,
             technician_name: response.data.name,
+            technician_signature_image: response.data.signature_image || null,
           },
         });
         setTechnicianPIN('');
@@ -998,9 +1012,13 @@ function MicrobiologyFields({
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('PIN verification failed:', error);
-      setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      if (error.response?.status === 401) {
+        setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
+      } else {
+        setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
+      }
       setTechnicianPIN('');
     }
     setVerifyingPIN(false);

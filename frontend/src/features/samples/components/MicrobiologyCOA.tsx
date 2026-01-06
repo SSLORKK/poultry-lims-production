@@ -130,8 +130,8 @@ export function MicrobiologyCOA() {
   const [waterVolume, setWaterVolume] = useState<number>(4);
   const [waterDilution, setWaterDilution] = useState<number>(1);
 
-  // Total Count COA Dilution State
-  const [totalCountDilution, setTotalCountDilution] = useState<number>(0.11);
+  // Total Count COA Dilution State - per-index dilution factors (default 0.11)
+  const [totalCountDilutions, setTotalCountDilutions] = useState<{ [index: string]: number }>({});
 
   // AST (Antimicrobial Susceptibility Testing) State
   const [showASTTab, setShowASTTab] = useState<boolean>(false);
@@ -404,27 +404,11 @@ export function MicrobiologyCOA() {
   }, []);
 
   const verifyPIN = async (pin: string, field: 'testedBy' | 'reviewedBy' | 'labSupervisor' | 'labManager') => {
-    if (!pin.trim() || verifyingPIN) return;
+    if (!pin.trim() || pin.length < 6 || verifyingPIN) return; // PIN must be 6-8 digits
     setVerifyingPIN(true);
 
     try {
-      // Get current token for PIN verification
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setNotification({ type: 'error', message: 'Authentication required. Please log in again.' });
-        return;
-      }
-
-      // Create custom axios instance for PIN verification
-      const pinApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const response = await pinApiClient.post('/controls/signatures/verify-pin', { pin });
+      const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
       if (response.data.is_valid) {
         if (field === 'testedBy') {
           setTestedBy(response.data.name);
@@ -457,7 +441,6 @@ export function MicrobiologyCOA() {
       }
     } catch (err: any) {
       console.error('Failed to verify PIN:', err);
-      // Handle authentication errors gracefully
       if (err.response?.status === 401) {
         setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
       } else {
@@ -862,143 +845,12 @@ export function MicrobiologyCOA() {
     setContextMenu(null);
   };
 
-  const validateMicrobiologyData = () => {
-    const errors: string[] = [];
-    
-    // Validate test_results structure
-    if (!testResults || typeof testResults !== 'object') {
-      errors.push('Test results are required');
-      return errors;
-    }
-    
-    // Check if we have any diseases
-    const diseases = Object.keys(testResults);
-    if (diseases.length === 0) {
-      errors.push('At least one disease test result is required');
-      return errors;
-    }
-    
-    // Validate each disease's data structure
-    diseases.forEach(disease => {
-      const diseaseData = testResults[disease];
-      if (!diseaseData || typeof diseaseData !== 'object') {
-        errors.push(`Invalid data structure for disease: ${disease}`);
-        return;
-      }
-      
-      const indices = Object.keys(diseaseData);
-      if (indices.length === 0) {
-        errors.push(`No test results found for disease: ${disease}`);
-        return;
-      }
-      
-      // Validate each result
-      indices.forEach(index => {
-        const result = diseaseData[index];
-        if (result === null || result === undefined || result === '') {
-          errors.push(`Test result is required for ${disease} - ${index}`);
-        }
-      });
-    });
-    
-    // Validate test_portions if present
-    if (testPortions && Object.keys(testPortions).length > 0) {
-      Object.keys(testPortions).forEach(disease => {
-        const diseasePortions = testPortions[disease];
-        if (diseasePortions && typeof diseasePortions === 'object') {
-          Object.keys(diseasePortions).forEach(index => {
-            const portion = diseasePortions[index];
-            if (portion && typeof portion !== 'string') {
-              errors.push(`Invalid test portion format for ${disease} - ${index}`);
-            }
-          });
-        }
-      });
-    }
-    
-    // Validate test_methods if present
-    if (testMethods && Object.keys(testMethods).length > 0) {
-      Object.keys(testMethods).forEach(disease => {
-        const method = testMethods[disease];
-        if (method !== null && method !== undefined && typeof method !== 'string') {
-          errors.push(`Invalid test method format for disease: ${disease}`);
-        }
-      });
-    }
-    
-    // Validate isolate_types if present
-    if (isolateTypes && Object.keys(isolateTypes).length > 0) {
-      Object.keys(isolateTypes).forEach(disease => {
-        const diseaseIsolates = isolateTypes[disease];
-        if (diseaseIsolates && typeof diseaseIsolates === 'object') {
-          Object.keys(diseaseIsolates).forEach(index => {
-            const isolate = diseaseIsolates[index];
-            if (isolate && typeof isolate !== 'string') {
-              errors.push(`Invalid isolate type format for ${disease} - ${index}`);
-            }
-          });
-        }
-      });
-    }
-    
-    // Validate test_ranges if present
-    if (testRanges && Object.keys(testRanges).length > 0) {
-      Object.keys(testRanges).forEach(disease => {
-        const diseaseRanges = testRanges[disease];
-        if (diseaseRanges && typeof diseaseRanges === 'object') {
-          Object.keys(diseaseRanges).forEach(index => {
-            const range = diseaseRanges[index];
-            if (range && typeof range !== 'string') {
-              errors.push(`Invalid test range format for ${disease} - ${index}`);
-            }
-          });
-        }
-      });
-    }
-    
-    return errors;
-  };
-
   const handleSave = async () => {
     if (!unitData) return;
 
     try {
       setSaving(true);
       setError(null);
-
-      // Validate required fields
-      if (!dateTested) {
-        setError('Result Date is required. Please select a test date before saving.');
-        setSaving(false);
-        return;
-      }
-
-      // Validate required signature fields
-      if (!testedBy) {
-        setError('Tested By is required. Please enter the technician PIN.');
-        setSaving(false);
-        return;
-      }
-
-      if (!reviewedBy) {
-        setError('Reviewed By (Head Unit) is required. Please enter the reviewer PIN.');
-        setSaving(false);
-        return;
-      }
-
-      if (!labSupervisor) {
-        setError('Lab Supervisor is required. Please enter the lab supervisor PIN.');
-        setSaving(false);
-        return;
-      }
-
-      // Validate microbiology data structure
-      const validationErrors = validateMicrobiologyData();
-      if (validationErrors.length > 0) {
-        setError('Data validation failed:\n' + validationErrors.join('\n'));
-        setSaving(false);
-        return;
-      }
 
       // Check if user is authenticated before proceeding
       const token = localStorage.getItem('token');
@@ -1008,39 +860,10 @@ export function MicrobiologyCOA() {
         return;
       }
 
-      // Determine the new status based on user role and current status
-      let newStatus = status;
-      let newCoaStatus = unitData.coa_status;
+      // Save sets status to 'need_approval' - Approve changes to 'completed'
+      const saveStatus = 'need_approval';
 
-      if (user?.role === 'admin' || user?.role === 'manager') {
-        // Admin or Manager approves the COA
-        newStatus = 'completed';
-        newCoaStatus = 'completed';
-        
-        // Check if sample was previously postponed and save to edit history
-        const postponedMatch = notes?.match(/Postponed Reason:\s*(.+)/);
-        if (postponedMatch && coaData?.status === 'postponed') {
-          try {
-            await apiClient.post('/edit-history/', {
-              entity_type: 'unit',
-              entity_id: parseInt(unitId!),
-              field_name: 'postponed_reason_cleared',
-              old_value: postponedMatch[1],
-              new_value: 'Approved - Postponed reason cleared',
-              sample_code: unitData.sample.sample_code,
-              unit_code: unitData.unit_code
-            });
-          } catch (histErr) {
-            console.error('Failed to save postponed history:', histErr);
-          }
-        }
-      } else {
-        // Technician submits for approval
-        newStatus = 'need_approval';
-        newCoaStatus = 'need_approval';
-      }
-
-      // Create a custom apiClient instance for this operation to avoid automatic logout
+      // Create a custom apiClient instance for this operation
       const saveApiClient = axios.create({
         baseURL: '/api/v1',
         headers: {
@@ -1079,7 +902,7 @@ export function MicrobiologyCOA() {
         lab_supervisor: labSupervisor || null,
         lab_manager: labManager || null,
         notes: notes || null,
-        status: newStatus,
+        status: saveStatus,
       };
 
       if (coaData?.id) {
@@ -1094,18 +917,10 @@ export function MicrobiologyCOA() {
         await saveApiClient.post('/microbiology-coa/', createPayload);
       }
 
-      // Update unit coa_status
-      await saveApiClient.patch(`/units/${unitId}`, { coa_status: newCoaStatus });
+      // Save updates coa_status to 'need_approval' - 'completed' is set by Approve button
+      await saveApiClient.patch(`/units/${unitId}`, { coa_status: 'need_approval' });
 
-      // Update parent sample status only if admin or manager approved
-      if ((user?.role === 'admin' || user?.role === 'manager') && newStatus === 'completed') {
-        await saveApiClient.patch(`/samples/${unitData.sample.id}`, { status: 'completed' });
-      }
-
-      const message = (user?.role === 'admin' || user?.role === 'manager')
-        ? 'Certificate of Analysis approved successfully!'
-        : 'Certificate of Analysis submitted for approval!';
-      setNotification({ type: 'success', message });
+      setNotification({ type: 'success', message: 'Certificate of Analysis saved successfully!' });
       setTimeout(() => navigate('/microbiology/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to save COA:', err);
@@ -1114,7 +929,6 @@ export function MicrobiologyCOA() {
       if (err.response?.status === 401) {
         setError('Your session may have expired. Please refresh the page and try again.');
       } else if (err.response?.status === 400) {
-        // Handle validation errors from backend
         const backendError = err.response?.data?.detail;
         if (typeof backendError === 'string') {
           setError(`Data validation error: ${backendError}`);
@@ -1124,7 +938,6 @@ export function MicrobiologyCOA() {
           setError('Data format is invalid. Please check all fields and try again.');
         }
       } else if (err.response?.status === 422) {
-        // Handle Pydantic validation errors
         const validationErrors = err.response?.data?.detail;
         if (Array.isArray(validationErrors)) {
           const errorMessages = validationErrors.map((error: any) => 
@@ -1137,6 +950,127 @@ export function MicrobiologyCOA() {
       } else {
         setError(err.response?.data?.detail || 'Failed to save COA');
         setNotification({ type: 'error', message: 'Failed to save Certificate of Analysis. Please check your entries and try again.' });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!unitData) return;
+
+    // Require at least 3 signatures: Reviewed By and Lab Supervisor are required, plus one more
+    const signatureCount = [testedBy, reviewedBy, labSupervisor, labManager].filter(s => s && s.trim()).length;
+    if (signatureCount < 3) {
+      setNotification({ type: 'warning', message: 'At least 3 signatures are required to approve the COA (Reviewed By and Lab Supervisor are required).' });
+      return;
+    }
+    if (!reviewedBy || !reviewedBy.trim()) {
+      setNotification({ type: 'warning', message: 'Reviewed By signature is required to approve the COA.' });
+      return;
+    }
+    if (!labSupervisor || !labSupervisor.trim()) {
+      setNotification({ type: 'warning', message: 'Lab Supervisor signature is required to approve the COA.' });
+      return;
+    }
+
+    // Validate required fields
+    if (!dateTested) {
+      setError('Result Date is required. Please select a test date before approving.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError('You are not authenticated. Please log in again.');
+        setSaving(false);
+        return;
+      }
+
+      // Check if sample was previously postponed and save to edit history
+      const postponedMatch = notes?.match(/Postponed Reason:\s*(.+)/);
+      if (postponedMatch && coaData?.status === 'postponed') {
+        try {
+          await apiClient.post('/edit-history/', {
+            entity_type: 'unit',
+            entity_id: parseInt(unitId!),
+            field_name: 'postponed_reason_cleared',
+            old_value: postponedMatch[1],
+            new_value: 'Approved - Postponed reason cleared',
+            sample_code: unitData.sample.sample_code,
+            unit_code: unitData.unit_code
+          });
+        } catch (histErr) {
+          console.error('Failed to save postponed history:', histErr);
+        }
+      }
+
+      const saveApiClient = axios.create({
+        baseURL: '/api/v1',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      // Convert hidden indexes Sets to arrays for JSON serialization
+      const hiddenIndexesForSave: { [disease: string]: string[] } = {};
+      for (const [disease, indexSet] of Object.entries(hiddenIndexes)) {
+        hiddenIndexesForSave[disease] = Array.from(indexSet);
+      }
+
+      // Prepare AST data if enabled
+      const astDataForSave = showASTTab ? {
+        bacterial_isolate: astBacterialIsolate,
+        organ: astOrgan,
+        bacteria_family: astBacteriaFamily,
+        include_in_pdf: includeASTInPDF,
+        ast_results: astResults,
+      } : null;
+
+      // Save with completed status
+      const approvePayload = {
+        test_results: testResults,
+        test_portions: testPortions || {},
+        test_methods: testMethods || {},
+        isolate_types: isolateTypes || {},
+        test_ranges: testRanges || {},
+        hidden_indexes: hiddenIndexesForSave,
+        ast_data: astDataForSave,
+        date_tested: dateTested || null,
+        tested_by: testedBy || null,
+        reviewed_by: reviewedBy || null,
+        lab_supervisor: labSupervisor || null,
+        lab_manager: labManager || null,
+        notes: notes || null,
+        status: 'completed',
+      };
+
+      if (coaData?.id) {
+        await saveApiClient.put(`/microbiology-coa/${coaData.id}`, approvePayload);
+      } else {
+        await saveApiClient.post('/microbiology-coa/', { ...approvePayload, unit_id: parseInt(unitId!) });
+      }
+
+      // Update unit coa_status to 'completed'
+      await saveApiClient.patch(`/units/${unitId}`, { coa_status: 'completed' });
+
+      // Update parent sample status
+      await saveApiClient.patch(`/samples/${unitData.sample.id}`, { status: 'completed' });
+
+      setNotification({ type: 'success', message: 'Certificate of Analysis approved successfully!' });
+      setTimeout(() => navigate('/microbiology/samples'), 1500);
+    } catch (err: any) {
+      console.error('Failed to approve COA:', err);
+      if (err.response?.status === 401) {
+        setError('Your session may have expired. Please refresh the page and try again.');
+      } else {
+        setError(err.response?.data?.detail || 'Failed to approve COA');
+        setNotification({ type: 'error', message: 'Failed to approve Certificate of Analysis. Please check your entries and try again.' });
       }
     } finally {
       setSaving(false);
@@ -2295,12 +2229,18 @@ export function MicrobiologyCOA() {
               disabled={saving}
               className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
             >
-              {saving
-                ? 'Saving...'
-                : (user?.role === 'admin' || user?.role === 'manager')
-                  ? 'Approve'
-                  : 'Save COA'}
+              {saving ? 'Saving...' : 'Save COA'}
             </button>
+            {(user?.role === 'admin' || user?.role === 'manager' || user?.role === 'lab_supervisor') && (
+              <button
+                type="button"
+                onClick={handleApprove}
+                disabled={saving}
+                className="px-6 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-400"
+              >
+                {saving ? 'Approving...' : 'Approve'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -2761,27 +2701,11 @@ export function MicrobiologyCOA() {
                     <span className="text-xs text-blue-600 italic">Formula: (Entered Number × Dilution) × Volume</span>
                   </div>
                 )}
-                {/* Total Count COA Dilution Controls */}
+                {/* Total Count COA Info Banner */}
                 {currentDisease.toLowerCase().includes('total count') && (
                   <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-6">
                     <span className="font-semibold text-green-800">Total Count Parameters:</span>
-                    <div className="flex items-center gap-2">
-                      <label className="font-medium text-sm">Dilution:</label>
-                      <select
-                        value={totalCountDilution}
-                        onChange={(e) => setTotalCountDilution(Number(e.target.value))}
-                        className="px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500 text-center"
-                        style={{ minWidth: '100px', height: '30px' }}
-                        disabled={status === 'finalized'}
-                      >
-                        <option value={0.11}>0.11</option>
-                        <option value={0.011}>0.011</option>
-                        <option value={0.0011}>0.0011</option>
-                        <option value={0.00011}>0.00011</option>
-                        <option value={0.000011}>0.000011</option>
-                      </select>
-                    </div>
-                    <span className="text-xs text-green-600 italic">Formula: (First No. + Second No.) / Dilution</span>
+                    <span className="text-xs text-green-600 italic">Formula: (First No. + Second No.) / Dilution (default: 0.11, adjustable per row)</span>
                   </div>
                 )}
                 <div className="overflow-x-auto">
@@ -2794,13 +2718,16 @@ export function MicrobiologyCOA() {
                         </th>
                         {currentDisease.toLowerCase().includes('total count') ? (
                           <>
-                            <th className="border border-gray-300 px-4 py-3 text-left font-semibold" style={{ width: '20%' }}>
+                            <th className="border border-gray-300 px-4 py-3 text-center font-semibold" style={{ width: '10%' }}>
+                              Dilution
+                            </th>
+                            <th className="border border-gray-300 px-4 py-3 text-left font-semibold" style={{ width: '18%' }}>
                               Total Bacterial Count <br /> CFU / PLATE/ 100 CM
                             </th>
-                            <th className="border border-gray-300 px-4 py-3 text-left font-semibold" style={{ width: '20%' }}>
+                            <th className="border border-gray-300 px-4 py-3 text-left font-semibold" style={{ width: '18%' }}>
                               Total Mold and Yeast Count <br /> CFU/PLATE/100 CM
                             </th>
-                            <th className="border border-gray-300 px-4 py-3 text-left font-semibold" style={{ width: '25%' }}>
+                            <th className="border border-gray-300 px-4 py-3 text-left font-semibold" style={{ width: '20%' }}>
                               Pathogenic Mold & Yeast
                             </th>
                           </>
@@ -3032,6 +2959,40 @@ export function MicrobiologyCOA() {
                               </>
                             ) : isTotalCount ? (
                               <>
+                                {/* Per-row Dilution Selector */}
+                                <td className="border border-gray-300 px-2 py-2 text-center">
+                                  <select
+                                    value={totalCountDilutions[index] ?? 0.11}
+                                    onChange={(e) => {
+                                      const newDilution = Number(e.target.value);
+                                      setTotalCountDilutions(prev => ({ ...prev, [index]: newDilution }));
+                                      // Recalculate TBC and Mould results with new dilution
+                                      const newResults = { ...testResults };
+                                      if (newResults[currentDisease]) {
+                                        const num1Tbc = parseFloat(newResults[currentDisease][`${index}_tbc1`]) || 0;
+                                        const num2Tbc = parseFloat(newResults[currentDisease][`${index}_tbc2`]) || 0;
+                                        if (num1Tbc || num2Tbc) {
+                                          newResults[currentDisease][index] = ((num1Tbc + num2Tbc) / newDilution).toFixed(0);
+                                        }
+                                        const num1Mould = parseFloat(newResults[currentDisease][`${index}_mould1`]) || 0;
+                                        const num2Mould = parseFloat(newResults[currentDisease][`${index}_mould2`]) || 0;
+                                        if (num1Mould || num2Mould) {
+                                          newResults[currentDisease][`${index}_mould`] = ((num1Mould + num2Mould) / newDilution).toFixed(0);
+                                        }
+                                        setTestResults(newResults);
+                                      }
+                                    }}
+                                    className="px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500 text-center text-sm"
+                                    style={{ minWidth: '90px' }}
+                                    disabled={status === 'finalized'}
+                                  >
+                                    <option value={0.11}>0.11</option>
+                                    <option value={0.011}>0.011</option>
+                                    <option value={0.0011}>0.0011</option>
+                                    <option value={0.00011}>0.00011</option>
+                                    <option value={0.000011}>0.000011</option>
+                                  </select>
+                                </td>
                                 <td className="border border-gray-300 px-2 py-2">
                                   <div className="flex flex-col gap-1">
                                     <div className="flex gap-1">
@@ -3048,7 +3009,8 @@ export function MicrobiologyCOA() {
                                           newResults[currentDisease][`${index}_tbc1`] = val1;
                                           const num1 = parseFloat(val1) || 0;
                                           const num2 = parseFloat(newResults[currentDisease][`${index}_tbc2`]) || 0;
-                                          const calculated = (num1 + num2) / totalCountDilution;
+                                          const dilution = totalCountDilutions[index] ?? 0.11;
+                                          const calculated = (num1 + num2) / dilution;
                                           newResults[currentDisease][index] = (num1 || num2) ? calculated.toFixed(0) : '';
                                           setTestResults(newResults);
                                         }}
@@ -3069,7 +3031,8 @@ export function MicrobiologyCOA() {
                                           newResults[currentDisease][`${index}_tbc2`] = val2;
                                           const num1 = parseFloat(newResults[currentDisease][`${index}_tbc1`]) || 0;
                                           const num2 = parseFloat(val2) || 0;
-                                          const calculated = (num1 + num2) / totalCountDilution;
+                                          const dilution = totalCountDilutions[index] ?? 0.11;
+                                          const calculated = (num1 + num2) / dilution;
                                           newResults[currentDisease][index] = (num1 || num2) ? calculated.toFixed(0) : '';
                                           setTestResults(newResults);
                                         }}
@@ -3093,7 +3056,7 @@ export function MicrobiologyCOA() {
                                         }
                                       }}
                                       title="Right-click to fill all"
-                                    >= {testResults[currentDisease]?.[index] || 'Less than  CFU'}</span>
+                                    >= {testResults[currentDisease]?.[index] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -3112,7 +3075,8 @@ export function MicrobiologyCOA() {
                                           newResults[currentDisease][`${index}_mould1`] = val1;
                                           const num1 = parseFloat(val1) || 0;
                                           const num2 = parseFloat(newResults[currentDisease][`${index}_mould2`]) || 0;
-                                          const calculated = (num1 + num2) / totalCountDilution;
+                                          const dilution = totalCountDilutions[index] ?? 0.11;
+                                          const calculated = (num1 + num2) / dilution;
                                           newResults[currentDisease][`${index}_mould`] = (num1 || num2) ? calculated.toFixed(0) : '';
                                           setTestResults(newResults);
                                         }}
@@ -3133,7 +3097,8 @@ export function MicrobiologyCOA() {
                                           newResults[currentDisease][`${index}_mould2`] = val2;
                                           const num1 = parseFloat(newResults[currentDisease][`${index}_mould1`]) || 0;
                                           const num2 = parseFloat(val2) || 0;
-                                          const calculated = (num1 + num2) / totalCountDilution;
+                                          const dilution = totalCountDilutions[index] ?? 0.11;
+                                          const calculated = (num1 + num2) / dilution;
                                           newResults[currentDisease][`${index}_mould`] = (num1 || num2) ? calculated.toFixed(0) : '';
                                           setTestResults(newResults);
                                         }}
@@ -3282,26 +3247,39 @@ export function MicrobiologyCOA() {
                             )}
                             {!isSalmonella && !isTotalCount && !isWater && (
                               <td className="border border-gray-300 px-4 py-3 bg-gray-50">
-                                <select
-                                  value={isolateTypes[currentDisease]?.[index] || ''}
-                                  onChange={(e) => {
-                                    const newIsolateTypes = { ...isolateTypes };
-                                    if (!newIsolateTypes[currentDisease]) {
-                                      newIsolateTypes[currentDisease] = {};
-                                    }
-                                    newIsolateTypes[currentDisease][index] = e.target.value;
-                                    setIsolateTypes(newIsolateTypes);
-                                  }}
-                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                  disabled={status === 'finalized'}
-                                >
-                                  <option value="">Select isolate type</option>
-                                  {cultureIsolationTypes.map((type: any) => (
-                                    <option key={type.id} value={type.name}>
-                                      {type.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                <div className="relative">
+                                  <div className="border border-gray-300 rounded bg-white max-h-[120px] overflow-y-auto p-1">
+                                    {cultureIsolationTypes.map((type: any) => {
+                                      const selectedValues = (isolateTypes[currentDisease]?.[index] || '').split(',').filter(Boolean);
+                                      const isChecked = selectedValues.includes(type.name);
+                                      return (
+                                        <label key={type.id} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-100 cursor-pointer rounded text-sm">
+                                          <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={(e) => {
+                                              const newIsolateTypes = { ...isolateTypes };
+                                              if (!newIsolateTypes[currentDisease]) {
+                                                newIsolateTypes[currentDisease] = {};
+                                              }
+                                              let currentValues = (newIsolateTypes[currentDisease][index] || '').split(',').filter(Boolean);
+                                              if (e.target.checked) {
+                                                currentValues.push(type.name);
+                                              } else {
+                                                currentValues = currentValues.filter(v => v !== type.name);
+                                              }
+                                              newIsolateTypes[currentDisease][index] = currentValues.join(',');
+                                              setIsolateTypes(newIsolateTypes);
+                                            }}
+                                            disabled={status === 'finalized'}
+                                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                                          />
+                                          <span>{type.name}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               </td>
                             )}
                             {!isSalmonella && !isTotalCount && !currentDisease.toLowerCase().includes('fungi') && !isWater && (
@@ -3328,26 +3306,39 @@ export function MicrobiologyCOA() {
                             )}
                             {currentDisease.toLowerCase().includes('fungi') && (
                               <td className="border border-gray-300 px-4 py-3 bg-gray-50">
-                                <select
-                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                                  value={testRanges[currentDisease]?.[index] || ''}
-                                  onChange={(e) => {
-                                    const newTestRanges = { ...testRanges };
-                                    if (!newTestRanges[currentDisease]) {
-                                      newTestRanges[currentDisease] = {};
-                                    }
-                                    newTestRanges[currentDisease][index] = e.target.value;
-                                    setTestRanges(newTestRanges);
-                                  }}
-                                  disabled={status === 'finalized'}
-                                >
-                                  <option value="">Select Pathogenic Fungi & Mold</option>
-                                  {pathogenicFungiMoldTypes.map((type: any) => (
-                                    <option key={type.id} value={type.name}>
-                                      {type.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                <div className="relative">
+                                  <div className="border border-gray-300 rounded bg-white max-h-[120px] overflow-y-auto p-1">
+                                    {pathogenicFungiMoldTypes.map((type: any) => {
+                                      const selectedValues = (testRanges[currentDisease]?.[index] || '').split(',').filter(Boolean);
+                                      const isChecked = selectedValues.includes(type.name);
+                                      return (
+                                        <label key={type.id} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-100 cursor-pointer rounded text-sm">
+                                          <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={(e) => {
+                                              const newTestRanges = { ...testRanges };
+                                              if (!newTestRanges[currentDisease]) {
+                                                newTestRanges[currentDisease] = {};
+                                              }
+                                              let currentValues = (newTestRanges[currentDisease][index] || '').split(',').filter(Boolean);
+                                              if (e.target.checked) {
+                                                currentValues.push(type.name);
+                                              } else {
+                                                currentValues = currentValues.filter(v => v !== type.name);
+                                              }
+                                              newTestRanges[currentDisease][index] = currentValues.join(',');
+                                              setTestRanges(newTestRanges);
+                                            }}
+                                            disabled={status === 'finalized'}
+                                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                                          />
+                                          <span>{type.name}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               </td>
                             )}
                             {isSalmonella && (

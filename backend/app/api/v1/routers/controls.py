@@ -690,10 +690,23 @@ def update_signature(
         raise HTTPException(status_code=404, detail="Signature not found")
     
     # Update fields if provided
-    if data.name is not None:
+    if data.name is not None and data.name != signature.name:
+        # Check if new name already exists
+        existing = db.query(Signature).filter(
+            Signature.name == data.name,
+            Signature.id != item_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Signature with this name already exists")
         signature.name = data.name
     
     if data.pin is not None and data.pin.strip():
+        # Validate PIN length (6-8 digits)
+        if not data.pin.isdigit() or len(data.pin) < 6 or len(data.pin) > 8:
+            raise HTTPException(
+                status_code=400, 
+                detail="PIN must be 6-8 digits"
+            )
         # Hash the new PIN
         pin_bytes = data.pin.encode('utf-8')
         salt = bcrypt.gensalt()
@@ -740,7 +753,8 @@ def verify_pin(
         try:
             # Verify PIN using bcrypt
             pin_hash_bytes = sig.pin_hash.encode('utf-8')
-            logger.info(f"[PIN DEBUG] Checking signature id={sig.id}, name={sig.name}, hash_prefix={sig.pin_hash[:10]}")
+            hash_prefix = sig.pin_hash[:10] if sig.pin_hash and len(sig.pin_hash) >= 10 else 'INVALID'
+            logger.info(f"[PIN DEBUG] Checking signature id={sig.id}, name={sig.name}, hash_prefix={hash_prefix}")
             if bcrypt.checkpw(pin_bytes, pin_hash_bytes):
                 logger.info(f"[PIN DEBUG] PIN MATCHED for {sig.name}")
                 return PINVerifyResponse(name=str(sig.name), is_valid=True, signature_image=sig.signature_image)

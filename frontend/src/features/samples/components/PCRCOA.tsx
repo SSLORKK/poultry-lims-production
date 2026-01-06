@@ -69,7 +69,7 @@ export function PCRCOA() {
   const [labManagerPIN, setLabManagerPIN] = useState<string>('');
   const [verifyingPIN, setVerifyingPIN] = useState<boolean>(false);
   const [notes, setNotes] = useState<string>('');
-  const [status, setStatus] = useState<string>('draft');
+  const [_status, setStatus] = useState<string>('draft');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -378,7 +378,7 @@ export function PCRCOA() {
 
 
   const verifyPIN = async (pin: string, field: 'testedBy' | 'reviewedBy' | 'labSupervisor' | 'labManager') => {
-    if (!pin.trim() || verifyingPIN) return;
+    if (!pin.trim() || pin.length < 6 || verifyingPIN) return; // PIN must be 6-8 digits
     setVerifyingPIN(true);
     
     try {
@@ -413,9 +413,13 @@ export function PCRCOA() {
           setLabManagerPIN('');
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to verify PIN:', err);
-      setNotification({ type: 'error', message: 'PIN verification failed. Please check your connection and try again.' });
+      if (err.response?.status === 401) {
+        setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
+      } else {
+        setNotification({ type: 'error', message: 'PIN verification failed. Please check your connection and try again.' });
+      }
     } finally {
       setVerifyingPIN(false);
     }
@@ -431,8 +435,8 @@ export function PCRCOA() {
       setSaving(true);
       setError(null);
 
-      // Save keeps existing status or sets to 'draft' for new COAs - only Approve changes to 'completed'
-      const saveStatus = coaData?.id ? (status || 'draft') : 'draft';
+      // Save sets status to 'need_approval' - Approve changes to 'completed'
+      const saveStatus = 'need_approval';
 
       if (coaData?.id) {
         // Update existing COA - payload without unit_id
@@ -467,8 +471,8 @@ export function PCRCOA() {
         await apiClient.post('/pcr-coa/', createPayload);
       }
 
-      // Save only updates coa_status to 'draft' - 'completed' is set by Approve button
-      await apiClient.patch(`/units/${unitId}`, { coa_status: 'draft' });
+      // Save updates coa_status to 'need_approval' - 'completed' is set by Approve button
+      await apiClient.patch(`/units/${unitId}`, { coa_status: 'need_approval' });
 
       setNotification({ type: 'success', message: 'Certificate of Analysis saved successfully!' });
       setTimeout(() => navigate('/pcr/samples'), 1500);

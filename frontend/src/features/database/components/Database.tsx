@@ -1780,6 +1780,20 @@ function PCRTable({
       return undefined;
     }
 
+    // Get the sample_types array from COA for mapping col_N keys
+    const coaSampleTypes = coa.sample_types || [];
+
+    // Helper to convert col_N to actual sample type name
+    const getSampleTypeName = (key: string): string => {
+      if (key.startsWith('col_') && coaSampleTypes.length > 0) {
+        const idx = parseInt(key.replace('col_', ''), 10);
+        if (!isNaN(idx) && idx < coaSampleTypes.length) {
+          return coaSampleTypes[idx];
+        }
+      }
+      return key;
+    };
+
     // Try to find disease value - check both old format (disease name) and new format (disease|||index)
     let diseaseValue = (coa.test_results as any)[disease];
     
@@ -1804,36 +1818,6 @@ function PCRTable({
     }
     
     if (!diseaseValue) return undefined;
-    
-    // If we have values with col_N format, extract them directly and return the lowest CT
-    if (Array.isArray(diseaseValue) && diseaseValue.length > 0) {
-      const pool = diseaseValue[0];
-      if (pool?.values) {
-        const valuesObj = pool.values;
-        const ctValues: number[] = [];
-        Object.entries(valuesObj).forEach(([key, val]) => {
-          if (key === 'pos_control' || key === 'neg_control') return;
-          const strVal = String(val);
-          if (strVal && strVal !== '') {
-            // Extract numeric CT value
-            let numStr = strVal;
-            if (strVal.toUpperCase().startsWith('CT:')) {
-              numStr = strVal.substring(3).trim();
-            }
-            const num = parseFloat(numStr);
-            if (!isNaN(num)) {
-              ctValues.push(num);
-            }
-          }
-        });
-        if (ctValues.length > 0) {
-          const lowestCT = Math.min(...ctValues);
-          // Apply results filter
-          if (resultsFilter === 'Negative') return undefined;
-          return lowestCT.toString();
-        }
-      }
-    }
 
     // Normalize to pooled format
     let pools: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string }>;
@@ -1850,119 +1834,60 @@ function PCRTable({
       return undefined;
     }
 
-    // Aggregate all pools' results - handle both col_N format and sample type name format
-    const allResults: { [sampleType: string]: string[] } = {};
-    const allValuesFlat: string[] = []; // Collect all values regardless of key format
-    pools.forEach(pool => {
-      Object.entries(pool.values || {}).forEach(([st, value]) => {
-        // Skip pos_control and neg_control fields
-        if (st === 'pos_control' || st === 'neg_control') return;
-        if (!allResults[st]) allResults[st] = [];
-        if (value && value !== '') {
-          allResults[st].push(value);
-          allValuesFlat.push(value);
-        }
-      });
-    });
-
-    // Filter results by sample type if specified
-    if (selectedSampleTypes.length > 0) {
-      // Show results only for selected sample types
-      const filteredResults: string[] = [];
-      selectedSampleTypes.forEach(sampleType => {
-        const values = allResults[sampleType] || [];
-        if (values.length > 0) {
-          filteredResults.push(...values);
-        }
-      });
-
-      // If no results found by sample type name, use all flat values (for col_N format)
-      const resultsToUse = filteredResults.length > 0 ? filteredResults : allValuesFlat;
-      if (resultsToUse.length === 0) return undefined;
-
-      const firstValue = resultsToUse[0];
-      if (!firstValue || firstValue === '') return undefined;
-
-      const upperValue = firstValue.toUpperCase();
-      if (upperValue === 'N/A' || upperValue === 'NA') return undefined;
-
-      // Apply results filter
-      const isNegative = upperValue === 'NEG' || upperValue === 'NEG.' || upperValue === 'NEGATIVE';
-      const isPositive = !isNegative && !isNaN(parseFloat(firstValue));
-
-      if (resultsFilter === 'Positive' && !isPositive) return undefined;
-      if (resultsFilter === 'Negative' && !isNegative) return undefined;
-
-      return firstValue;
-    }
-
-    // Get all sample type values, excluding POS. CONTROL, empty, and N/A
-    const sampleTypeEntries: Array<[string, string]> = [];
-    Object.entries(allResults).forEach(([st, values]) => {
-      const upperKey = st.toUpperCase();
-      if (upperKey === 'POS. CONTROL' || upperKey === 'POS CONTROL' || upperKey === 'POS_CONTROL') return;
-      // Skip col_N keys for display name but still use their values
-      const displayKey = st.startsWith('col_') ? `Sample ${parseInt(st.replace('col_', '')) + 1}` : st;
-
-      values.forEach(value => {
-        const upperValue = value?.toUpperCase() || '';
-        if (value && value !== '' && upperValue !== 'N/A' && upperValue !== 'NA') {
-          sampleTypeEntries.push([displayKey, value]);
-        }
-      });
-    });
-
-    if (sampleTypeEntries.length === 0) return undefined;
-
-    // Separate numeric CT values from NEG results with their sample types
-    const numericEntries: Array<{ sampleType: string; ct: number }> = [];
+    // Collect ALL CT values from ALL pools to find the lowest
+    const allNumericCTValues: number[] = [];
     let hasNegative = false;
+    const sampleTypeEntries: Array<[string, string]> = [];
 
-    sampleTypeEntries.forEach(([sampleType, value]) => {
-      const upperValue = value.toUpperCase();
-      if (upperValue === 'NEG' || upperValue === 'NEG.' || upperValue === 'NEGATIVE') {
-        hasNegative = true;
-      } else {
-        // Handle "CT:25.5" format by extracting the number
-        let numValue = value;
-        if (value.toUpperCase().startsWith('CT:')) {
-          numValue = value.substring(3).trim();
+    pools.forEach(pool => {
+      Object.entries(pool.values || {}).forEach(([key, value]) => {
+        // Skip control fields
+        if (key === 'pos_control' || key === 'neg_control') return;
+        const upperKey = key.toUpperCase();
+        if (upperKey === 'POS. CONTROL' || upperKey === 'POS CONTROL' || upperKey === 'POS_CONTROL') return;
+
+        const strVal = String(value || '');
+        if (!strVal || strVal === '') return;
+        
+        const upperValue = strVal.toUpperCase();
+        if (upperValue === 'N/A' || upperValue === 'NA') return;
+
+        // Convert col_N to actual sample type name
+        const displayKey = getSampleTypeName(key);
+
+        // Check if negative
+        if (upperValue === 'NEG' || upperValue === 'NEG.' || upperValue === 'NEGATIVE') {
+          hasNegative = true;
+          sampleTypeEntries.push([displayKey, strVal]);
+        } else {
+          // Extract numeric CT value
+          let numStr = strVal;
+          if (strVal.toUpperCase().startsWith('CT:')) {
+            numStr = strVal.substring(3).trim();
+          }
+          const num = parseFloat(numStr);
+          if (!isNaN(num)) {
+            allNumericCTValues.push(num);
+            sampleTypeEntries.push([displayKey, strVal]);
+          }
         }
-        const num = parseFloat(numValue);
-        if (!isNaN(num)) {
-          numericEntries.push({ sampleType, ct: num });
-        }
-      }
+      });
     });
 
-    // Apply results filter
+    // Apply results filter and return the lowest CT value
     if (resultsFilter === 'Positive') {
-      // Show only positive results
-      if (numericEntries.length > 0) {
-        const lowestEntry = numericEntries.reduce((min, curr) =>
-          curr.ct < min.ct ? curr : min
-        );
-        // If only one organ, just show the CT value without organ name
-        if (numericEntries.length === 1) {
-          return lowestEntry.ct.toString();
-        }
-        return `${lowestEntry.sampleType}: ${lowestEntry.ct}`;
+      if (allNumericCTValues.length > 0) {
+        const lowestCT = Math.min(...allNumericCTValues);
+        return lowestCT.toString();
       }
       return undefined;
     } else if (resultsFilter === 'Negative') {
-      // Show only negative results
       return hasNegative ? 'NEG.' : undefined;
     } else {
-      // Show all results (All filter)
-      if (numericEntries.length > 0) {
-        const lowestEntry = numericEntries.reduce((min, curr) =>
-          curr.ct < min.ct ? curr : min
-        );
-        // If only one organ, just show the CT value without organ name
-        if (numericEntries.length === 1) {
-          return lowestEntry.ct.toString();
-        }
-        return `${lowestEntry.sampleType}: ${lowestEntry.ct}`;
+      // Show all results - return lowest CT if any positive, otherwise NEG
+      if (allNumericCTValues.length > 0) {
+        const lowestCT = Math.min(...allNumericCTValues);
+        return lowestCT.toString();
       }
       return hasNegative ? 'NEG.' : undefined;
     }
