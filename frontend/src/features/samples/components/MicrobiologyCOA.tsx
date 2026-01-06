@@ -374,8 +374,8 @@ export function MicrobiologyCOA() {
         // Set default values based on disease type
         const diseaseLower = disease.toLowerCase();
         if (diseaseLower.includes('total count')) {
-          results[disease][index] = 'Less than 10 CFU';
-          results[disease][`${index}_mould`] = 'Less than 10 CFU';
+          results[disease][index] = 'Less than 1 CFU';
+          results[disease][`${index}_mould`] = 'Less than 1 CFU';
           results[disease][`${index}_fungi`] = '-------';
         } else if (diseaseLower.includes('water')) {
           results[disease][index] = 'Less than 1 CFU';
@@ -1460,8 +1460,8 @@ export function MicrobiologyCOA() {
           let pseudomonasResult = '';
 
           if (isTotalCount) {
-            result = testResults[disease]?.[index] || 'Less than 10 CFU';
-            mouldResult = testResults[disease]?.[`${index}_mould`] || 'Less than 10 CFU';
+            result = testResults[disease]?.[index] || 'Less than 1 CFU';
+            mouldResult = testResults[disease]?.[`${index}_mould`] || 'Less than 1 CFU';
             fungiResult = testResults[disease]?.[`${index}_fungi`] || '-------';
           } else if (isWaterRow) {
             result = testResults[disease]?.[index] || 'Less than 1 CFU';
@@ -3093,7 +3093,7 @@ export function MicrobiologyCOA() {
                                         }
                                       }}
                                       title="Right-click to fill all"
-                                    >= {testResults[currentDisease]?.[index] || 'Less than 10 CFU'}</span>
+                                    >= {testResults[currentDisease]?.[index] || 'Less than  CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -3157,7 +3157,7 @@ export function MicrobiologyCOA() {
                                         }
                                       }}
                                       title="Right-click to fill all"
-                                    >= {testResults[currentDisease]?.[`${index}_mould`] || 'Less than 10 CFU'}</span>
+                                    >= {testResults[currentDisease]?.[`${index}_mould`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">

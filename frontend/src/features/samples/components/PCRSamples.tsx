@@ -67,7 +67,12 @@ export const PCRSamples = () => {
   const [persistedUnitId] = useState<number | null>(getPersistedSelectedUnitId());
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    const saved = localStorage.getItem('pcrSamples_page');
+    return saved ? parseInt(saved) : 1;
+  });
+  const [_totalCount, setTotalCount] = useState(0);
+  const [lastPageLoaded, setLastPageLoaded] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -274,9 +279,36 @@ export const PCRSamples = () => {
     const timer = setTimeout(() => {
       setDebouncedSearch(globalSearch);
       setPage(1);
+      localStorage.removeItem('pcrSamples_page');
     }, 300);
     return () => clearTimeout(timer);
   }, [globalSearch]);
+
+  // Fetch total count and navigate to last page on initial load
+  useEffect(() => {
+    const fetchTotalAndGoToLastPage = async () => {
+      try {
+        const response = await apiClient.get('/samples/total-count', { params: { year: selectedYear, department_id: 1 } });
+        const total = response.data.total || 0;
+        setTotalCount(total);
+        
+        if (!lastPageLoaded && !localStorage.getItem('pcrSamples_page')) {
+          const lastPage = Math.max(1, Math.ceil(total / 100));
+          setPage(lastPage);
+        }
+        setLastPageLoaded(true);
+      } catch (err) {
+        console.error('Failed to fetch total count:', err);
+        setLastPageLoaded(true);
+      }
+    };
+    fetchTotalAndGoToLastPage();
+  }, [selectedYear]);
+
+  // Save page to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('pcrSamples_page', String(page));
+  }, [page]);
 
   const addToast = (type: 'success' | 'error', message: string) => {
     const id = Date.now();
@@ -285,8 +317,10 @@ export const PCRSamples = () => {
   };
 
   useEffect(() => {
-    fetchSamples();
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
+    if (lastPageLoaded) {
+      fetchSamples();
+    }
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch, lastPageLoaded]);
 
   // Auto-refresh data every 30 seconds without showing loading state
   useEffect(() => {

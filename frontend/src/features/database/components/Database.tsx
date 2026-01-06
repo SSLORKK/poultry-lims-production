@@ -58,6 +58,7 @@ interface COAData {
   id?: number;
   unit_id: number;
   test_results: { [disease: string]: { [sampleType: string]: string } };
+  sample_types?: string[];
   date_tested: string | null;
 }
 
@@ -154,7 +155,12 @@ export default function Database() {
     };
     localStorage.setItem('database_filters', JSON.stringify(filters));
   }, [resultsFilter, selectedDiseases, selectedAges, dateFrom, dateTo, selectedCompanies, selectedFarms, selectedFlocks, selectedSampleTypes, selectedKitTypes, selectedCycles, selectedSources, selectedSerologyDiseases, selectedSerologyKitTypes, selectedMicrobiologyDiseases, selectedMicrobiologyResults, selectedPCRDiseases, selectedPCRResults]);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    const saved = localStorage.getItem('database_page');
+    return saved ? parseInt(saved) : 1;
+  });
+  const [_totalCount, setTotalCount] = useState(0);
+  const [lastPageLoaded, setLastPageLoaded] = useState(false);
   const [pageSize] = useState(100); // Fixed page size for display pagination
   const [maxDisplayLimit] = useState(1000); // Show last 1000 samples by default
   const [initialLoading, setInitialLoading] = useState(true);
@@ -187,6 +193,34 @@ export default function Database() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Fetch total count and navigate to last page on initial load
+  useEffect(() => {
+    const fetchTotalAndGoToLastPage = async () => {
+      try {
+        const response = await apiClient.get('/samples/total-count', { 
+          params: { department_id: DEPARTMENT_IDS[activeTab] } 
+        });
+        const total = response.data.total || 0;
+        setTotalCount(total);
+        
+        if (!lastPageLoaded && !localStorage.getItem('database_page')) {
+          const lastPage = Math.max(1, Math.ceil(total / pageSize));
+          setPage(lastPage);
+        }
+        setLastPageLoaded(true);
+      } catch (err) {
+        console.error('Failed to fetch total count:', err);
+        setLastPageLoaded(true);
+      }
+    };
+    fetchTotalAndGoToLastPage();
+  }, [activeTab]);
+
+  // Save page to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('database_page', String(page));
+  }, [page]);
 
   // Fetch all available filter options (unfiltered, only by department)
   const { data: filterOptions } = useQuery<{
@@ -334,11 +368,11 @@ export default function Database() {
       // because it requires COA data which is loaded asynchronously
     }
 
-    // Sort by unit code descending (latest first - higher numbers first)
+    // Sort by unit code ascending (oldest first - same as sample screens)
     return units.sort((a, b) => {
       const aNum = parseInt(a.unit_code.replace(/\D/g, '')) || 0;
       const bNum = parseInt(b.unit_code.replace(/\D/g, '')) || 0;
-      return bNum - aNum;
+      return aNum - bNum;
     });
   }, [unitsBeforeAgeFilter, activeTab, selectedCycles, selectedSources, selectedSerologyDiseases, selectedSerologyKitTypes, selectedMicrobiologyDiseases, selectedPCRDiseases]);
 
@@ -1742,10 +1776,64 @@ function PCRTable({
 
   const getCTValue = (unitId: number, disease: string): string | undefined => {
     const coa = coaResults[unitId];
-    if (!coa?.test_results) return undefined;
+    if (!coa?.test_results) {
+      return undefined;
+    }
 
-    const diseaseValue = (coa.test_results as any)[disease];
+    // Try to find disease value - check both old format (disease name) and new format (disease|||index)
+    let diseaseValue = (coa.test_results as any)[disease];
+    
+    // If not found with exact disease name, search for ALL indexed keys (disease|||0, disease|||1, etc.)
+    if (!diseaseValue) {
+      const allKeys = Object.keys(coa.test_results);
+      // Collect all matching indexed keys and merge their values
+      const matchingKeys = allKeys.filter(key => key.startsWith(`${disease}|||`));
+      if (matchingKeys.length > 0) {
+        // Merge all matching disease entries
+        const mergedPools: any[] = [];
+        matchingKeys.forEach(key => {
+          const value = (coa.test_results as any)[key];
+          if (Array.isArray(value)) {
+            mergedPools.push(...value);
+          }
+        });
+        if (mergedPools.length > 0) {
+          diseaseValue = mergedPools;
+        }
+      }
+    }
+    
     if (!diseaseValue) return undefined;
+    
+    // If we have values with col_N format, extract them directly and return the lowest CT
+    if (Array.isArray(diseaseValue) && diseaseValue.length > 0) {
+      const pool = diseaseValue[0];
+      if (pool?.values) {
+        const valuesObj = pool.values;
+        const ctValues: number[] = [];
+        Object.entries(valuesObj).forEach(([key, val]) => {
+          if (key === 'pos_control' || key === 'neg_control') return;
+          const strVal = String(val);
+          if (strVal && strVal !== '') {
+            // Extract numeric CT value
+            let numStr = strVal;
+            if (strVal.toUpperCase().startsWith('CT:')) {
+              numStr = strVal.substring(3).trim();
+            }
+            const num = parseFloat(numStr);
+            if (!isNaN(num)) {
+              ctValues.push(num);
+            }
+          }
+        });
+        if (ctValues.length > 0) {
+          const lowestCT = Math.min(...ctValues);
+          // Apply results filter
+          if (resultsFilter === 'Negative') return undefined;
+          return lowestCT.toString();
+        }
+      }
+    }
 
     // Normalize to pooled format
     let pools: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string }>;
@@ -1762,12 +1850,18 @@ function PCRTable({
       return undefined;
     }
 
-    // Aggregate all pools' results
+    // Aggregate all pools' results - handle both col_N format and sample type name format
     const allResults: { [sampleType: string]: string[] } = {};
+    const allValuesFlat: string[] = []; // Collect all values regardless of key format
     pools.forEach(pool => {
       Object.entries(pool.values || {}).forEach(([st, value]) => {
+        // Skip pos_control and neg_control fields
+        if (st === 'pos_control' || st === 'neg_control') return;
         if (!allResults[st]) allResults[st] = [];
-        if (value && value !== '') allResults[st].push(value);
+        if (value && value !== '') {
+          allResults[st].push(value);
+          allValuesFlat.push(value);
+        }
       });
     });
 
@@ -1782,9 +1876,11 @@ function PCRTable({
         }
       });
 
-      if (filteredResults.length === 0) return undefined;
+      // If no results found by sample type name, use all flat values (for col_N format)
+      const resultsToUse = filteredResults.length > 0 ? filteredResults : allValuesFlat;
+      if (resultsToUse.length === 0) return undefined;
 
-      const firstValue = filteredResults[0];
+      const firstValue = resultsToUse[0];
       if (!firstValue || firstValue === '') return undefined;
 
       const upperValue = firstValue.toUpperCase();
@@ -1805,11 +1901,13 @@ function PCRTable({
     Object.entries(allResults).forEach(([st, values]) => {
       const upperKey = st.toUpperCase();
       if (upperKey === 'POS. CONTROL' || upperKey === 'POS CONTROL' || upperKey === 'POS_CONTROL') return;
+      // Skip col_N keys for display name but still use their values
+      const displayKey = st.startsWith('col_') ? `Sample ${parseInt(st.replace('col_', '')) + 1}` : st;
 
       values.forEach(value => {
         const upperValue = value?.toUpperCase() || '';
         if (value && value !== '' && upperValue !== 'N/A' && upperValue !== 'NA') {
-          sampleTypeEntries.push([st, value]);
+          sampleTypeEntries.push([displayKey, value]);
         }
       });
     });
@@ -2183,6 +2281,7 @@ function PCRTable({
       poolIndex: number;
       poolHouses: string;
       poolData: { [disease: string]: { values: { [sampleType: string]: string }; pos_control: string } };
+      sampleTypes?: string[];
     }> = [];
 
     filteredByResults.forEach(unit => {
@@ -2193,7 +2292,8 @@ function PCRTable({
           unit,
           poolIndex: 0,
           poolHouses: unit.house?.join(', ') || '-',
-          poolData: {}
+          poolData: {},
+          sampleTypes: undefined
         });
         return;
       }
@@ -2204,7 +2304,10 @@ function PCRTable({
         diseaseResults: { [disease: string]: { values: { [sampleType: string]: string }; pos_control: string } };
       }>();
 
-      Object.entries(coa.test_results).forEach(([disease, diseaseValue]: [string, any]) => {
+      Object.entries(coa.test_results).forEach(([diseaseKey, diseaseValue]: [string, any]) => {
+        // Normalize disease key - strip |||index suffix (e.g., "TRT|||0" -> "TRT")
+        const disease = diseaseKey.includes('|||') ? diseaseKey.split('|||')[0] : diseaseKey;
+        
         let pools: Array<{ houses: string; values: { [sampleType: string]: string }; pos_control: string }>;
         if (Array.isArray(diseaseValue)) {
           pools = diseaseValue;
@@ -2241,7 +2344,8 @@ function PCRTable({
           unit,
           poolIndex: 0,
           poolHouses: unit.house?.join(', ') || '-',
-          poolData: {}
+          poolData: {},
+          sampleTypes: coa.sample_types
         });
       } else {
         Array.from(poolsMap.entries()).forEach(([poolIdx, poolInfo]) => {
@@ -2250,7 +2354,8 @@ function PCRTable({
             poolIndex: poolIdx,
             // Use pool houses if available, otherwise use original unit houses
             poolHouses: poolInfo.houses || unit.house?.join(', ') || '-',
-            poolData: poolInfo.diseaseResults
+            poolData: poolInfo.diseaseResults,
+            sampleTypes: coa.sample_types
           });
         });
       }
@@ -2259,11 +2364,36 @@ function PCRTable({
     return rows;
   }, [filteredByResults, coaResults]);
 
-  const getPoolCTValue = (poolData: any, disease: string): string | undefined => {
+  const getPoolCTValue = (poolData: any, disease: string, sampleTypesArray?: string[]): string | undefined => {
     const diseaseData = poolData[disease];
     if (!diseaseData) return undefined;
 
     const values = diseaseData.values || {};
+
+    // Helper to get actual sample type name from col_N key
+    const getSampleTypeName = (key: string): string => {
+      if (key.startsWith('col_') && sampleTypesArray) {
+        const idx = parseInt(key.replace('col_', ''), 10);
+        if (!isNaN(idx) && idx < sampleTypesArray.length) {
+          return sampleTypesArray[idx];
+        }
+      }
+      return key;
+    };
+
+    // Collect all valid CT values (handles both sample type names and col_N format)
+    const allValidValues: string[] = [];
+    Object.entries(values).forEach(([key, value]) => {
+      // Skip control fields
+      if (key === 'pos_control' || key === 'neg_control') return;
+      const strValue = String(value || '');
+      if (strValue && strValue !== '') {
+        const upperValue = strValue.toUpperCase();
+        if (upperValue !== 'N/A' && upperValue !== 'NA') {
+          allValidValues.push(strValue);
+        }
+      }
+    });
 
     // Filter results by sample type if specified
     if (selectedSampleTypes.length > 0) {
@@ -2284,7 +2414,8 @@ function PCRTable({
 
         return specificValue;
       }
-      return undefined;
+      // If no specific sample type matched, use all values (for col_N format)
+      if (allValidValues.length === 0) return undefined;
     }
 
     // Get all sample type values, excluding POS. CONTROL, empty, and N/A
@@ -2292,10 +2423,13 @@ function PCRTable({
     Object.entries(values).forEach(([st, value]) => {
       const upperKey = st.toUpperCase();
       if (upperKey === 'POS. CONTROL' || upperKey === 'POS CONTROL' || upperKey === 'POS_CONTROL') return;
+      if (st === 'pos_control' || st === 'neg_control') return;
 
       const upperValue = (value as string)?.toUpperCase() || '';
       if (value && value !== '' && upperValue !== 'N/A' && upperValue !== 'NA') {
-        sampleTypeEntries.push([st, value as string]);
+        // Map col_N to actual sample type name
+        const displayName = getSampleTypeName(st);
+        sampleTypeEntries.push([displayName, value as string]);
       }
     });
 
@@ -2407,7 +2541,7 @@ function PCRTable({
                       : (row.unit.sample_type?.filter(st => selectedSampleTypes.includes(st)).join(', ') || '-')
                     }
                   </td>}
-                  {diseases.map((disease) => renderCTCell(getPoolCTValue(row.poolData, disease)))}
+                  {diseases.map((disease) => renderCTCell(getPoolCTValue(row.poolData, disease, row.sampleTypes)))}
                   <td className="px-4 py-2 border border-gray-300 text-center whitespace-nowrap">
                     {row.unit.coa_status ? (
                       <Link

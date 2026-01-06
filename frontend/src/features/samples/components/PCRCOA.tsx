@@ -648,6 +648,8 @@ export function PCRCOA() {
     const diseases = unitData.pcr_data?.diseases_list || [];
     // Use sampleTypes state (not unitData.sample_type) to reflect UI changes
     const pdfSampleTypes = sampleTypes.length > 0 ? sampleTypes : (unitData.sample_type || []);
+    // Unique sample types for display in Sample Information (no duplicates)
+    const uniqueSampleTypes = [...new Set(pdfSampleTypes)];
     
     // Format detection methods as "Kit for (Disease1, Disease2)"
     const kitToDiseasesMap: { [kit: string]: string[] } = {};
@@ -681,8 +683,9 @@ export function PCRCOA() {
     const tableRows = diseases.map((diseaseItem, diseaseIndex) => {
       const pools = getPools(diseaseItem.disease, diseaseIndex);
       const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
-      const sampleTypeCells = pdfSampleTypes.map(st => {
-        const result = pool.values?.[st] || 'NA';
+      const sampleTypeCells = pdfSampleTypes.map((_st, colIdx) => {
+        // Use index-based keys (col_0, col_1, etc.) to match how values are stored
+        const result = pool.values?.[`col_${colIdx}`] || 'NA';
         const formattedResult = formatCTValue(result);
         return `<td>${escapeHtml(formattedResult)}</td>`;
       }).join('');
@@ -808,7 +811,7 @@ export function PCRCOA() {
         </div>
       </div>
       <div style="margin-top:6px; display:grid; grid-template-columns:120px 1fr; row-gap:4px; font-size:12px">
-        <div class="info-label">Sample Types:</div><div class="info-value">${escapeHtml(pdfSampleTypes.join(', '))}</div>
+        <div class="info-label">Sample Types:</div><div class="info-value">${escapeHtml(uniqueSampleTypes.join(', '))}</div>
         <div class="info-label">Extraction Method:</div><div class="info-value">${escapeHtml(unitData.pcr_data?.extraction_method || 'N/A')}</div>
         <div class="info-label">Detection Method:</div><div class="info-value">${escapeHtml(detectionMethods)}</div>
       </div>
@@ -1171,7 +1174,7 @@ export function PCRCOA() {
             <span className="font-semibold">Source:</span> {unitData.source || '-'}
           </div>
           <div>
-            <span className="font-semibold">Sample Types:</span> {sampleTypes.join(', ') || '-'}
+            <span className="font-semibold">Sample Types:</span> {[...new Set(sampleTypes)].join(', ') || '-'}
           </div>
           <div>
             <span className="font-semibold">Extraction Method:</span> {unitData.pcr_data?.extraction_method || '-'}

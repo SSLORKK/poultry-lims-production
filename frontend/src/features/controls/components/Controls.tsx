@@ -60,6 +60,7 @@ const Controls = () => {
   const [editIValue, setEditIValue] = useState('');
   const [editSValue, setEditSValue] = useState('');
   const [editSignatureImage, setEditSignatureImage] = useState<string | null>(null);
+  const [editPIN, setEditPIN] = useState('');
   const editFileInputRef = useRef<HTMLInputElement>(null);
   
   const queryClient = useQueryClient();
@@ -239,8 +240,18 @@ const Controls = () => {
       data.s_value = editSValue || null;
     }
     
-    if (activeTab === 'signature' && editSignatureImage) {
-      data.signature_image = editSignatureImage;
+    if (activeTab === 'signature') {
+      if (editSignatureImage) {
+        data.signature_image = editSignatureImage;
+      }
+      // Include PIN if provided (allows updating PIN)
+      if (editPIN.trim()) {
+        if (!/^\d{6,8}$/.test(editPIN)) {
+          alert('PIN must be 6-8 digits');
+          return;
+        }
+        data.pin = editPIN;
+      }
     }
     
     updateMutation.mutate({ id, data });
@@ -253,6 +264,7 @@ const Controls = () => {
     setEditIValue('');
     setEditSValue('');
     setEditSignatureImage(null);
+    setEditPIN('');
   };
 
   // Handle edit signature image upload
@@ -743,6 +755,14 @@ const Controls = () => {
                           )}
                           {activeTab === 'signature' && (
                             <div className="flex items-center gap-3">
+                              <input
+                                type="password"
+                                value={editPIN}
+                                onChange={(e) => setEditPIN(e.target.value)}
+                                placeholder="New PIN (6-8 digits)"
+                                className="w-40 px-3 py-2 border border-purple-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                                maxLength={8}
+                              />
                               {editSignatureImage ? (
                                 <div className="relative">
                                   <img 

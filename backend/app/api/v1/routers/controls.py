@@ -726,18 +726,29 @@ def verify_pin(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # Find all active signatures and check the PIN against each one
     signatures = db.query(Signature).filter(Signature.is_active == True).all()
+    
+    logger.info(f"[PIN DEBUG] Verifying PIN, found {len(signatures)} active signatures")
     
     pin_bytes = data.pin.encode('utf-8')
     
     for sig in signatures:
-        # Verify PIN using bcrypt
-        pin_hash_bytes = sig.pin_hash.encode('utf-8')
-        if bcrypt.checkpw(pin_bytes, pin_hash_bytes):
-            return PINVerifyResponse(name=str(sig.name), is_valid=True, signature_image=sig.signature_image)
+        try:
+            # Verify PIN using bcrypt
+            pin_hash_bytes = sig.pin_hash.encode('utf-8')
+            logger.info(f"[PIN DEBUG] Checking signature id={sig.id}, name={sig.name}, hash_prefix={sig.pin_hash[:10]}")
+            if bcrypt.checkpw(pin_bytes, pin_hash_bytes):
+                logger.info(f"[PIN DEBUG] PIN MATCHED for {sig.name}")
+                return PINVerifyResponse(name=str(sig.name), is_valid=True, signature_image=sig.signature_image)
+        except Exception as e:
+            logger.error(f"[PIN DEBUG] ERROR checking signature id={sig.id}, name={sig.name}: {str(e)}")
     
     # No matching PIN found
+    logger.info(f"[PIN DEBUG] No matching PIN found")
     return PINVerifyResponse(name="", is_valid=False, signature_image=None)
 
 

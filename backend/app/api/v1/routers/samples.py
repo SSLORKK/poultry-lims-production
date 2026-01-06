@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func, distinct
 from typing import List, Optional, Set
 from datetime import datetime
 from app.db.session import get_db
@@ -131,6 +132,30 @@ def get_available_years(
     sample_service = SampleService(db)
     years = sample_service.sample_repo.get_available_years()
     return {"years": years}
+
+
+@router.get("/total-count")
+def get_total_count(
+    department_id: Optional[int] = Query(None, description="Filter by department ID"),
+    year: Optional[int] = Query(None, description="Filter by year"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get total count of samples for pagination (to know last page number)"""
+    from sqlalchemy import func
+    from app.models.sample import Sample
+    from app.models.unit import Unit
+    
+    query = db.query(func.count(distinct(Sample.id)))
+    
+    if year is not None:
+        query = query.filter(Sample.year == year)
+    
+    if department_id is not None:
+        query = query.join(Unit).filter(Unit.department_id == department_id)
+    
+    total = query.scalar() or 0
+    return {"total": total}
 
 
 @router.get("/filter-options")

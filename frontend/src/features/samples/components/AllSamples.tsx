@@ -52,7 +52,12 @@ export const AllSamples = () => {
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => {
+    const saved = localStorage.getItem('allSamples_page');
+    return saved ? parseInt(saved) : 1;
+  });
+  const [totalCount, setTotalCount] = useState(0);
+  const [lastPageLoaded, setLastPageLoaded] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
@@ -67,17 +72,47 @@ export const AllSamples = () => {
   // Suppress unused variable warning - toasts are used in JSX
   void toasts;
 
-  // Multi-select filter states (matching PCRSamples pattern)
-  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
-  const [selectedFarms, setSelectedFarms] = useState<string[]>([]);
-  const [selectedFlocks, setSelectedFlocks] = useState<string[]>([]);
-  const [selectedAges, setSelectedAges] = useState<string[]>([]);
-  const [selectedSampleTypes, setSelectedSampleTypes] = useState<string[]>([]);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-  const [selectedHouses, setSelectedHouses] = useState<string[]>([]);
-  const [selectedCycles, setSelectedCycles] = useState<string[]>([]);
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
+  // Multi-select filter states - restore from localStorage
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_companies');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedFarms, setSelectedFarms] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_farms');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedFlocks, setSelectedFlocks] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_flocks');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedAges, setSelectedAges] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_ages');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedSampleTypes, setSelectedSampleTypes] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_sampleTypes');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedSources, setSelectedSources] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_sources');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_statuses');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedHouses, setSelectedHouses] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_houses');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedCycles, setSelectedCycles] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_cycles');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(() => {
+    const saved = localStorage.getItem('allSamples_departments');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Date range filters
   const [dateFrom, setDateFrom] = useState<string>('');
@@ -176,16 +211,57 @@ export const AllSamples = () => {
   }, []);
 
   useEffect(() => {
+    const fetchTotalAndGoToLastPage = async () => {
+      try {
+        const response = await apiClient.get('/samples/total-count', { params: { year: selectedYear } });
+        const total = response.data.total || 0;
+        setTotalCount(total);
+        
+        // Only auto-navigate to last page on first load if no saved page
+        if (!lastPageLoaded && !localStorage.getItem('allSamples_page')) {
+          const lastPage = Math.max(1, Math.ceil(total / 100));
+          setPage(lastPage);
+        }
+        setLastPageLoaded(true);
+      } catch (err) {
+        console.error('Failed to fetch total count:', err);
+        setLastPageLoaded(true);
+      }
+    };
+    fetchTotalAndGoToLastPage();
+  }, [selectedYear]);
+
+  useEffect(() => {
+    localStorage.setItem('allSamples_page', String(page));
+  }, [page]);
+
+  useEffect(() => {
+    localStorage.setItem('allSamples_companies', JSON.stringify(selectedCompanies));
+    localStorage.setItem('allSamples_farms', JSON.stringify(selectedFarms));
+    localStorage.setItem('allSamples_flocks', JSON.stringify(selectedFlocks));
+    localStorage.setItem('allSamples_ages', JSON.stringify(selectedAges));
+    localStorage.setItem('allSamples_sampleTypes', JSON.stringify(selectedSampleTypes));
+    localStorage.setItem('allSamples_sources', JSON.stringify(selectedSources));
+    localStorage.setItem('allSamples_statuses', JSON.stringify(selectedStatuses));
+    localStorage.setItem('allSamples_houses', JSON.stringify(selectedHouses));
+    localStorage.setItem('allSamples_cycles', JSON.stringify(selectedCycles));
+    localStorage.setItem('allSamples_departments', JSON.stringify(selectedDepartments));
+  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDepartments]);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(globalSearch);
       setPage(1); // Reset to first page when searching
+      localStorage.removeItem('allSamples_page'); // Clear saved page when searching
     }, 300);
     return () => clearTimeout(timer);
   }, [globalSearch]);
 
   useEffect(() => {
-    fetchSamples();
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, page, debouncedSearch]);
+    if (lastPageLoaded) {
+      fetchSamples();
+    }
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, page, debouncedSearch, lastPageLoaded]);
 
   // Close export dropdown when clicking outside
   useEffect(() => {
@@ -415,7 +491,21 @@ export const AllSamples = () => {
     setSelectedDepartments([]);
     setDateFrom('');
     setDateTo('');
-    setPage(1);
+    // Clear localStorage filters
+    localStorage.removeItem('allSamples_page');
+    localStorage.removeItem('allSamples_companies');
+    localStorage.removeItem('allSamples_farms');
+    localStorage.removeItem('allSamples_flocks');
+    localStorage.removeItem('allSamples_ages');
+    localStorage.removeItem('allSamples_sampleTypes');
+    localStorage.removeItem('allSamples_sources');
+    localStorage.removeItem('allSamples_statuses');
+    localStorage.removeItem('allSamples_houses');
+    localStorage.removeItem('allSamples_cycles');
+    localStorage.removeItem('allSamples_departments');
+    // Go to last page (newest data)
+    const lastPage = Math.max(1, Math.ceil(totalCount / 100));
+    setPage(lastPage);
   };
 
   const formatDate = (dateString: string) => {
@@ -1468,7 +1558,7 @@ export const AllSamples = () => {
               <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
                 <div className="text-sm text-gray-600">
                   Showing <span className="font-semibold text-gray-800">{filteredRows.length}</span> records
-                  {filteredRows.length === 100 && <span className="text-gray-500 ml-2">(Page {page})</span>}
+                  <span className="text-gray-500 ml-2">(Page {page} of {Math.max(1, Math.ceil(totalCount / 100))})</span>
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -1490,10 +1580,10 @@ export const AllSamples = () => {
                       &lsaquo;
                     </button>
 
-                    {/* Show numbered page buttons - dynamically based on data */}
+                    {/* Show numbered page buttons - using totalCount for accurate pagination */}
                     {(() => {
                       const itemsPerPage = 100;
-                      const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage) + (filteredRows.length === itemsPerPage ? page : page - 1));
+                      const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
                       const pagesToShow = [];
                       const startPage = Math.max(1, page - 2);
                       const endPage = Math.min(totalPages, page + 2);
@@ -1515,18 +1605,24 @@ export const AllSamples = () => {
                     })()}
 
                     <button
-                      onClick={() => setPage((p) => p + 1)}
-                      disabled={filteredRows.length < 100}
+                      onClick={() => {
+                        const totalPages = Math.max(1, Math.ceil(totalCount / 100));
+                        setPage((p) => Math.min(totalPages, p + 1));
+                      }}
+                      disabled={page >= Math.ceil(totalCount / 100)}
                       className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                       aria-label="Next page"
                     >
                       &rsaquo;
                     </button>
                     <button
-                      onClick={() => setPage((p) => p + 10)}
-                      disabled={filteredRows.length < 100}
+                      onClick={() => {
+                        const totalPages = Math.max(1, Math.ceil(totalCount / 100));
+                        setPage(totalPages);
+                      }}
+                      disabled={page >= Math.ceil(totalCount / 100)}
                       className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                      aria-label="Jump forward"
+                      aria-label="Last page"
                     >
                       &raquo;
                     </button>

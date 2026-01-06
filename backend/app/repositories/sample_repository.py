@@ -27,8 +27,8 @@ class SampleRepository:
                date_from: Optional[str] = None, date_to: Optional[str] = None, age: Optional[List[str]] = None, 
                sample_type: Optional[List[str]] = None) -> List[Sample]:
         """Get samples with intelligent filtering: 
-        - No filters (only year/department): Returns last 100 samples ordered by ID DESC (most recent first)
-        - Any other filter applied: Returns ALL matching records
+        - Returns samples ordered by ID ASC (oldest first, so page numbers stay stable)
+        - Page 1 = oldest samples, last page = newest samples
         - Year filter is always applied but doesn't count as a 'filter' for limit logic
         """
         # Use selectinload instead of joinedload for better performance with collections
@@ -83,8 +83,8 @@ class SampleRepository:
                 query = query.join(Unit)
             query = query.filter(Unit.department_id == department_id).distinct()
         
-        # Order by ID DESC to get latest created samples first
-        query = query.order_by(Sample.id.desc())
+        # Order by ID ASC so page numbers stay stable (page 1 = oldest, last page = newest)
+        query = query.order_by(Sample.id.asc())
         
         # Check if filters are applied (excluding year and department which are commonly set)
         has_filters = (
