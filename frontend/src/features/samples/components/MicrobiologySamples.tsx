@@ -406,7 +406,7 @@ export const MicrobiologySamples = () => {
             technician: unit.microbiology_data?.technician_name || '-',
             notes: unit.notes || '',
             sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
-            status: sample.status,
+            status: unit.coa_status || sample.status,
             samplesNumber: unit.samples_number,
             diseases,
             batchNo: unit.microbiology_data?.batch_no || '-',
@@ -1648,6 +1648,7 @@ export const MicrobiologySamples = () => {
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Unit Code</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Date Received</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Company</th>
+                  <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Sample Type</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Farm</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Flock</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Cycle</th>
@@ -1655,7 +1656,6 @@ export const MicrobiologySamples = () => {
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Age</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Source</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Technician</th>
-                  <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Sample Type</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Diseases</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Batch No</th>
                   <th className="border border-gray-300 px-3 py-3 text-left font-semibold text-gray-700">Fumigation</th>
@@ -1726,6 +1726,7 @@ export const MicrobiologySamples = () => {
                     </td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-600">{formatDate(row.dateReceived)}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.company}</td>
+                    <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.sampleType}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.farm}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.flock}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.cycle}</td>
@@ -1733,7 +1734,6 @@ export const MicrobiologySamples = () => {
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.age ?? '-'}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.source}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.technician}</td>
-                    <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.sampleType}</td>
                     <td className="border border-gray-300 px-3 py-2 text-xs text-gray-600">{row.diseases}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.batchNo}</td>
                     <td className="border border-gray-300 px-3 py-2 text-gray-700">{row.fumigation}</td>

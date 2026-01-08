@@ -11,9 +11,11 @@ class PCRCOA(Base):
     unit_id = Column(Integer, ForeignKey("units.id"), nullable=False, unique=True, index=True)
     
     # COA specific fields
+    report_no = Column(String(20), nullable=True, unique=True, index=True)  # Format: P(yy)-x, assigned on completion
     test_results = Column(JSON, nullable=True)  # Structure: {disease: {sample_type: result}}
     sample_types = Column(JSON, nullable=True)  # Stores column configuration for duplicated columns
     house_values = Column(JSON, nullable=True)  # Stores house values per column
+    hidden_diseases = Column(JSON, nullable=True)  # Disease keys hidden from PDF export
     date_tested = Column(Date, nullable=True, index=True)
     tested_by = Column(String(255), nullable=True)
     reviewed_by = Column(String(255), nullable=True)

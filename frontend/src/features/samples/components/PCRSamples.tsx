@@ -382,7 +382,7 @@ export const PCRSamples = () => {
             technician: unit.pcr_data?.technician_name || 'N/A',
             notes: unit.notes || '',
             sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
-            status: sample.status,
+            status: unit.coa_status || sample.status,
             samplesNumber: unit.samples_number,  // Sub-samples count
             extraction: unit.pcr_data?.extraction || null,  // Samples count (No. Samples)
             detection: unit.pcr_data?.detection || null,  // Detection value - Total Tests = Sum of Detection values
@@ -1886,7 +1886,9 @@ export const PCRSamples = () => {
                     <span className="font-bold text-blue-700">{row.unitCode}</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                       row.status?.toLowerCase() === 'completed' || row.status?.toLowerCase() === 'complete' ? 'bg-green-100 text-green-700' :
-                      row.status?.toLowerCase() === 'in_progress' || row.status?.toLowerCase() === 'in progress' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'
+                      row.status?.toLowerCase() === 'in_progress' || row.status?.toLowerCase() === 'in progress' ? 'bg-yellow-100 text-yellow-700' :
+                      row.status?.toLowerCase() === 'need approval' || row.status?.toLowerCase() === 'pending approval' ? 'bg-blue-100 text-blue-700' :
+                      'bg-gray-100 text-gray-700'
                     }`}>{row.status}</span>
                   </div>
                   <span className="text-xs text-gray-500">{formatDate(row.dateReceived)}</span>

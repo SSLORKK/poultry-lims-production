@@ -177,6 +177,7 @@ export function MicrobiologyCOA() {
     return hiddenIndexes[disease]?.has(index) || false;
   };
 
+
   // Handwritten Signature Images
   const [testedBySignatureImage, setTestedBySignatureImage] = useState<string | null>(null);
   const [reviewedBySignatureImage, setReviewedBySignatureImage] = useState<string | null>(null);
@@ -520,36 +521,11 @@ export function MicrobiologyCOA() {
             setHiddenIndexes(loadedHiddenIndexes);
           }
           
-          // Extract actual indices from saved test_results and update unitData's index_list
-          // This ensures the form displays the saved data correctly even if index_list was changed
-          const savedTestResults = coa.test_results || {};
-          const firstDisease = Object.keys(savedTestResults)[0];
-          if (firstDisease && savedTestResults[firstDisease]) {
-            const savedKeys = Object.keys(savedTestResults[firstDisease]);
-            // Extract base indices (remove suffixes like _mould, _fungi, _coliform, etc.)
-            const baseIndices = new Set<string>();
-            savedKeys.forEach(key => {
-              const baseKey = key.split('_')[0];
-              // Skip if it looks like a suffix key (number followed by underscore)
-              if (baseKey && !key.endsWith('_raw')) {
-                baseIndices.add(baseKey);
-              }
-            });
-            // Update unitData with saved indices if they differ
-            const savedIndexList = Array.from(baseIndices).filter(idx => 
-              !idx.includes('raw') && !idx.includes('mould') && !idx.includes('fungi') && 
-              !idx.includes('coliform') && !idx.includes('ecoli') && !idx.includes('pseudomonas')
-            );
-            if (savedIndexList.length > 0) {
-              setUnitData(prev => prev ? {
-                ...prev,
-                microbiology_data: {
-                  ...prev.microbiology_data!,
-                  index_list: savedIndexList
-                }
-              } : prev);
-            }
-          }
+          // IMPORTANT: Always use the current unit's index_list from the backend
+          // This ensures edited indexes from the register form are properly reflected
+          // The saved test_results will be merged with current indexes - existing data preserved,
+          // new indexes get empty values, removed indexes' data is retained in case of undo
+          // DO NOT overwrite unitData.index_list with saved COA indices
           
           // Always generate disease-specific report numbers based on unit code
           // This ensures correct codes like CU25-1, FUNGI25-1, SALM25-1, WATER25-1, COUNT25-1
@@ -2020,6 +1996,7 @@ export function MicrobiologyCOA() {
     const sampleCode = unitData.sample?.sample_code || '';
     const unitCode = unitData.unit_code || '';
     const company = unitData.sample?.company || '';
+    const sampleType = Array.isArray(unitData.sample_type) ? unitData.sample_type.join(', ') : (unitData.sample_type || '');
     const farm = unitData.sample?.farm || '';
     const flock = unitData.sample?.flock || '';
     const houses = unitData.house && unitData.house.length > 0 ? unitData.house.join(', ') : '';
@@ -2033,6 +2010,7 @@ export function MicrobiologyCOA() {
     if (sampleCode) filenameParts.push(sampleCode);
     if (unitCode) filenameParts.push(unitCode);
     if (company) filenameParts.push(company);
+    if (sampleType) filenameParts.push(sampleType);
     if (farm) filenameParts.push(farm);
     if (flock) filenameParts.push(flock);
     if (houses) filenameParts.push(houses);

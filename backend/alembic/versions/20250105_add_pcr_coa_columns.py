@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20250105_coa_cols'
-down_revision = '20260103_add_sequence_based_counters'
+down_revision = '20260103_seq_counters'
 branch_labels = None
 depends_on = None
 

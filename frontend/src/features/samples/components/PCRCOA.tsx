@@ -33,9 +33,11 @@ interface UnitData {
 interface COAData {
   id?: number;
   unit_id: number;
+  report_no?: string | null;  // Format: P(yy)-x, assigned on completion
   test_results: { [disease: string]: { [sampleType: string]: string } };
   sample_types?: string[] | null;
   house_values?: string[] | null;
+  hidden_diseases?: string[] | null;  // Disease keys that are hidden from PDF export
   date_tested: string | null;
   tested_by: string | null;
   reviewed_by: string | null;
@@ -78,7 +80,9 @@ export function PCRCOA() {
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
   // Ordered diseases list for drag and drop reordering
-  const [orderedDiseases, setOrderedDiseases] = useState<Array<{ disease: string; kit_type: string }>>([]);
+  const [orderedDiseases, setOrderedDiseases] = useState<Array<{ disease: string; kit_type: string }>>([]); 
+  // Hidden diseases (excluded from PDF export)
+  const [hiddenDiseases, setHiddenDiseases] = useState<Set<string>>(new Set());
   
   // House values per column index (for the House row) - each column has independent house value
   const [houseValues, setHouseValues] = useState<string[]>([]);
@@ -236,6 +240,10 @@ export function PCRCOA() {
         setLabManager(coa.lab_manager || '');
         setNotes(coa.notes || '');
         setStatus(coa.status || 'draft');
+        // Load hidden diseases from saved COA
+        if (coa.hidden_diseases && Array.isArray(coa.hidden_diseases)) {
+          setHiddenDiseases(new Set(coa.hidden_diseases));
+        }
         
         // Fetch signature images for existing COA data
         const fetchSignature = async (name: string) => {
@@ -428,6 +436,19 @@ export function PCRCOA() {
   // Check if user can approve (admin, manager, or supervisor)
   const canApprove = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'lab_supervisor';
 
+  // Toggle disease visibility (hide/show from PDF export)
+  const toggleDiseaseVisibility = (diseaseKey: string) => {
+    setHiddenDiseases(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(diseaseKey)) {
+        newSet.delete(diseaseKey);
+      } else {
+        newSet.add(diseaseKey);
+      }
+      return newSet;
+    });
+  };
+
   const handleSave = async () => {
     if (!unitData) return;
 
@@ -444,6 +465,7 @@ export function PCRCOA() {
           test_results: testResults,
           sample_types: sampleTypes,
           house_values: houseValues,
+          hidden_diseases: Array.from(hiddenDiseases),
           date_tested: dateTested || null,
           tested_by: testedBy || null,
           reviewed_by: reviewedBy || null,
@@ -460,6 +482,7 @@ export function PCRCOA() {
           test_results: testResults,
           sample_types: sampleTypes,
           house_values: houseValues,
+          hidden_diseases: Array.from(hiddenDiseases),
           date_tested: dateTested || null,
           tested_by: testedBy || null,
           reviewed_by: reviewedBy || null,
@@ -683,27 +706,34 @@ export function PCRCOA() {
       </th>`;
     }).join('');
 
-    // Generate disease rows for test results
-    const tableRows = diseases.map((diseaseItem, diseaseIndex) => {
-      const pools = getPools(diseaseItem.disease, diseaseIndex);
-      const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
-      const sampleTypeCells = pdfSampleTypes.map((_st, colIdx) => {
-        // Use index-based keys (col_0, col_1, etc.) to match how values are stored
-        const result = pool.values?.[`col_${colIdx}`] || 'NA';
-        const formattedResult = formatCTValue(result);
-        return `<td>${escapeHtml(formattedResult)}</td>`;
+    // Generate disease rows for test results (filter out hidden diseases)
+    const tableRows = diseases
+      .filter((diseaseItem, diseaseIndex) => {
+        const diseaseKey = getDiseaseKey(diseaseItem.disease, diseaseIndex);
+        return !hiddenDiseases.has(diseaseKey);
+      })
+      .map((diseaseItem, diseaseIndex) => {
+        // Find original index for this disease to get correct test results
+        const originalIndex = diseases.findIndex((d, i) => d.disease === diseaseItem.disease && i === diseaseIndex);
+        const pools = getPools(diseaseItem.disease, originalIndex);
+        const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
+        const sampleTypeCells = pdfSampleTypes.map((_st, colIdx) => {
+          // Use index-based keys (col_0, col_1, etc.) to match how values are stored
+          const result = pool.values?.[`col_${colIdx}`] || 'NA';
+          const formattedResult = formatCTValue(result);
+          return `<td>${escapeHtml(formattedResult)}</td>`;
+        }).join('');
+        const formattedPosControl = formatCTValue(pool.pos_control || '');
+        const negControl = pool.neg_control || 'Confirmed';
+        return `
+          <tr>
+            <td>${escapeHtml(diseaseItem.disease)}</td>
+            ${sampleTypeCells}
+            <td>${escapeHtml(formattedPosControl)}</td>
+            <td>${escapeHtml(negControl)}</td>
+          </tr>
+        `;
       }).join('');
-      const formattedPosControl = formatCTValue(pool.pos_control || '');
-      const negControl = pool.neg_control || 'Confirmed';
-      return `
-        <tr>
-          <td>${escapeHtml(diseaseItem.disease)}</td>
-          ${sampleTypeCells}
-          <td>${escapeHtml(formattedPosControl)}</td>
-          <td>${escapeHtml(negControl)}</td>
-        </tr>
-      `;
-    }).join('');
     
     return `
 <!DOCTYPE html>
@@ -796,7 +826,7 @@ export function PCRCOA() {
         <h2 style="margin:0; font-size:14px; color:var(--brand-ink)">Sample Information</h2>
         <div style="text-align:right">
           <span style="color:var(--muted); font-weight:600; font-size:11px">Test Report No.: </span>
-          <span style="color:var(--brand-ink); font-weight:800; font-size:13px">${escapeHtml(unitData.unit_code.replace('PCR-', 'P-'))}</span>
+          <span style="color:var(--brand-ink); font-weight:800; font-size:13px">${escapeHtml(coaData?.report_no || 'Pending')}</span>
         </div>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
@@ -805,6 +835,7 @@ export function PCRCOA() {
           <div class="info-label">Company:</div><div class="info-value">${escapeHtml(unitData.sample.company)}</div>
           <div class="info-label">Flock:</div><div class="info-value">${escapeHtml(unitData.sample.flock || 'N/A')}</div>
           <div class="info-label">House:</div><div class="info-value">${escapeHtml(unitData.house?.join(', ') || 'N/A')}</div>
+          <div class="info-label">Received Date:</div><div class="info-value">${escapeHtml(unitData.sample.date_received || 'N/A')}</div>
         </div>
         <div class="info-grid">
           <div class="info-label">Unit Code:</div><div class="info-value">${escapeHtml(unitData.unit_code)}</div>
@@ -812,6 +843,7 @@ export function PCRCOA() {
           <div class="info-label">Cycle:</div><div class="info-value">${escapeHtml(unitData.sample.cycle || 'N/A')}</div>
           <div class="info-label">Age:</div><div class="info-value">${escapeHtml(unitData.age || 'N/A')}</div>
           <div class="info-label">Source:</div><div class="info-value">${escapeHtml(Array.isArray(unitData.source) ? unitData.source.join(', ') : (unitData.source || 'N/A'))}</div>
+          <div class="info-label">Result Date:</div><div class="info-value">${escapeHtml(dateTested || 'N/A')}</div>
         </div>
       </div>
       <div style="margin-top:6px; display:grid; grid-template-columns:120px 1fr; row-gap:4px; font-size:12px">
@@ -936,6 +968,8 @@ export function PCRCOA() {
     
     // Build filename string with all available parts
     let filenameParts: string[] = [];
+    // Add report number at the beginning if available
+    if (coaData?.report_no) filenameParts.push(coaData.report_no);
     if (sampleCode) filenameParts.push(sampleCode);
     if (unitCode) filenameParts.push(unitCode);
     if (company) filenameParts.push(company);
@@ -989,47 +1023,36 @@ export function PCRCOA() {
     });
     
     const htmlContent = generatePDFTemplate();
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      // Write content
-      printWindow.document.open();
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
+    
+    // Use a more performant approach with iframe instead of window.open
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = 'none';
+    printFrame.style.visibility = 'hidden';
+    
+    document.body.appendChild(printFrame);
+    
+    const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
+    if (frameDoc) {
+      frameDoc.open();
+      frameDoc.write(htmlContent);
+      frameDoc.close();
       
-      // Single print trigger after images load - no duplicate calls
-      let printTriggered = false;
-      const triggerPrint = () => {
-        if (printTriggered) return;
-        printTriggered = true;
-        requestAnimationFrame(() => {
-          printWindow.focus();
-          printWindow.print();
-        });
+      // Use onload for better performance
+      printFrame.onload = () => {
+        setTimeout(() => {
+          printFrame.contentWindow?.focus();
+          printFrame.contentWindow?.print();
+          // Clean up after print dialog closes
+          setTimeout(() => {
+            document.body.removeChild(printFrame);
+          }, 1000);
+        }, 100);
       };
-      
-      // Wait for all images to load before printing
-      const images = printWindow.document.querySelectorAll('img');
-      if (images.length === 0) {
-        setTimeout(triggerPrint, 300);
-      } else {
-        let loadedCount = 0;
-        const checkAllLoaded = () => {
-          loadedCount++;
-          if (loadedCount >= images.length) {
-            triggerPrint();
-          }
-        };
-        images.forEach((img) => {
-          if (img.complete) {
-            checkAllLoaded();
-          } else {
-            img.onload = checkAllLoaded;
-            img.onerror = checkAllLoaded;
-          }
-        });
-        // Fallback timeout if images take too long
-        setTimeout(triggerPrint, 3000);
-      }
     }
   };
 
@@ -1401,14 +1424,25 @@ export function PCRCOA() {
                     const diseaseKey = getDiseaseKey(diseaseItem.disease, diseaseIndex);
                     const pools = testResults[diseaseKey] || [];
                     const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
+                    const isHidden = hiddenDiseases.has(diseaseKey);
                     
                     return (
                       <tr 
                         key={diseaseKey}
-                        className="hover:bg-gray-50"
+                        className={`${isHidden ? 'bg-gray-100 opacity-50' : 'hover:bg-gray-50'}`}
                       >
-                        <td className="border border-gray-300 px-4 py-2 font-medium">
-                          {diseaseItem.disease}
+                        <td className="border border-gray-300 px-2 py-2 font-medium">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleDiseaseVisibility(diseaseKey)}
+                              className={`w-6 h-6 flex items-center justify-center rounded text-white font-bold text-sm ${isHidden ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}`}
+                              title={isHidden ? 'Show in PDF' : 'Hide from PDF'}
+                            >
+                              {isHidden ? '+' : '-'}
+                            </button>
+                            <span className={isHidden ? 'line-through text-gray-400' : ''}>{diseaseItem.disease}</span>
+                          </div>
                         </td>
                         {sampleTypes.map((_sampleType, colIndex) => (
                           <td key={`${diseaseKey}-col-${colIndex}`} className="border border-gray-300 px-2 py-2">

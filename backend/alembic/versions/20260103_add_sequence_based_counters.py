@@ -16,7 +16,7 @@ from datetime import datetime
 
 # revision identifiers, used by Alembic.
 revision = '20260103_seq_counters'
-down_revision = ('20250102_add_recycle_bin', 'add_user_security_fields')
+down_revision = '20250103_unique'
 branch_labels = None
 depends_on = None
 

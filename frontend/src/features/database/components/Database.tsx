@@ -565,6 +565,9 @@ export default function Database() {
     selectedPCRResults.length
   ].reduce((a, b) => a + b, 0);
 
+  // Effective total count for pagination - use filtered count when filters are applied
+  const effectiveTotalCount = activeFilterCount > 0 ? filteredUnits.length : totalCount;
+
   // Show message if user has no database permissions
   if (allowedDepartments.length === 0) {
     return (
@@ -1098,7 +1101,7 @@ export default function Database() {
           <PCRTable
             units={paginatedUnits}
             totalUnits={filteredUnits.length}
-            totalCount={totalCount}
+            totalCount={effectiveTotalCount}
             diseases={pcrColumns}
             renderCTCell={renderCTCell}
             selectedSampleTypes={selectedSampleTypes}
@@ -1636,7 +1639,7 @@ export default function Database() {
             <MicrobiologyTable
               units={paginatedUnits}
               totalUnits={filteredUnits.length}
-              totalCount={totalCount}
+              totalCount={effectiveTotalCount}
               visibleColumns={visibleColumns}
               page={page}
               onPageChange={setPage}
@@ -1646,7 +1649,7 @@ export default function Database() {
             <SerologyTable
               units={paginatedUnits}
               totalUnits={filteredUnits.length}
-              totalCount={totalCount}
+              totalCount={effectiveTotalCount}
               visibleColumns={visibleColumns}
               page={page}
               onPageChange={setPage}

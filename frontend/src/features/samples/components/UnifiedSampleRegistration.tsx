@@ -241,6 +241,18 @@ function UnitFieldsForm({
                     className={`w-full border-2 ${colors.border} rounded-lg px-3 py-1.5 text-sm ${colors.focusBorder} ${colors.focusRing} transition-all`}
                     onClick={(e) => e.stopPropagation()}
                   />
+                  {(unit.house?.length || 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateUnit(globalIndex, { house: [] });
+                      }}
+                      className="mt-2 w-full px-3 py-1.5 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition-all"
+                    >
+                      Clear All ({unit.house?.length})
+                    </button>
+                  )}
                 </div>
 
                 {/* Options List */}
@@ -346,6 +358,18 @@ function UnitFieldsForm({
                     className={`w-full border-2 ${colors.border} rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-100 transition-all`}
                     onClick={(e) => e.stopPropagation()}
                   />
+                  {(unit.source?.length || 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateUnit(globalIndex, { source: [] });
+                      }}
+                      className="mt-2 w-full px-3 py-1.5 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition-all"
+                    >
+                      Clear All ({unit.source?.length})
+                    </button>
+                  )}
                 </div>
 
                 {/* Options List */}
@@ -438,6 +462,18 @@ function UnitFieldsForm({
                     className={`w-full border-2 ${colors.border} rounded-lg px-3 py-1.5 text-sm ${colors.focusBorder} ${colors.focusRing} transition-all`}
                     onClick={(e) => e.stopPropagation()}
                   />
+                  {(unit.sample_type?.length || 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateUnit(globalIndex, { sample_type: [] });
+                      }}
+                      className="mt-2 w-full px-3 py-1.5 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition-all"
+                    >
+                      Clear All ({unit.sample_type?.length})
+                    </button>
+                  )}
                 </div>
 
                 {/* Options List */}
@@ -1189,7 +1225,23 @@ function MicrobiologyFields({
             <div className={`absolute z-[9999] w-full mt-2 bg-white border-2 ${colors.border} rounded-xl shadow-2xl max-h-80 overflow-hidden`}>
               {/* Search and Actions */}
               <div className={`p-3 bg-gradient-to-r ${colors.gradient} border-b-2 ${colors.border}`}>
-                {/* Removed Select All / Clear All buttons */}
+                {(unit.microbiology_data?.diseases_list?.length || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateUnit(globalIndex, {
+                        microbiology_data: {
+                          ...unit.microbiology_data!,
+                          diseases_list: [],
+                        },
+                      });
+                    }}
+                    className="w-full px-3 py-1.5 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition-all"
+                  >
+                    Clear All ({unit.microbiology_data?.diseases_list?.length})
+                  </button>
+                )}
               </div>
 
               {/* Options List */}
@@ -3155,6 +3207,15 @@ export const UnifiedSampleRegistration = () => {
                             className="w-full border border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-100"
                             onClick={(e) => e.stopPropagation()}
                           />
+                          {cycle && (
+                            <button
+                              type="button"
+                              onClick={() => { setCycle(''); setCycleSearch(''); }}
+                              className="mt-2 w-full px-3 py-1.5 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition-all"
+                            >
+                              Clear selection
+                            </button>
+                          )}
                         </div>
                         <div className="max-h-44 overflow-y-auto">
                           {cycles.filter(item => item.name.toLowerCase().includes(cycleSearch.toLowerCase())).map((item) => (
