@@ -33,6 +33,7 @@ class MicrobiologyCOA(Base):
     
     # Metadata
     date_tested = Column(Date, nullable=True, index=True)  # Fixed: Changed from String to Date
+    result_date = Column(Date, nullable=True)  # Separate result date from test date
     tested_by = Column(String(255), nullable=True)
     reviewed_by = Column(String(255), nullable=True)
     lab_supervisor = Column(String(255), nullable=True)

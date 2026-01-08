@@ -89,6 +89,7 @@ export function MicrobiologyCOA() {
   const [isolateTypes, setIsolateTypes] = useState<{ [disease: string]: { [sampleType: string]: string } }>({});
   const [testRanges, setTestRanges] = useState<{ [disease: string]: { [sampleType: string]: string } }>({});
   const [dateTested, setDateTested] = useState<string>('');
+  const [resultDate, setResultDate] = useState<string>('');
   const [testedBy, setTestedBy] = useState<string>('');
   const [reviewedBy, setReviewedBy] = useState<string>('');
   const [labSupervisor, setLabSupervisor] = useState<string>('');
@@ -586,6 +587,7 @@ export function MicrobiologyCOA() {
           setIsolateTypes(coa.isolate_types || {});
           setTestRanges(coa.test_ranges || {});
           setDateTested(coa.date_tested || '');
+          setResultDate((coa as any).result_date || '');
           setTestedBy(coa.tested_by || '');
           setReviewedBy(coa.reviewed_by || '');
           setLabSupervisor(coa.lab_supervisor || '');
@@ -897,6 +899,7 @@ export function MicrobiologyCOA() {
         hidden_indexes: hiddenIndexesForSave,
         ast_data: astDataForSave,
         date_tested: dateTested || null,
+        result_date: resultDate || null,
         tested_by: testedBy || null,
         reviewed_by: reviewedBy || null,
         lab_supervisor: labSupervisor || null,
@@ -975,8 +978,8 @@ export function MicrobiologyCOA() {
     }
 
     // Validate required fields
-    if (!dateTested) {
-      setError('Result Date is required. Please select a test date before approving.');
+    if (!resultDate) {
+      setError('Result Date is required. Please select a result date before approving.');
       return;
     }
 
@@ -1042,6 +1045,7 @@ export function MicrobiologyCOA() {
         hidden_indexes: hiddenIndexesForSave,
         ast_data: astDataForSave,
         date_tested: dateTested || null,
+        result_date: resultDate || null,
         tested_by: testedBy || null,
         reviewed_by: reviewedBy || null,
         lab_supervisor: labSupervisor || null,
@@ -1109,6 +1113,7 @@ export function MicrobiologyCOA() {
         isolate_types: isolateTypes || {},
         test_ranges: testRanges || {},
         date_tested: dateTested || null,
+        result_date: resultDate || null,
         tested_by: testedBy || null,
         reviewed_by: reviewedBy || null,
         lab_supervisor: labSupervisor || null,
@@ -3393,8 +3398,8 @@ export function MicrobiologyCOA() {
               <label className="block text-sm font-medium text-gray-700 mb-2">Result Date  <span className="text-red-500">*</span></label>
               <input
                 type="date"
-                value={dateTested}
-                onChange={(e) => setDateTested(e.target.value)}
+                value={resultDate}
+                onChange={(e) => setResultDate(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 print:border-0"
                 disabled={status === 'finalized'}
               />

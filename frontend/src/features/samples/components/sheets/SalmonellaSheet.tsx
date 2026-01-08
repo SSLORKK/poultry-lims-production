@@ -7,7 +7,8 @@ import {
   addSerialNumbers,
   filterByDateRange,
   sortByMicCode,
-  ensureMinimumRows
+  ensureMinimumRows,
+  calculateRowColors
 } from '../../utils/sheetUtils';
 import { SheetRef, SheetProps, BaseSheetRow } from '../../types/sheetTypes';
 
@@ -152,14 +153,19 @@ export const SalmonellaSheet = forwardRef<SheetRef, SheetProps>(({ startDate, en
 
     let descriptionPagesHtml = '';
 
+    // Calculate row colors for the entire sheet
+    const allRowColors = calculateRowColors(displayRows);
+
     for (let i = 0; i < descriptionPagesCount; i++) {
       const start = i * rowsPerPage;
       const end = start + rowsPerPage;
       const pageRows = displayRows.slice(start, end);
 
-      const tableRowsHtml = pageRows.map(row => {
+      const tableRowsHtml = pageRows.map((row, idx) => {
+        const globalIdx = start + idx;
+        const bgColor = allRowColors[globalIdx] === 'bg-gray-100' ? '#f3f4f6' : '#ffffff';
         return `
-                <tr style="background-color: #ffffff">
+                <tr style="background-color: ${bgColor}">
                     <td>${escapeHtml(row.labCode)}</td>
                     <td>${escapeHtml(row.micCode)}</td>
                     <td>${escapeHtml(row.sampleType)}</td>
@@ -937,18 +943,21 @@ export const SalmonellaSheet = forwardRef<SheetRef, SheetProps>(({ startDate, en
             </tr>
           </thead>
           <tbody>
-            {displayRows.map((row, i) => (
-              <tr key={i} className="bg-white">
-                <td className="border border-gray-300 p-2 h-8">{row.labCode}</td>
-                <td className="border border-gray-300 p-2">{row.micCode}</td>
-                <td className="border border-gray-300 p-2">{row.sampleType}</td>
-                <td className="border border-gray-300 p-2 text-center">{row.serialNo}</td>
-                <td className="border border-gray-300 p-2">{row.sampleIndex}</td>
-                <td className="border border-gray-300 p-2"></td>
-                <td className="border border-gray-300 p-2"></td>
-                <td className="border border-gray-300 p-2"></td>
-              </tr>
-            ))}
+            {(() => {
+              const rowColors = calculateRowColors(displayRows);
+              return displayRows.map((row, i) => (
+                <tr key={i} className={rowColors[i]}>
+                  <td className="border border-gray-300 p-2 h-8">{row.labCode}</td>
+                  <td className="border border-gray-300 p-2">{row.micCode}</td>
+                  <td className="border border-gray-300 p-2">{row.sampleType}</td>
+                  <td className="border border-gray-300 p-2 text-center">{row.serialNo}</td>
+                  <td className="border border-gray-300 p-2">{row.sampleIndex}</td>
+                  <td className="border border-gray-300 p-2"></td>
+                  <td className="border border-gray-300 p-2"></td>
+                  <td className="border border-gray-300 p-2"></td>
+                </tr>
+              ));
+            })()}
           </tbody>
         </table>
 

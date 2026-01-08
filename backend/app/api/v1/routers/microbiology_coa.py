@@ -26,6 +26,7 @@ class MicrobiologyCOACreate(BaseModel):
     hidden_indexes: Dict[str, List[str]] | None = None
     ast_data: Dict[str, Any] | None = None
     date_tested: str | None = None
+    result_date: str | None = None
     tested_by: str | None = None
     reviewed_by: str | None = None
     lab_supervisor: str | None = None
@@ -43,6 +44,7 @@ class MicrobiologyCOAUpdate(BaseModel):
     hidden_indexes: Dict[str, List[str]] | None = None
     ast_data: Dict[str, Any] | None = None
     date_tested: str | None = None
+    result_date: str | None = None
     tested_by: str | None = None
     reviewed_by: str | None = None
     lab_supervisor: str | None = None
@@ -123,6 +125,7 @@ def get_microbiology_coas_batch(
             "hidden_indexes": coa.hidden_indexes or {},
             "ast_data": coa.ast_data,
             "date_tested": coa.date_tested,
+            "result_date": coa.result_date,
             "tested_by": coa.tested_by,
             "reviewed_by": coa.reviewed_by,
             "lab_supervisor": coa.lab_supervisor,
@@ -165,6 +168,7 @@ def get_microbiology_coa(
             "hidden_indexes": coa.hidden_indexes or {},
             "ast_data": coa.ast_data,
             "date_tested": coa.date_tested,
+            "result_date": coa.result_date,
             "tested_by": coa.tested_by,
             "reviewed_by": coa.reviewed_by,
             "lab_supervisor": coa.lab_supervisor,
@@ -221,6 +225,7 @@ def create_microbiology_coa(
         ast_data=coa_data.ast_data,
         test_report_numbers=test_report_numbers,
         date_tested=coa_data.date_tested,
+        result_date=coa_data.result_date,
         tested_by=coa_data.tested_by,
         reviewed_by=coa_data.reviewed_by,
         lab_supervisor=coa_data.lab_supervisor,
@@ -330,6 +335,8 @@ def update_microbiology_coa(
         coa.hidden_indexes = coa_data.hidden_indexes  # type: ignore
     if coa_data.date_tested is not None:
         coa.date_tested = coa_data.date_tested  # type: ignore
+    if coa_data.result_date is not None:
+        coa.result_date = coa_data.result_date  # type: ignore
     if coa_data.tested_by is not None:
         coa.tested_by = coa_data.tested_by  # type: ignore
     if coa_data.reviewed_by is not None:

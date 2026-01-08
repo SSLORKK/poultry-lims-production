@@ -5,7 +5,8 @@ import {
     escapeHtml,
     addSerialNumbers,
     filterByDateRange,
-    sortByMicCode
+    sortByMicCode,
+    calculateRowColors
 } from '../../utils/sheetUtils';
 import { SheetRef, SheetProps, BaseSheetRow } from '../../types/sheetTypes';
 
@@ -296,14 +297,19 @@ export const CultureIsolationSheet = forwardRef<SheetRef, SheetProps>(({ startDa
 
         let descriptionPagesHtml = '';
 
+        // Calculate row colors for the entire sheet
+        const allRowColors = calculateRowColors(sheetRows);
+
         for (let i = 0; i < descriptionPagesCount; i++) {
             const start = i * rowsPerPage;
             const end = start + rowsPerPage;
             const pageRows = sheetRows.slice(start, end);
 
-            const tableRowsHtml = pageRows.map(row => {
+            const tableRowsHtml = pageRows.map((row, idx) => {
+                const globalIdx = start + idx;
+                const bgColor = allRowColors[globalIdx] === 'bg-gray-100' ? '#f3f4f6' : '#ffffff';
                 return `
-                <tr style="background-color: #ffffff">
+                <tr style="background-color: ${bgColor}">
                     <td>${escapeHtml(row.labCode)}</td>
                     <td>${escapeHtml(row.micCode)}</td>
                     <td style="text-align: center">${escapeHtml(row.serialNo)}</td>
@@ -1058,19 +1064,22 @@ export const CultureIsolationSheet = forwardRef<SheetRef, SheetProps>(({ startDa
                         </tr>
                     </thead>
                     <tbody>
-                        {sheetRows.map((row, i) => (
-                            <tr key={i} className="bg-white">
-                                <td className="border border-black p-2 h-8 text-black">{row.labCode}</td>
-                                <td className="border border-black p-2 text-black">{row.micCode}</td>
-                                <td className="border border-black p-2 text-center text-black">{row.serialNo}</td>
-                                <td className="border border-black p-2 text-black">{row.sampleType}</td>
-                                <td className="border border-black p-2 text-black">{row.sampleIndex}</td>
-                                <td className="border border-black p-2"></td>
-                                <td className="border border-black p-2"></td>
-                                <td className="border border-black p-2"></td>
-                                <td className="border border-black p-2"></td>
-                            </tr>
-                        ))}
+                        {(() => {
+                            const rowColors = calculateRowColors(sheetRows);
+                            return sheetRows.map((row, i) => (
+                                <tr key={i} className={rowColors[i]}>
+                                    <td className="border border-black p-2 h-8 text-black">{row.labCode}</td>
+                                    <td className="border border-black p-2 text-black">{row.micCode}</td>
+                                    <td className="border border-black p-2 text-center text-black">{row.serialNo}</td>
+                                    <td className="border border-black p-2 text-black">{row.sampleType}</td>
+                                    <td className="border border-black p-2 text-black">{row.sampleIndex}</td>
+                                    <td className="border border-black p-2"></td>
+                                    <td className="border border-black p-2"></td>
+                                    <td className="border border-black p-2"></td>
+                                    <td className="border border-black p-2"></td>
+                                </tr>
+                            ));
+                        })()}
                     </tbody>
                 </table>
 

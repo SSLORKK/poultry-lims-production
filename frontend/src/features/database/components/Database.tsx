@@ -159,7 +159,7 @@ export default function Database() {
     const saved = localStorage.getItem('database_page');
     return saved ? parseInt(saved) : 1;
   });
-  const [_totalCount, setTotalCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [lastPageLoaded, setLastPageLoaded] = useState(false);
   const [pageSize] = useState(100); // Fixed page size for display pagination
   const [maxDisplayLimit] = useState(1000); // Show last 1000 samples by default
@@ -1098,6 +1098,7 @@ export default function Database() {
           <PCRTable
             units={paginatedUnits}
             totalUnits={filteredUnits.length}
+            totalCount={totalCount}
             diseases={pcrColumns}
             renderCTCell={renderCTCell}
             selectedSampleTypes={selectedSampleTypes}
@@ -1635,6 +1636,7 @@ export default function Database() {
             <MicrobiologyTable
               units={paginatedUnits}
               totalUnits={filteredUnits.length}
+              totalCount={totalCount}
               visibleColumns={visibleColumns}
               page={page}
               onPageChange={setPage}
@@ -1644,6 +1646,7 @@ export default function Database() {
             <SerologyTable
               units={paginatedUnits}
               totalUnits={filteredUnits.length}
+              totalCount={totalCount}
               visibleColumns={visibleColumns}
               page={page}
               onPageChange={setPage}
@@ -1658,6 +1661,7 @@ export default function Database() {
 function PCRTable({
   units,
   totalUnits,
+  totalCount,
   diseases,
   renderCTCell,
   selectedSampleTypes,
@@ -1668,6 +1672,7 @@ function PCRTable({
 }: {
   units: Array<Unit & { sample: Sample }>;
   totalUnits: number;
+  totalCount: number;
   diseases: string[];
   renderCTCell: (value: string | undefined) => React.ReactElement;
   selectedSampleTypes: string[];
@@ -2551,10 +2556,10 @@ function PCRTable({
                 &lsaquo;
               </button>
 
-              {/* Show numbered page buttons - dynamically based on data */}
+              {/* Show numbered page buttons - dynamically based on total count */}
               {(() => {
                 const itemsPerPage = 100;
-                const totalPages = Math.max(1, Math.ceil(totalUnits / itemsPerPage) + (totalUnits === itemsPerPage ? page : page - 1));
+                const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
                 const pagesToShow = [];
                 const startPage = Math.max(1, page - 2);
                 const endPage = Math.min(totalPages, page + 2);
@@ -2610,6 +2615,7 @@ interface MicrobiologyCOAData {
 function MicrobiologyTable({
   units,
   totalUnits,
+  totalCount,
   visibleColumns,
   page,
   onPageChange,
@@ -2617,6 +2623,7 @@ function MicrobiologyTable({
 }: {
   units: Array<Unit & { sample: Sample }>;
   totalUnits: number;
+  totalCount: number;
   visibleColumns: Record<string, boolean>;
   page: number;
   onPageChange: (page: number) => void;
@@ -2823,6 +2830,7 @@ function MicrobiologyTable({
   };
 
   // Get isolate type for a unit
+  // Format: "culture (type1, type2), salmonella (type3)" for multiple diseases
   const getIsolateType = (unitId: number): string => {
     const coa = coaResults[unitId];
     if (!coa) return '-';
@@ -2831,21 +2839,41 @@ function MicrobiologyTable({
     const isolateTypes = (coa as any).isolate_types;
     if (!isolateTypes) return '-';
     
-    const types = new Set<string>();
-    Object.values(isolateTypes).forEach((diseaseIsolates: any) => {
-      if (typeof diseaseIsolates === 'object') {
-        Object.values(diseaseIsolates).forEach((type: any) => {
-          if (type && type !== '-' && type !== '') {
-            types.add(type);
+    // Group isolate types by disease
+    const diseaseIsolates: Record<string, Set<string>> = {};
+    
+    Object.entries(isolateTypes).forEach(([disease, locations]: [string, any]) => {
+      if (typeof locations === 'object') {
+        Object.values(locations).forEach((type: any) => {
+          // Filter out empty, dash-only, and placeholder values
+          if (type && type !== '-' && type !== '--' && type !== '---' && type.trim() !== '' && !type.match(/^-+$/)) {
+            if (!diseaseIsolates[disease]) {
+              diseaseIsolates[disease] = new Set();
+            }
+            diseaseIsolates[disease].add(type);
           }
         });
       }
     });
     
-    return types.size > 0 ? Array.from(types).join(', ') : '-';
+    // Build formatted string: "disease1 (type1, type2), disease2 (type3)"
+    const diseaseStrings: string[] = [];
+    
+    Object.entries(diseaseIsolates).forEach(([disease, types]) => {
+      const sortedTypes = Array.from(types).sort();
+      
+      if (sortedTypes.length > 0) {
+        // Use lowercase disease name for display
+        const displayDisease = disease.toLowerCase();
+        diseaseStrings.push(`${displayDisease} (${sortedTypes.join(', ')})`);
+      }
+    });
+    
+    return diseaseStrings.length > 0 ? diseaseStrings.join(', ') : '-';
   };
 
   // Get positive locations for a unit (sub-samples with positive/over-limit results)
+  // Format: "culture (location1, location2), salmonella (location3)" for multiple diseases
   const getPositiveLocations = (unitId: number): string => {
     const unit = units.find(u => u.id === unitId);
     const coa = coaResults[unitId];
@@ -2853,8 +2881,9 @@ function MicrobiologyTable({
     
     const sampleTypes = unit?.sample_type || [];
     const isFeed = sampleTypes.some(t => t.toLowerCase().includes('feed'));
-    const indexList = unit?.microbiology_data?.index_list || [];
-    const positiveLocationIndices = new Set<number>();
+    
+    // Group positive locations by disease - use Set of strings for location names
+    const diseaseLocations: Record<string, Set<string>> = {};
     
     Object.entries(coa.test_results).forEach(([disease, results]) => {
       const lowerDisease = disease.toLowerCase();
@@ -2895,26 +2924,35 @@ function MicrobiologyTable({
         }
         
         if (isPositive) {
-          // Extract base location index (e.g., "1" from "1_fungi" or "1_mould")
-          const baseLocationStr = location.split('_')[0];
-          const locationIndex = parseInt(baseLocationStr);
-          if (!isNaN(locationIndex) && locationIndex > 0) {
-            positiveLocationIndices.add(locationIndex);
+          // Extract base location name (e.g., "Liver" from "Liver_fungi" or just "Liver")
+          // The location key is the actual index name, not a numeric index
+          const baseLocation = location.split('_')[0];
+          
+          // Skip if it's a suffix-only key or empty
+          if (baseLocation && baseLocation.length > 0) {
+            if (!diseaseLocations[disease]) {
+              diseaseLocations[disease] = new Set();
+            }
+            diseaseLocations[disease].add(baseLocation);
           }
         }
       });
     });
     
-    // Sort indices and map to sample names from index_list
-    const sortedIndices = Array.from(positiveLocationIndices).sort((a, b) => a - b);
+    // Build formatted string: "disease1 (loc1, loc2), disease2 (loc3)"
+    const diseaseStrings: string[] = [];
     
-    // Map indices to sample names (index_list is 0-based, location indices are 1-based)
-    const sampleNames = sortedIndices.map(idx => {
-      const name = indexList[idx - 1]; // Convert 1-based to 0-based
-      return name || `Sample ${idx}`;
+    Object.entries(diseaseLocations).forEach(([disease, locationNames]) => {
+      const sortedLocations = Array.from(locationNames).sort();
+      
+      if (sortedLocations.length > 0) {
+        // Use lowercase disease name for display
+        const displayDisease = disease.toLowerCase();
+        diseaseStrings.push(`${displayDisease} (${sortedLocations.join(', ')})`);
+      }
     });
     
-    return sampleNames.length > 0 ? sampleNames.join(', ') : '-';
+    return diseaseStrings.length > 0 ? diseaseStrings.join(', ') : '-';
   };
 
   // Helper function to get unit's overall result status for filtering
@@ -3484,7 +3522,7 @@ function MicrobiologyTable({
           <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&lsaquo;</button>
           {(() => {
             const itemsPerPage = 100;
-            const totalPages = Math.max(1, Math.ceil(totalUnits / itemsPerPage) + (totalUnits === itemsPerPage ? page : page - 1));
+            const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
             const pagesToShow = [];
             const startPage = Math.max(1, page - 2);
             const endPage = Math.min(totalPages, page + 2);
@@ -3506,12 +3544,14 @@ function MicrobiologyTable({
 function SerologyTable({
   units,
   totalUnits,
+  totalCount,
   visibleColumns,
   page,
   onPageChange,
 }: {
   units: Array<Unit & { sample: Sample }>;
   totalUnits: number;
+  totalCount: number;
   visibleColumns: Record<string, boolean>;
   page: number;
   onPageChange: (page: number) => void;
@@ -4144,7 +4184,7 @@ function SerologyTable({
           <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&lsaquo;</button>
           {(() => {
             const itemsPerPage = 100;
-            const totalPages = Math.max(1, Math.ceil(totalUnits / itemsPerPage) + (totalUnits === itemsPerPage ? page : page - 1));
+            const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
             const pagesToShow = [];
             const startPage = Math.max(1, page - 2);
             const endPage = Math.min(totalPages, page + 2);

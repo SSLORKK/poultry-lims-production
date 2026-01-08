@@ -811,7 +811,7 @@ export function PCRCOA() {
           <div class="info-label">Farm:</div><div class="info-value">${escapeHtml(unitData.sample.farm)}</div>
           <div class="info-label">Cycle:</div><div class="info-value">${escapeHtml(unitData.sample.cycle || 'N/A')}</div>
           <div class="info-label">Age:</div><div class="info-value">${escapeHtml(unitData.age || 'N/A')}</div>
-          <div class="info-label">Source:</div><div class="info-value">${escapeHtml(unitData.source || 'N/A')}</div>
+          <div class="info-label">Source:</div><div class="info-value">${escapeHtml(Array.isArray(unitData.source) ? unitData.source.join(', ') : (unitData.source || 'N/A'))}</div>
         </div>
       </div>
       <div style="margin-top:6px; display:grid; grid-template-columns:120px 1fr; row-gap:4px; font-size:12px">
@@ -1175,7 +1175,7 @@ export function PCRCOA() {
             <span className="font-semibold">Age:</span> {unitData.age || '-'}
           </div>
           <div>
-            <span className="font-semibold">Source:</span> {unitData.source || '-'}
+            <span className="font-semibold">Source:</span> {Array.isArray(unitData.source) ? unitData.source.join(', ') : (unitData.source || '-')}
           </div>
           <div>
             <span className="font-semibold">Sample Types:</span> {[...new Set(sampleTypes)].join(', ') || '-'}
