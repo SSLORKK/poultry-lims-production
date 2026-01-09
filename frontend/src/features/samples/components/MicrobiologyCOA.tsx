@@ -372,18 +372,20 @@ export function MicrobiologyCOA() {
         methods[disease] = '';
       }
 
-      unit.microbiology_data?.index_list?.forEach((index) => {
+      unit.microbiology_data?.index_list?.forEach((index, rowIdx) => {
         // Set default values based on disease type
         const diseaseLower = disease.toLowerCase();
         if (diseaseLower.includes('total count')) {
-          results[disease][index] = 'Less than 1 CFU';
-          results[disease][`${index}_mould`] = 'Less than 1 CFU';
-          results[disease][`${index}_fungi`] = '-------';
+          // Use rowIdx for unique keys to avoid duplicate index issues
+          results[disease][`row${rowIdx}_tbc_result`] = 'Less than 1 CFU';
+          results[disease][`row${rowIdx}_mould_result`] = 'Less than 1 CFU';
+          results[disease][`row${rowIdx}_fungi`] = '-------';
         } else if (diseaseLower.includes('water')) {
-          results[disease][index] = 'Less than 1 CFU';
-          results[disease][`${index}_coliform`] = 'Less than 1 CFU';
-          results[disease][`${index}_ecoli`] = 'Less than 1 CFU';
-          results[disease][`${index}_pseudomonas`] = 'Less than 1 CFU';
+          // Use rowIdx for unique keys to avoid duplicate index issues
+          results[disease][`row${rowIdx}_tbc_result`] = 'Less than 1 CFU';
+          results[disease][`row${rowIdx}_coliform_result`] = 'Less than 1 CFU';
+          results[disease][`row${rowIdx}_ecoli_result`] = 'Less than 1 CFU';
+          results[disease][`row${rowIdx}_pseudomonas_result`] = 'Less than 1 CFU';
         } else if (diseaseLower.includes('salmonella')) {
           results[disease][index] = 'Not Detected';
         } else if (diseaseLower.includes('culture')) {
@@ -761,8 +763,8 @@ export function MicrobiologyCOA() {
       if (!newResults[currentDisease]) {
         newResults[currentDisease] = {};
       }
-      unitData.microbiology_data.index_list.forEach(idx => {
-        newResults[currentDisease][idx] = value;
+      unitData.microbiology_data.index_list.forEach((_, rowIdx) => {
+        newResults[currentDisease][`row${rowIdx}_tbc_result`] = value;
       });
       setTestResults(newResults);
     } else if (type === 'water_coliform') {
@@ -770,8 +772,8 @@ export function MicrobiologyCOA() {
       if (!newResults[currentDisease]) {
         newResults[currentDisease] = {};
       }
-      unitData.microbiology_data.index_list.forEach(idx => {
-        newResults[currentDisease][`${idx}_coliform`] = value;
+      unitData.microbiology_data.index_list.forEach((_, rowIdx) => {
+        newResults[currentDisease][`row${rowIdx}_coliform_result`] = value;
       });
       setTestResults(newResults);
     } else if (type === 'water_ecoli') {
@@ -779,8 +781,8 @@ export function MicrobiologyCOA() {
       if (!newResults[currentDisease]) {
         newResults[currentDisease] = {};
       }
-      unitData.microbiology_data.index_list.forEach(idx => {
-        newResults[currentDisease][`${idx}_ecoli`] = value;
+      unitData.microbiology_data.index_list.forEach((_, rowIdx) => {
+        newResults[currentDisease][`row${rowIdx}_ecoli_result`] = value;
       });
       setTestResults(newResults);
     } else if (type === 'water_pseudomonas') {
@@ -788,8 +790,8 @@ export function MicrobiologyCOA() {
       if (!newResults[currentDisease]) {
         newResults[currentDisease] = {};
       }
-      unitData.microbiology_data.index_list.forEach(idx => {
-        newResults[currentDisease][`${idx}_pseudomonas`] = value;
+      unitData.microbiology_data.index_list.forEach((_, rowIdx) => {
+        newResults[currentDisease][`row${rowIdx}_pseudomonas_result`] = value;
       });
       setTestResults(newResults);
     } else if (type === 'totalcount_tbc') {
@@ -797,8 +799,8 @@ export function MicrobiologyCOA() {
       if (!newResults[currentDisease]) {
         newResults[currentDisease] = {};
       }
-      unitData.microbiology_data.index_list.forEach(idx => {
-        newResults[currentDisease][idx] = value;
+      unitData.microbiology_data.index_list.forEach((_, rowIdx) => {
+        newResults[currentDisease][`row${rowIdx}_tbc_result`] = value;
       });
       setTestResults(newResults);
     } else if (type === 'totalcount_mould') {
@@ -806,8 +808,8 @@ export function MicrobiologyCOA() {
       if (!newResults[currentDisease]) {
         newResults[currentDisease] = {};
       }
-      unitData.microbiology_data.index_list.forEach(idx => {
-        newResults[currentDisease][`${idx}_mould`] = value;
+      unitData.microbiology_data.index_list.forEach((_, rowIdx) => {
+        newResults[currentDisease][`row${rowIdx}_mould_result`] = value;
       });
       setTestResults(newResults);
     } else if (type === 'totalcount_fungi') {
@@ -815,8 +817,8 @@ export function MicrobiologyCOA() {
       if (!newResults[currentDisease]) {
         newResults[currentDisease] = {};
       }
-      unitData.microbiology_data.index_list.forEach(idx => {
-        newResults[currentDisease][`${idx}_fungi`] = value;
+      unitData.microbiology_data.index_list.forEach((_, rowIdx) => {
+        newResults[currentDisease][`row${rowIdx}_fungi`] = value;
       });
       setTestResults(newResults);
     }
@@ -1375,14 +1377,16 @@ export function MicrobiologyCOA() {
           let pseudomonasResult = '';
 
           if (isTotalCount) {
-            result = testResults[disease]?.[index] || 'Less than 1 CFU';
-            mouldResult = testResults[disease]?.[`${index}_mould`] || 'Less than 1 CFU';
-            fungiResult = testResults[disease]?.[`${index}_fungi`] || '-------';
+            // Use actualIdx (row index) for unique keys to avoid duplicate index issues
+            result = testResults[disease]?.[`row${actualIdx}_tbc_result`] || 'Less than 1 CFU';
+            mouldResult = testResults[disease]?.[`row${actualIdx}_mould_result`] || 'Less than 1 CFU';
+            fungiResult = testResults[disease]?.[`row${actualIdx}_fungi`] || '-------';
           } else if (isWaterRow) {
-            result = testResults[disease]?.[index] || 'Less than 1 CFU';
-            coliformResult = testResults[disease]?.[`${index}_coliform`] || 'Less than 1 CFU';
-            ecoliResult = testResults[disease]?.[`${index}_ecoli`] || 'Less than 1 CFU';
-            pseudomonasResult = testResults[disease]?.[`${index}_pseudomonas`] || 'Less than 1 CFU';
+            // Use actualIdx (row index) for unique keys to avoid duplicate index issues
+            result = testResults[disease]?.[`row${actualIdx}_tbc_result`] || 'Less than 1 CFU';
+            coliformResult = testResults[disease]?.[`row${actualIdx}_coliform_result`] || 'Less than 1 CFU';
+            ecoliResult = testResults[disease]?.[`row${actualIdx}_ecoli_result`] || 'Less than 1 CFU';
+            pseudomonasResult = testResults[disease]?.[`row${actualIdx}_pseudomonas_result`] || 'Less than 1 CFU';
           } else {
             result = testResults[disease]?.[index] || (
               isSalmonella ? 'Not Detected' :
@@ -2795,37 +2799,37 @@ export function MicrobiologyCOA() {
                                     <input
                                       type="number"
                                       id={`cell-${currentDiseaseIndex}-${rowIdx}-tbc`}
-                                      value={testResults[currentDisease]?.[`${index}_raw`] || ''}
+                                      value={testResults[currentDisease]?.[`row${rowIdx}_raw`] || ''}
                                       onChange={(e) => {
                                         const newResults = { ...testResults };
                                         if (!newResults[currentDisease]) {
                                           newResults[currentDisease] = {};
                                         }
                                         const rawValue = e.target.value;
-                                        newResults[currentDisease][`${index}_raw`] = rawValue;
+                                        newResults[currentDisease][`row${rowIdx}_raw`] = rawValue;
                                         // Calculate and store the result: (entered * dilution) * volume
                                         const numValue = parseFloat(rawValue) || 0;
                                         const calculated = (numValue * waterDilution) * waterVolume;
-                                        newResults[currentDisease][index] = rawValue ? calculated.toString() : '';
+                                        newResults[currentDisease][`row${rowIdx}_tbc_result`] = rawValue ? calculated.toString() : '';
                                         setTestResults(newResults);
                                       }}
                                       className="w-full px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
                                       placeholder="Less than 1 CFU"
                                       disabled={status === 'finalized'}
                                       onContextMenu={(e) => {
-                                        if (rowIdx === 0 && testResults[currentDisease]?.[index]) {
+                                        if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_tbc_result`]) {
                                           e.preventDefault();
                                           setContextMenu({
                                             visible: true,
                                             x: e.clientX,
                                             y: e.clientY,
                                             type: 'water_tbc',
-                                            value: testResults[currentDisease][index]
+                                            value: testResults[currentDisease][`row${rowIdx}_tbc_result`]
                                           });
                                         }
                                       }}
                                     />
-                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[index] || 'Less than 1 CFU'}</span>
+                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`row${rowIdx}_tbc_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -2833,36 +2837,36 @@ export function MicrobiologyCOA() {
                                     <input
                                       type="number"
                                       id={`cell-${currentDiseaseIndex}-${rowIdx}-coliform`}
-                                      value={testResults[currentDisease]?.[`${index}_coliform_raw`] || ''}
+                                      value={testResults[currentDisease]?.[`row${rowIdx}_coliform_raw`] || ''}
                                       onChange={(e) => {
                                         const newResults = { ...testResults };
                                         if (!newResults[currentDisease]) {
                                           newResults[currentDisease] = {};
                                         }
                                         const rawValue = e.target.value;
-                                        newResults[currentDisease][`${index}_coliform_raw`] = rawValue;
+                                        newResults[currentDisease][`row${rowIdx}_coliform_raw`] = rawValue;
                                         const numValue = parseFloat(rawValue) || 0;
                                         const calculated = (numValue * waterDilution) * waterVolume;
-                                        newResults[currentDisease][`${index}_coliform`] = rawValue ? calculated.toString() : '';
+                                        newResults[currentDisease][`row${rowIdx}_coliform_result`] = rawValue ? calculated.toString() : '';
                                         setTestResults(newResults);
                                       }}
                                       className="w-full px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
                                       placeholder="Less than 1 CFU"
                                       disabled={status === 'finalized'}
                                       onContextMenu={(e) => {
-                                        if (rowIdx === 0 && testResults[currentDisease]?.[`${index}_coliform`]) {
+                                        if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_coliform_result`]) {
                                           e.preventDefault();
                                           setContextMenu({
                                             visible: true,
                                             x: e.clientX,
                                             y: e.clientY,
                                             type: 'water_coliform',
-                                            value: testResults[currentDisease][`${index}_coliform`]
+                                            value: testResults[currentDisease][`row${rowIdx}_coliform_result`]
                                           });
                                         }
                                       }}
                                     />
-                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`${index}_coliform`] || 'Less than 1 CFU'}</span>
+                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`row${rowIdx}_coliform_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -2870,36 +2874,36 @@ export function MicrobiologyCOA() {
                                     <input
                                       type="number"
                                       id={`cell-${currentDiseaseIndex}-${rowIdx}-ecoli`}
-                                      value={testResults[currentDisease]?.[`${index}_ecoli_raw`] || ''}
+                                      value={testResults[currentDisease]?.[`row${rowIdx}_ecoli_raw`] || ''}
                                       onChange={(e) => {
                                         const newResults = { ...testResults };
                                         if (!newResults[currentDisease]) {
                                           newResults[currentDisease] = {};
                                         }
                                         const rawValue = e.target.value;
-                                        newResults[currentDisease][`${index}_ecoli_raw`] = rawValue;
+                                        newResults[currentDisease][`row${rowIdx}_ecoli_raw`] = rawValue;
                                         const numValue = parseFloat(rawValue) || 0;
                                         const calculated = (numValue * waterDilution) * waterVolume;
-                                        newResults[currentDisease][`${index}_ecoli`] = rawValue ? calculated.toString() : '';
+                                        newResults[currentDisease][`row${rowIdx}_ecoli_result`] = rawValue ? calculated.toString() : '';
                                         setTestResults(newResults);
                                       }}
                                       className="w-full px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
                                       placeholder="Less than 1 CFU"
                                       disabled={status === 'finalized'}
                                       onContextMenu={(e) => {
-                                        if (rowIdx === 0 && testResults[currentDisease]?.[`${index}_ecoli`]) {
+                                        if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_ecoli_result`]) {
                                           e.preventDefault();
                                           setContextMenu({
                                             visible: true,
                                             x: e.clientX,
                                             y: e.clientY,
                                             type: 'water_ecoli',
-                                            value: testResults[currentDisease][`${index}_ecoli`]
+                                            value: testResults[currentDisease][`row${rowIdx}_ecoli_result`]
                                           });
                                         }
                                       }}
                                     />
-                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`${index}_ecoli`] || 'Less than 1 CFU'}</span>
+                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`row${rowIdx}_ecoli_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -2907,36 +2911,36 @@ export function MicrobiologyCOA() {
                                     <input
                                       type="number"
                                       id={`cell-${currentDiseaseIndex}-${rowIdx}-pseudomonas`}
-                                      value={testResults[currentDisease]?.[`${index}_pseudomonas_raw`] || ''}
+                                      value={testResults[currentDisease]?.[`row${rowIdx}_pseudomonas_raw`] || ''}
                                       onChange={(e) => {
                                         const newResults = { ...testResults };
                                         if (!newResults[currentDisease]) {
                                           newResults[currentDisease] = {};
                                         }
                                         const rawValue = e.target.value;
-                                        newResults[currentDisease][`${index}_pseudomonas_raw`] = rawValue;
+                                        newResults[currentDisease][`row${rowIdx}_pseudomonas_raw`] = rawValue;
                                         const numValue = parseFloat(rawValue) || 0;
                                         const calculated = (numValue * waterDilution) * waterVolume;
-                                        newResults[currentDisease][`${index}_pseudomonas`] = rawValue ? calculated.toString() : '';
+                                        newResults[currentDisease][`row${rowIdx}_pseudomonas_result`] = rawValue ? calculated.toString() : '';
                                         setTestResults(newResults);
                                       }}
                                       className="w-full px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
                                       placeholder="Less than 1 CFU"
                                       disabled={status === 'finalized'}
                                       onContextMenu={(e) => {
-                                        if (rowIdx === 0 && testResults[currentDisease]?.[`${index}_pseudomonas`]) {
+                                        if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_pseudomonas_result`]) {
                                           e.preventDefault();
                                           setContextMenu({
                                             visible: true,
                                             x: e.clientX,
                                             y: e.clientY,
                                             type: 'water_pseudomonas',
-                                            value: testResults[currentDisease][`${index}_pseudomonas`]
+                                            value: testResults[currentDisease][`row${rowIdx}_pseudomonas_result`]
                                           });
                                         }
                                       }}
                                     />
-                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`${index}_pseudomonas`] || 'Less than 1 CFU'}</span>
+                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`row${rowIdx}_pseudomonas_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                               </>
@@ -2945,22 +2949,22 @@ export function MicrobiologyCOA() {
                                 {/* Per-row Dilution Selector */}
                                 <td className="border border-gray-300 px-2 py-2 text-center">
                                   <select
-                                    value={totalCountDilutions[index] ?? 0.11}
+                                    value={totalCountDilutions[rowIdx] ?? 0.11}
                                     onChange={(e) => {
                                       const newDilution = Number(e.target.value);
-                                      setTotalCountDilutions(prev => ({ ...prev, [index]: newDilution }));
+                                      setTotalCountDilutions(prev => ({ ...prev, [rowIdx]: newDilution }));
                                       // Recalculate TBC and Mould results with new dilution
                                       const newResults = { ...testResults };
                                       if (newResults[currentDisease]) {
-                                        const num1Tbc = parseFloat(newResults[currentDisease][`${index}_tbc1`]) || 0;
-                                        const num2Tbc = parseFloat(newResults[currentDisease][`${index}_tbc2`]) || 0;
+                                        const num1Tbc = parseFloat(newResults[currentDisease][`row${rowIdx}_tbc1`]) || 0;
+                                        const num2Tbc = parseFloat(newResults[currentDisease][`row${rowIdx}_tbc2`]) || 0;
                                         if (num1Tbc || num2Tbc) {
-                                          newResults[currentDisease][index] = ((num1Tbc + num2Tbc) / newDilution).toFixed(0);
+                                          newResults[currentDisease][`row${rowIdx}_tbc_result`] = ((num1Tbc + num2Tbc) / newDilution).toFixed(0);
                                         }
-                                        const num1Mould = parseFloat(newResults[currentDisease][`${index}_mould1`]) || 0;
-                                        const num2Mould = parseFloat(newResults[currentDisease][`${index}_mould2`]) || 0;
+                                        const num1Mould = parseFloat(newResults[currentDisease][`row${rowIdx}_mould1`]) || 0;
+                                        const num2Mould = parseFloat(newResults[currentDisease][`row${rowIdx}_mould2`]) || 0;
                                         if (num1Mould || num2Mould) {
-                                          newResults[currentDisease][`${index}_mould`] = ((num1Mould + num2Mould) / newDilution).toFixed(0);
+                                          newResults[currentDisease][`row${rowIdx}_mould_result`] = ((num1Mould + num2Mould) / newDilution).toFixed(0);
                                         }
                                         setTestResults(newResults);
                                       }
@@ -2982,19 +2986,19 @@ export function MicrobiologyCOA() {
                                       <input
                                         type="number"
                                         id={`cell-${currentDiseaseIndex}-${rowIdx}-tbc1`}
-                                        value={testResults[currentDisease]?.[`${index}_tbc1`] || ''}
+                                        value={testResults[currentDisease]?.[`row${rowIdx}_tbc1`] || ''}
                                         onChange={(e) => {
                                           const newResults = { ...testResults };
                                           if (!newResults[currentDisease]) {
                                             newResults[currentDisease] = {};
                                           }
                                           const val1 = e.target.value;
-                                          newResults[currentDisease][`${index}_tbc1`] = val1;
+                                          newResults[currentDisease][`row${rowIdx}_tbc1`] = val1;
                                           const num1 = parseFloat(val1) || 0;
-                                          const num2 = parseFloat(newResults[currentDisease][`${index}_tbc2`]) || 0;
-                                          const dilution = totalCountDilutions[index] ?? 0.11;
+                                          const num2 = parseFloat(newResults[currentDisease][`row${rowIdx}_tbc2`]) || 0;
+                                          const dilution = totalCountDilutions[rowIdx] ?? 0.11;
                                           const calculated = (num1 + num2) / dilution;
-                                          newResults[currentDisease][index] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          newResults[currentDisease][`row${rowIdx}_tbc_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
                                           setTestResults(newResults);
                                         }}
                                         className="w-1/2 px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -3004,19 +3008,19 @@ export function MicrobiologyCOA() {
                                       <input
                                         type="number"
                                         id={`cell-${currentDiseaseIndex}-${rowIdx}-tbc2`}
-                                        value={testResults[currentDisease]?.[`${index}_tbc2`] || ''}
+                                        value={testResults[currentDisease]?.[`row${rowIdx}_tbc2`] || ''}
                                         onChange={(e) => {
                                           const newResults = { ...testResults };
                                           if (!newResults[currentDisease]) {
                                             newResults[currentDisease] = {};
                                           }
                                           const val2 = e.target.value;
-                                          newResults[currentDisease][`${index}_tbc2`] = val2;
-                                          const num1 = parseFloat(newResults[currentDisease][`${index}_tbc1`]) || 0;
+                                          newResults[currentDisease][`row${rowIdx}_tbc2`] = val2;
+                                          const num1 = parseFloat(newResults[currentDisease][`row${rowIdx}_tbc1`]) || 0;
                                           const num2 = parseFloat(val2) || 0;
-                                          const dilution = totalCountDilutions[index] ?? 0.11;
+                                          const dilution = totalCountDilutions[rowIdx] ?? 0.11;
                                           const calculated = (num1 + num2) / dilution;
-                                          newResults[currentDisease][index] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          newResults[currentDisease][`row${rowIdx}_tbc_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
                                           setTestResults(newResults);
                                         }}
                                         className="w-1/2 px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -3027,19 +3031,19 @@ export function MicrobiologyCOA() {
                                     <span 
                                       className="text-xs text-green-600 font-semibold cursor-pointer"
                                       onContextMenu={(e) => {
-                                        if (rowIdx === 0 && testResults[currentDisease]?.[index]) {
+                                        if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_tbc_result`]) {
                                           e.preventDefault();
                                           setContextMenu({
                                             visible: true,
                                             x: e.clientX,
                                             y: e.clientY,
                                             type: 'totalcount_tbc',
-                                            value: testResults[currentDisease][index]
+                                            value: testResults[currentDisease][`row${rowIdx}_tbc_result`]
                                           });
                                         }
                                       }}
                                       title="Right-click to fill all"
-                                    >= {testResults[currentDisease]?.[index] || 'Less than 1 CFU'}</span>
+                                    >= {testResults[currentDisease]?.[`row${rowIdx}_tbc_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -3048,19 +3052,19 @@ export function MicrobiologyCOA() {
                                       <input
                                         type="number"
                                         id={`cell-${currentDiseaseIndex}-${rowIdx}-mould1`}
-                                        value={testResults[currentDisease]?.[`${index}_mould1`] || ''}
+                                        value={testResults[currentDisease]?.[`row${rowIdx}_mould1`] || ''}
                                         onChange={(e) => {
                                           const newResults = { ...testResults };
                                           if (!newResults[currentDisease]) {
                                             newResults[currentDisease] = {};
                                           }
                                           const val1 = e.target.value;
-                                          newResults[currentDisease][`${index}_mould1`] = val1;
+                                          newResults[currentDisease][`row${rowIdx}_mould1`] = val1;
                                           const num1 = parseFloat(val1) || 0;
-                                          const num2 = parseFloat(newResults[currentDisease][`${index}_mould2`]) || 0;
-                                          const dilution = totalCountDilutions[index] ?? 0.11;
+                                          const num2 = parseFloat(newResults[currentDisease][`row${rowIdx}_mould2`]) || 0;
+                                          const dilution = totalCountDilutions[rowIdx] ?? 0.11;
                                           const calculated = (num1 + num2) / dilution;
-                                          newResults[currentDisease][`${index}_mould`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          newResults[currentDisease][`row${rowIdx}_mould_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
                                           setTestResults(newResults);
                                         }}
                                         className="w-1/2 px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -3070,19 +3074,19 @@ export function MicrobiologyCOA() {
                                       <input
                                         type="number"
                                         id={`cell-${currentDiseaseIndex}-${rowIdx}-mould2`}
-                                        value={testResults[currentDisease]?.[`${index}_mould2`] || ''}
+                                        value={testResults[currentDisease]?.[`row${rowIdx}_mould2`] || ''}
                                         onChange={(e) => {
                                           const newResults = { ...testResults };
                                           if (!newResults[currentDisease]) {
                                             newResults[currentDisease] = {};
                                           }
                                           const val2 = e.target.value;
-                                          newResults[currentDisease][`${index}_mould2`] = val2;
-                                          const num1 = parseFloat(newResults[currentDisease][`${index}_mould1`]) || 0;
+                                          newResults[currentDisease][`row${rowIdx}_mould2`] = val2;
+                                          const num1 = parseFloat(newResults[currentDisease][`row${rowIdx}_mould1`]) || 0;
                                           const num2 = parseFloat(val2) || 0;
-                                          const dilution = totalCountDilutions[index] ?? 0.11;
+                                          const dilution = totalCountDilutions[rowIdx] ?? 0.11;
                                           const calculated = (num1 + num2) / dilution;
-                                          newResults[currentDisease][`${index}_mould`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          newResults[currentDisease][`row${rowIdx}_mould_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
                                           setTestResults(newResults);
                                         }}
                                         className="w-1/2 px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -3093,43 +3097,43 @@ export function MicrobiologyCOA() {
                                     <span 
                                       className="text-xs text-green-600 font-semibold cursor-pointer"
                                       onContextMenu={(e) => {
-                                        if (rowIdx === 0 && testResults[currentDisease]?.[`${index}_mould`]) {
+                                        if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_mould_result`]) {
                                           e.preventDefault();
                                           setContextMenu({
                                             visible: true,
                                             x: e.clientX,
                                             y: e.clientY,
                                             type: 'totalcount_mould',
-                                            value: testResults[currentDisease][`${index}_mould`]
+                                            value: testResults[currentDisease][`row${rowIdx}_mould_result`]
                                           });
                                         }
                                       }}
                                       title="Right-click to fill all"
-                                    >= {testResults[currentDisease]?.[`${index}_mould`] || 'Less than 1 CFU'}</span>
+                                    >= {testResults[currentDisease]?.[`row${rowIdx}_mould_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
                                   <input
                                     type="text"
                                     id={`cell-${currentDiseaseIndex}-${rowIdx}-fungi`}
-                                    value={testResults[currentDisease]?.[`${index}_fungi`] || ''}
+                                    value={testResults[currentDisease]?.[`row${rowIdx}_fungi`] || ''}
                                     onChange={(e) => {
                                       const newResults = { ...testResults };
                                       if (!newResults[currentDisease]) {
                                         newResults[currentDisease] = {};
                                       }
-                                      newResults[currentDisease][`${index}_fungi`] = e.target.value;
+                                      newResults[currentDisease][`row${rowIdx}_fungi`] = e.target.value;
                                       setTestResults(newResults);
                                     }}
                                     onContextMenu={(e) => {
-                                      if (rowIdx === 0 && testResults[currentDisease]?.[`${index}_fungi`]) {
+                                      if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_fungi`]) {
                                         e.preventDefault();
                                         setContextMenu({
                                           visible: true,
                                           x: e.clientX,
                                           y: e.clientY,
                                           type: 'totalcount_fungi',
-                                          value: testResults[currentDisease][`${index}_fungi`]
+                                          value: testResults[currentDisease][`row${rowIdx}_fungi`]
                                         });
                                       }
                                     }}

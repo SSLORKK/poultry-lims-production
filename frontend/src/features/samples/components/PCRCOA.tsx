@@ -678,9 +678,11 @@ export function PCRCOA() {
     // Unique sample types for display in Sample Information (no duplicates)
     const uniqueSampleTypes = [...new Set(pdfSampleTypes)];
     
-    // Format detection methods as "Kit for (Disease1, Disease2)"
+    // Format detection methods as "Kit for (Disease1, Disease2)" - filter out hidden diseases
     const kitToDiseasesMap: { [kit: string]: string[] } = {};
-    diseases.forEach(d => {
+    diseases.forEach((d, idx) => {
+      const diseaseKey = getDiseaseKey(d.disease, idx);
+      if (hiddenDiseases.has(diseaseKey)) return; // Skip hidden diseases
       const kit = d.kit_type || 'Unknown Kit';
       if (!kitToDiseasesMap[kit]) kitToDiseasesMap[kit] = [];
       kitToDiseasesMap[kit].push(d.disease);

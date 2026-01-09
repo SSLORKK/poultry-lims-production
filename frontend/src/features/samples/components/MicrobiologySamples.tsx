@@ -498,8 +498,14 @@ export const MicrobiologySamples = () => {
 
   const uniqueStatuses = useMemo(() => {
     const statuses = new Set<string>();
+    // Add predefined statuses to ensure they're always available
+    ['in_progress', 'completed', 'need_approval', 'postponed', 'hold'].forEach(s => statuses.add(s));
     samples.forEach((sample) => {
       if (sample.status) statuses.add(sample.status);
+      // Also include coa_status from units
+      sample.units?.forEach((unit: any) => {
+        if (unit.coa_status) statuses.add(unit.coa_status);
+      });
     });
     return Array.from(statuses).sort();
   }, [samples]);
@@ -1706,7 +1712,7 @@ export const MicrobiologySamples = () => {
                             ? 'bg-green-100 text-green-800 border border-green-200'
                             : row.status?.toLowerCase() === 'postponed' || row.status?.toLowerCase() === 'hold'
                               ? 'bg-orange-100 text-orange-800 border border-orange-200'
-                              : row.status?.toLowerCase() === 'need approval' || row.status?.toLowerCase() === 'pending approval'
+                              : row.status?.toLowerCase() === 'need_approval' || row.status?.toLowerCase() === 'need approval' || row.status?.toLowerCase() === 'pending approval'
                                 ? 'bg-blue-100 text-blue-800 border border-blue-200'
                                 : row.status?.toLowerCase() === 'rejected'
                                   ? 'bg-red-100 text-red-800 border border-red-200'
@@ -1715,7 +1721,7 @@ export const MicrobiologySamples = () => {
                                     : 'bg-gray-100 text-gray-800 border border-gray-200'
                         }`}
                       >
-                        {row.status}
+                        {row.status?.toLowerCase() === 'need_approval' ? 'Need Approval' : row.status}
                       </span>
                     </td>
                     <td className="border border-gray-300 px-3 py-2 font-medium text-purple-600">

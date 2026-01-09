@@ -2559,46 +2559,52 @@ function PCRTable({
                 &lsaquo;
               </button>
 
-              {/* Show numbered page buttons - dynamically based on total count */}
+              {/* Show numbered page buttons - dynamically based on effective total count */}
               {(() => {
                 const itemsPerPage = 100;
-                const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
+                // Use effectiveTotalCount for proper pagination when filters are applied
+                const effectiveTotal = totalCount;
+                const totalPages = Math.max(1, Math.ceil(effectiveTotal / itemsPerPage));
                 const pagesToShow = [];
                 const startPage = Math.max(1, page - 2);
                 const endPage = Math.min(totalPages, page + 2);
                 for (let i = startPage; i <= endPage; i++) {
                   pagesToShow.push(i);
                 }
-                return pagesToShow.map(pageNum => (
-                  <button
-                    key={pageNum}
-                    onClick={() => onPageChange(pageNum)}
-                    className={`px-3 py-1 border rounded text-sm ${page === pageNum
-                      ? 'bg-blue-600 text-white'
-                      : 'hover:bg-gray-50'
-                      }`}
-                  >
-                    {pageNum}
-                  </button>
-                ));
+                const isLastPage = page >= totalPages;
+                return (
+                  <>
+                    {pagesToShow.map(pageNum => (
+                      <button
+                        key={pageNum}
+                        onClick={() => onPageChange(pageNum)}
+                        className={`px-3 py-1 border rounded text-sm ${page === pageNum
+                          ? 'bg-blue-600 text-white'
+                          : 'hover:bg-gray-50'
+                          }`}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => onPageChange(page + 1)}
+                      disabled={isLastPage}
+                      className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      aria-label="Next page"
+                    >
+                      &rsaquo;
+                    </button>
+                    <button
+                      onClick={() => onPageChange(Math.min(totalPages, page + 10))}
+                      disabled={isLastPage}
+                      className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      aria-label="Jump forward"
+                    >
+                      &raquo;
+                    </button>
+                  </>
+                );
               })()}
-
-              <button
-                onClick={() => onPageChange(page + 1)}
-                disabled={totalUnits < 100}
-                className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                aria-label="Next page"
-              >
-                &rsaquo;
-              </button>
-              <button
-                onClick={() => onPageChange(page + 10)}
-                disabled={totalUnits < 100}
-                className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                aria-label="Jump forward"
-              >
-                &raquo;
-              </button>
             </div>
           </div>
         </div>
@@ -3521,8 +3527,6 @@ function MicrobiologyTable({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => onPageChange(1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&laquo;</button>
-          <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&lsaquo;</button>
           {(() => {
             const itemsPerPage = 100;
             const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
@@ -3532,12 +3536,19 @@ function MicrobiologyTable({
             for (let i = startPage; i <= endPage; i++) {
               pagesToShow.push(i);
             }
-            return pagesToShow.map(pageNum => (
-              <button key={pageNum} onClick={() => onPageChange(pageNum)} className={`px-3 py-1 border rounded text-sm ${page === pageNum ? 'bg-blue-600 text-white' : 'hover:bg-gray-50'}`}>{pageNum}</button>
-            ));
+            const isLastPage = page >= totalPages;
+            return (
+              <>
+                <button onClick={() => onPageChange(1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&laquo;</button>
+                <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&lsaquo;</button>
+                {pagesToShow.map(pageNum => (
+                  <button key={pageNum} onClick={() => onPageChange(pageNum)} className={`px-3 py-1 border rounded text-sm ${page === pageNum ? 'bg-blue-600 text-white' : 'hover:bg-gray-50'}`}>{pageNum}</button>
+                ))}
+                <button onClick={() => onPageChange(page + 1)} disabled={isLastPage} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&rsaquo;</button>
+                <button onClick={() => onPageChange(Math.min(totalPages, page + 10))} disabled={isLastPage} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&raquo;</button>
+              </>
+            );
           })()}
-          <button onClick={() => onPageChange(page + 1)} disabled={totalUnits < 100} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&rsaquo;</button>
-          <button onClick={() => onPageChange(page + 10)} disabled={totalUnits < 100} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&raquo;</button>
         </div>
       </div>
     </div>
@@ -4183,8 +4194,6 @@ function SerologyTable({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => onPageChange(1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&laquo;</button>
-          <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&lsaquo;</button>
           {(() => {
             const itemsPerPage = 100;
             const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
@@ -4194,12 +4203,19 @@ function SerologyTable({
             for (let i = startPage; i <= endPage; i++) {
               pagesToShow.push(i);
             }
-            return pagesToShow.map(pageNum => (
-              <button key={pageNum} onClick={() => onPageChange(pageNum)} className={`px-3 py-1 border rounded text-sm ${page === pageNum ? 'bg-blue-600 text-white' : 'hover:bg-gray-50'}`}>{pageNum}</button>
-            ));
+            const isLastPage = page >= totalPages;
+            return (
+              <>
+                <button onClick={() => onPageChange(1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&laquo;</button>
+                <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&lsaquo;</button>
+                {pagesToShow.map(pageNum => (
+                  <button key={pageNum} onClick={() => onPageChange(pageNum)} className={`px-3 py-1 border rounded text-sm ${page === pageNum ? 'bg-blue-600 text-white' : 'hover:bg-gray-50'}`}>{pageNum}</button>
+                ))}
+                <button onClick={() => onPageChange(page + 1)} disabled={isLastPage} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&rsaquo;</button>
+                <button onClick={() => onPageChange(Math.min(totalPages, page + 10))} disabled={isLastPage} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&raquo;</button>
+              </>
+            );
           })()}
-          <button onClick={() => onPageChange(page + 1)} disabled={totalUnits < 100} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&rsaquo;</button>
-          <button onClick={() => onPageChange(page + 10)} disabled={totalUnits < 100} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm">&raquo;</button>
         </div>
       </div>
     </div>

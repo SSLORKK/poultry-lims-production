@@ -63,6 +63,19 @@ class SerologyDiseaseCount(BaseModel):
     test_count: int
 
 
+class PCRDiseaseCount(BaseModel):
+    disease_name: str
+    kit_type: str
+    test_count: int
+    positive_count: int
+    negative_count: int
+
+
+class MicrobiologyDiseaseCount(BaseModel):
+    disease_name: str
+    test_count: int
+
+
 class CompanyStats(BaseModel):
     company_name: str
     sample_count: int
@@ -70,7 +83,9 @@ class CompanyStats(BaseModel):
     test_count: int
     departments: Dict[str, int]
     pcr_positive_samples: Optional[List[PCRPositiveSample]] = None
+    pcr_diseases: Optional[List[PCRDiseaseCount]] = None
     microbiology_sample_types: Optional[List[MicrobiologySampleType]] = None
+    microbiology_diseases: Optional[List[MicrobiologyDiseaseCount]] = None
     serology_diseases: Optional[List[SerologyDiseaseCount]] = None
     pcr_extraction_count: Optional[int] = None
     pcr_detection_count: Optional[int] = None
@@ -215,11 +230,18 @@ def get_comprehensive_reports(
         'pcr_detection_total': 0,
         'mic_test_count': 0,  # Track microbiology tests explicitly
         'serology_wells_total': 0,  # Track serology wells count
+        'pcr_diseases': defaultdict(lambda: {
+            'kit_type': '',
+            'test_count': 0,
+            'positive_count': 0,
+            'negative_count': 0
+        }),
         'micro_sample_types': defaultdict(lambda: {
             'total': 0,
             'above_limit': 0,
             'locations': []
         }),
+        'mic_diseases': defaultdict(int),  # Track microbiology diseases per company
         'serology_diseases': defaultdict(lambda: {
             'kit_type': '',
             'count': 0
@@ -310,12 +332,17 @@ def get_comprehensive_reports(
                                 
                             disease_kit_data[disease_kit_key]['test_count'] += count_val
                             
+                            # Track per company for PCR
+                            company_data[company]['pcr_diseases'][disease]['kit_type'] = kit_type
+                            company_data[company]['pcr_diseases'][disease]['test_count'] += count_val
+                            
                             # Count positive/negative
                             if result:
                                 result_upper = result.upper().strip()
                                 if result_upper in ['POS', 'POS.', 'POSITIVE', '+']:
                                     disease_kit_data[disease_kit_key]['positive_count'] += 1
                                     total_positive += 1
+                                    company_data[company]['pcr_diseases'][disease]['positive_count'] += 1
                                     
                                     # Store positive sample for PCR pivot table
                                     if ct_value:
@@ -326,6 +353,7 @@ def get_comprehensive_reports(
                                 elif result_upper in ['NEG', 'NEG.', 'NEGATIVE', '-']:
                                     disease_kit_data[disease_kit_key]['negative_count'] += 1
                                     total_negative += 1
+                                    company_data[company]['pcr_diseases'][disease]['negative_count'] += 1
                 
                 # Add to company PCR samples if any positive
                 if pcr_sample_diseases:
@@ -421,6 +449,9 @@ def get_comprehensive_reports(
                         disease_kit_key = f"{disease}|||"
                         # For microbiology: each disease = visible indexes count
                         disease_kit_data[disease_kit_key]['test_count'] += visible_count
+                        
+                        # Track per-company microbiology disease counts
+                        company_data[company]['mic_diseases'][disease] += visible_count
                 
                 company_data[company]['mic_test_count'] += unit_test_count
     
@@ -550,6 +581,33 @@ def get_comprehensive_reports(
             ]
             serology_diseases.sort(key=lambda x: x.test_count, reverse=True)
         
+        # Prepare Microbiology diseases per company
+        microbiology_diseases = None
+        if data['mic_diseases']:
+            microbiology_diseases = [
+                MicrobiologyDiseaseCount(
+                    disease_name=disease,
+                    test_count=count
+                )
+                for disease, count in data['mic_diseases'].items()
+            ]
+            microbiology_diseases.sort(key=lambda x: x.test_count, reverse=True)
+        
+        # Prepare PCR diseases per company
+        pcr_diseases = None
+        if data['pcr_diseases']:
+            pcr_diseases = [
+                PCRDiseaseCount(
+                    disease_name=disease,
+                    kit_type=disease_data['kit_type'],
+                    test_count=disease_data['test_count'],
+                    positive_count=disease_data['positive_count'],
+                    negative_count=disease_data['negative_count']
+                )
+                for disease, disease_data in data['pcr_diseases'].items()
+            ]
+            pcr_diseases.sort(key=lambda x: x.test_count, reverse=True)
+        
         companies.append(
             CompanyStats(
                 company_name=company,
@@ -558,7 +616,9 @@ def get_comprehensive_reports(
                 test_count=company_test_count,
                 departments=dict(data['departments']),
                 pcr_positive_samples=pcr_positive_samples,
+                pcr_diseases=pcr_diseases,
                 microbiology_sample_types=microbiology_sample_types,
+                microbiology_diseases=microbiology_diseases,
                 serology_diseases=serology_diseases,
                 pcr_extraction_count=data['pcr_extraction_total'] if data['pcr_extraction_total'] > 0 else None,
                 pcr_detection_count=data['pcr_detection_total'] if data['pcr_detection_total'] > 0 else None,
@@ -681,6 +741,55 @@ def export_reports_excel(
             cell.font = header_font
             cell.border = border
     
+    # Disease Tests per Company Sheet
+    ws_disease_company = wb.create_sheet("Disease Tests per Company")
+    ws_disease_company.append(["Company", "Department", "Disease", "Tests", "Positive", "Negative"])
+    
+    disease_header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
+    
+    for company in reports_data.companies:
+        # PCR Diseases
+        if company.pcr_diseases:
+            for disease in sorted(company.pcr_diseases, key=lambda x: x.test_count, reverse=True):
+                ws_disease_company.append([
+                    company.company_name,
+                    "PCR",
+                    disease.disease_name,
+                    disease.test_count,
+                    disease.positive_count,
+                    disease.negative_count
+                ])
+        
+        # Microbiology Diseases
+        if company.microbiology_diseases:
+            for disease in sorted(company.microbiology_diseases, key=lambda x: x.test_count, reverse=True):
+                ws_disease_company.append([
+                    company.company_name,
+                    "Microbiology",
+                    disease.disease_name,
+                    disease.test_count,
+                    "",
+                    ""
+                ])
+        
+        # Serology Diseases
+        if company.serology_diseases:
+            for disease in sorted(company.serology_diseases, key=lambda x: x.test_count, reverse=True):
+                ws_disease_company.append([
+                    company.company_name,
+                    "Serology",
+                    disease.disease_name,
+                    disease.test_count,
+                    "",
+                    ""
+                ])
+    
+    for row in ws_disease_company['A1:F1']:
+        for cell in row:
+            cell.fill = disease_header_fill
+            cell.font = header_font
+            cell.border = border
+    
     # Samples Distribution Sheet
     ws_samples_dist = wb.create_sheet("Samples Distribution")
     ws_samples_dist.append(["Company", "Sample Count", "Percentage"])
@@ -793,7 +902,7 @@ def export_reports_excel(
             cell.border = border
     
     # Auto-adjust column widths for all sheets
-    all_sheets = [ws_summary, ws_companies, ws_samples_dist, ws_tests_dist, ws_diseases]
+    all_sheets = [ws_summary, ws_companies, ws_disease_company, ws_samples_dist, ws_tests_dist, ws_diseases]
     # Add comparison sheet if it exists
     if 'Monthly Comparison' in wb.sheetnames:
         all_sheets.append(wb['Monthly Comparison'])
@@ -1327,6 +1436,82 @@ def export_reports_pdf(
         ]))
         elements.append(summary_table)
         elements.append(Spacer(1, 20))
+        
+        # Company Cards - Professional Design
+        if dept_data.companies:
+            elements.append(Paragraph("Company Overview", heading_style))
+            
+            # Create company cards as tables
+            companies_per_row = 2
+            card_width = 3.2 * inch
+            card_height = 1.8 * inch
+            
+            for i in range(0, len(dept_data.companies), companies_per_row):
+                row_data = []
+                for j in range(companies_per_row):
+                    company_idx = i + j
+                    if company_idx < len(dept_data.companies):
+                        company = dept_data.companies[company_idx]
+                        
+                        # Create card content
+                        card_content = [
+                            [Paragraph(f"<b>{company.company_name}</b>", ParagraphStyle('CardTitle', fontName='Helvetica-Bold', fontSize=10, textColor=colors.white))],
+                            [Spacer(1, 4)],
+                            [Paragraph(f"Samples: <b>{company.sample_count}</b>", ParagraphStyle('CardText', fontName='Helvetica', fontSize=8))],
+                            [Paragraph(f"Tests: <b>{company.test_count}</b>", ParagraphStyle('CardText', fontName='Helvetica', fontSize=8))],
+                        ]
+                        
+                        # Add department badges
+                        dept_badges = []
+                        if company.departments.get('PCR', 0) > 0:
+                            dept_badges.append(f"PCR: {company.departments['PCR']}")
+                        if company.departments.get('MIC', 0) > 0:
+                            dept_badges.append(f"MIC: {company.departments['MIC']}")
+                        if company.departments.get('SER', 0) > 0:
+                            dept_badges.append(f"SER: {company.departments['SER']}")
+                        
+                        if dept_badges:
+                            card_content.append([Paragraph(' | '.join(dept_badges), ParagraphStyle('CardBadge', fontName='Helvetica', fontSize=7, textColor=colors.HexColor('#6b7280')))])
+                        
+                        # Add disease breakdown (top 3)
+                        disease_items = []
+                        if company.pcr_diseases:
+                            disease_items.extend([f"PCR: {d.disease_name} ({d.test_count})" for d in company.pcr_diseases[:2]])
+                        if company.microbiology_diseases:
+                            disease_items.extend([f"MIC: {d.disease_name} ({d.test_count})" for d in company.microbiology_diseases[:1]])
+                        if company.serology_diseases:
+                            disease_items.extend([f"SER: {d.disease_name} ({d.test_count})" for d in company.serology_diseases[:1]])
+                        
+                        if disease_items:
+                            card_content.append([Paragraph('• ' + '\n• '.join(disease_items[:3]), ParagraphStyle('CardDisease', fontName='Helvetica', fontSize=7, textColor=colors.HexColor('#4b5563')))])
+                        
+                        card_table = Table(card_content, colWidths=[card_width])
+                        card_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), table_color),
+                            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                            ('TOPPADDING', (0, 0), (-1, -1), 6),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                            ('LINEBELOW', (0, 0), (-1, 0), 1, colors.white),
+                            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor('#e5e7eb')),
+                            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e5e7eb')),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                        ]))
+                        row_data.append(card_table)
+                    else:
+                        # Empty cell for alignment
+                        row_data.append(Spacer(card_width, card_height))
+                
+                # Add row of cards
+                cards_row = Table([row_data], colWidths=[card_width] * companies_per_row)
+                cards_row.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                ]))
+                elements.append(cards_row)
+                elements.append(Spacer(1, 15))
         
         # Disease Chart
         if dept_data.diseases:

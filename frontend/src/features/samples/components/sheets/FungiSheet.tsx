@@ -6,7 +6,8 @@ import {
     escapeHtml,
     addSerialNumbers,
     filterByDateRange,
-    sortByMicCode
+    sortByMicCode,
+    calculateRowColors
 } from '../../utils/sheetUtils';
 import { SheetRef, SheetProps, BaseSheetRow } from '../../types/sheetTypes';
 
@@ -179,9 +180,16 @@ export const FungiSheet = forwardRef<SheetRef, SheetProps>(({ startDate, endDate
         </div>
         `;
 
+        // Calculate row colors for the entire sheet
+        const allRowColors = calculateRowColors(sheetRows);
+
         const samplePagesHtml = pages.map((pageRows, index) => {
-            const rowsHtml = pageRows.map((row) => `
-            <tr>
+            const startIdx = index * rowsPerPage;
+            const rowsHtml = pageRows.map((row, idx) => {
+                const globalIdx = startIdx + idx;
+                const bgColor = allRowColors[globalIdx] === 'bg-gray-200' ? '#e5e7eb' : '#ffffff';
+                return `
+            <tr style="background-color: ${bgColor}">
               <td>${escapeHtml(row.labCode)}</td>
               <td>${escapeHtml(row.micCode)}</td>
               <td style="text-align: center">${escapeHtml(row.serialNo)}</td>
@@ -192,7 +200,8 @@ export const FungiSheet = forwardRef<SheetRef, SheetProps>(({ startDate, endDate
               <td></td>
               <td></td>
             </tr>
-            `).join('');
+            `;
+            }).join('');
 
             return `
             <div class="page">

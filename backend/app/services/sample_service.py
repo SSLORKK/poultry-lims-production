@@ -282,6 +282,8 @@ class SampleService:
         if sample_data.units is not None and len(sample_data.units) > 0:
             # Create a map of existing units by ID for quick lookup
             existing_units_map = {unit.id: unit for unit in sample.units}
+            # Also create a map by unit_code for fallback matching
+            existing_units_by_code = {unit.unit_code: unit for unit in sample.units}
             
             # Track which units have been processed
             processed_unit_ids = set()
@@ -292,9 +294,16 @@ class SampleService:
                     continue
                 
                 # Check if this is an existing unit (has ID) or new unit
+                # Also try to match by unit_code if ID is not provided (prevents duplicate codes on status change)
+                existing_unit = None
                 if unit_data.id and unit_data.id in existing_units_map:
-                    # Update existing unit, preserve unit_code
                     existing_unit = existing_units_map[unit_data.id]
+                elif hasattr(unit_data, 'unit_code') and unit_data.unit_code and unit_data.unit_code in existing_units_by_code:
+                    existing_unit = existing_units_by_code[unit_data.unit_code]
+                
+                if existing_unit:
+                    # Update existing unit, preserve unit_code
+                    # (existing_unit already set from ID or unit_code match above)
                     
                     # Track unit-level field changes for edit history
                     unit_changes = []
@@ -539,7 +548,7 @@ class SampleService:
                         )
                         self.db.add(microbiology_data)
                     
-                    processed_unit_ids.add(unit_data.id)
+                    processed_unit_ids.add(existing_unit.id)
                 else:
                     # Create new unit (only for newly added units during edit)
                     # V2: Atomic sequence-based counter - guaranteed unique, no race conditions

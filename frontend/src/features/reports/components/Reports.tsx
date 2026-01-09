@@ -24,6 +24,19 @@ interface SerologyDiseaseCount {
   test_count: number;
 }
 
+interface PCRDiseaseCount {
+  disease_name: string;
+  kit_type: string;
+  test_count: number;
+  positive_count: number;
+  negative_count: number;
+}
+
+interface MicrobiologyDiseaseCount {
+  disease_name: string;
+  test_count: number;
+}
+
 interface CompanyStats {
   company_name: string;
   sample_count: number;
@@ -31,7 +44,9 @@ interface CompanyStats {
   test_count: number;
   departments: Record<string, number>;
   pcr_positive_samples: PCRPositiveSample[] | null;
+  pcr_diseases: PCRDiseaseCount[] | null;
   microbiology_sample_types: MicrobiologySampleType[] | null;
+  microbiology_diseases: MicrobiologyDiseaseCount[] | null;
   serology_diseases: SerologyDiseaseCount[] | null;
   pcr_extraction_count: number | null;
   pcr_detection_count: number | null;
@@ -944,47 +959,254 @@ export default function Reports() {
 
 
 
-          {/* Company Table */}
-          <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
-            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
-              <span className="bg-orange-100 text-orange-600 rounded-lg p-2 mr-3">🏭</span>
-              Company Breakdown
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className="bg-gradient-to-r from-cyan-500 to-cyan-600">
-                    <th className="px-6 py-4 text-left text-sm font-bold text-white uppercase tracking-wide">Company</th>
-                    <th className="px-6 py-4 text-center text-sm font-bold text-white uppercase tracking-wide">Total Samples</th>
-                    <th className="px-6 py-4 text-center text-sm font-bold text-white uppercase tracking-wide">Sub Samples</th>
-                    <th className="px-6 py-4 text-center text-sm font-bold text-white uppercase tracking-wide">Total Tests</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {reportsData.companies.map((company, idx) => (
-                    <tr key={company.company_name} className={`transition-colors ${idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-cyan-50`}>
-                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">{company.company_name}</td>
-                      <td className="px-6 py-4 text-sm text-center">
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                          {company.sample_count}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-center">
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                          {company.sub_sample_count || 0}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-center">
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-cyan-100 text-cyan-800">
-                          {company.test_count}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Company Cards - Professional Design */}
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+                <span className="bg-gradient-to-br from-orange-400 to-orange-600 text-white rounded-xl p-3 mr-3 shadow-lg">
+                  🏭
+                </span>
+                Company Overview
+              </h2>
+              <span className="text-sm text-gray-500 bg-gray-100 px-4 py-2 rounded-full">
+                {reportsData.companies.length} Companies
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {reportsData.companies.map((company) => (
+                <div key={company.company_name} className="bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 border border-gray-100 overflow-hidden group">
+                  {/* Card Header */}
+                  <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-6 py-4">
+                    <h3 className="text-lg font-bold text-white truncate">{company.company_name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-slate-300">ID: {company.company_name.split(' ')[0]?.substring(0, 3).toUpperCase() || 'N/A'}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Card Body */}
+                  <div className="p-5 space-y-4">
+                    {/* Stats Row */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
+                        <div className="text-2xl font-bold text-blue-700">{company.sample_count}</div>
+                        <div className="text-xs text-blue-600 font-medium mt-1">Samples</div>
+                      </div>
+                      <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
+                        <div className="text-2xl font-bold text-green-700">{company.sub_sample_count || 0}</div>
+                        <div className="text-xs text-green-600 font-medium mt-1">Sub-Samples</div>
+                      </div>
+                      <div className="bg-purple-50 rounded-xl p-3 text-center border border-purple-100">
+                        <div className="text-2xl font-bold text-purple-700">{company.test_count}</div>
+                        <div className="text-xs text-purple-600 font-medium mt-1">Tests</div>
+                      </div>
+                    </div>
+                    
+                    {/* Departments */}
+                    <div className="border-t border-gray-100 pt-4">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Departments</div>
+                      <div className="flex flex-wrap gap-2">
+                        {company.departments.PCR > 0 && (
+                          <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                            PCR: {company.departments.PCR}
+                          </span>
+                        )}
+                        {company.departments.MIC > 0 && (
+                          <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                            MIC: {company.departments.MIC}
+                          </span>
+                        )}
+                        {company.departments.SER > 0 && (
+                          <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-green-100 text-green-800 border border-green-200">
+                            SER: {company.departments.SER}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Disease Breakdown - Compact */}
+                    {(company.pcr_diseases?.length || company.microbiology_diseases?.length || company.serology_diseases?.length) && (
+                      <div className="border-t border-gray-100 pt-4">
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Disease Tests</div>
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {company.pcr_diseases?.slice(0, 3).map((d, i) => (
+                            <div key={`pcr-${i}`} className="flex items-center justify-between text-xs">
+                              <span className="text-gray-700 truncate mr-2">
+                                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1"></span>
+                                {d.disease_name}
+                              </span>
+                              <span className="font-semibold text-gray-900 whitespace-nowrap">{d.test_count}</span>
+                            </div>
+                          ))}
+                          {company.microbiology_diseases?.slice(0, 2).map((d, i) => (
+                            <div key={`mic-${i}`} className="flex items-center justify-between text-xs">
+                              <span className="text-gray-700 truncate mr-2">
+                                <span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1"></span>
+                                {d.disease_name}
+                              </span>
+                              <span className="font-semibold text-gray-900 whitespace-nowrap">{d.test_count}</span>
+                            </div>
+                          ))}
+                          {company.serology_diseases?.slice(0, 2).map((d, i) => (
+                            <div key={`ser-${i}`} className="flex items-center justify-between text-xs">
+                              <span className="text-gray-700 truncate mr-2">
+                                <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1"></span>
+                                {d.disease_name}
+                              </span>
+                              <span className="font-semibold text-gray-900 whitespace-nowrap">{d.test_count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* PCR Specific Stats */}
+                    {(company.pcr_extraction_count || company.pcr_detection_count) && (
+                      <div className="border-t border-gray-100 pt-4">
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">PCR Stats</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {company.pcr_extraction_count && (
+                            <div className="bg-indigo-50 rounded-lg p-2 text-center">
+                              <div className="text-sm font-bold text-indigo-700">{company.pcr_extraction_count}</div>
+                              <div className="text-xs text-indigo-600">Extractions</div>
+                            </div>
+                          )}
+                          {company.pcr_detection_count && (
+                            <div className="bg-cyan-50 rounded-lg p-2 text-center">
+                              <div className="text-sm font-bold text-cyan-700">{company.pcr_detection_count}</div>
+                              <div className="text-xs text-cyan-600">Detections</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
+
+          {/* Company Disease Tests Breakdown - Professional Table */}
+          {reportsData.companies.some(c => c.microbiology_diseases?.length || c.serology_diseases?.length || c.pcr_detection_count) && (
+            <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+              <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                <span className="bg-purple-100 text-purple-600 rounded-lg p-2 mr-3">🔬</span>
+                Disease Tests per Company
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gradient-to-r from-purple-500 to-indigo-600">
+                      <th className="px-4 py-3 text-left text-sm font-bold text-white uppercase tracking-wide">Company</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-white uppercase tracking-wide">Department</th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-white uppercase tracking-wide">Disease</th>
+                      <th className="px-4 py-3 text-center text-sm font-bold text-white uppercase tracking-wide">Tests</th>
+                      <th className="px-4 py-3 text-center text-sm font-bold text-white uppercase tracking-wide">Positive</th>
+                      <th className="px-4 py-3 text-center text-sm font-bold text-white uppercase tracking-wide">Negative</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {reportsData.companies.flatMap((company) => {
+                      const rows: { company: string; dept: string; disease: string; tests: number; deptColor: string; positive?: number; negative?: number }[] = [];
+                      
+                      // PCR Diseases
+                      if (company.pcr_diseases && company.pcr_diseases.length > 0) {
+                        company.pcr_diseases.forEach(d => {
+                          rows.push({
+                            company: company.company_name,
+                            dept: 'PCR',
+                            disease: d.disease_name,
+                            tests: d.test_count,
+                            positive: d.positive_count,
+                            negative: d.negative_count,
+                            deptColor: 'blue'
+                          });
+                        });
+                      }
+                      
+                      // Microbiology Diseases
+                      if (company.microbiology_diseases) {
+                        company.microbiology_diseases
+                          .sort((a, b) => b.test_count - a.test_count)
+                          .forEach(d => {
+                            rows.push({
+                              company: company.company_name,
+                              dept: 'Microbiology',
+                              disease: d.disease_name,
+                              tests: d.test_count,
+                              deptColor: 'purple'
+                            });
+                          });
+                      }
+                      
+                      // Serology Diseases
+                      if (company.serology_diseases) {
+                        company.serology_diseases
+                          .sort((a, b) => b.test_count - a.test_count)
+                          .forEach(d => {
+                            rows.push({
+                              company: company.company_name,
+                              dept: 'Serology',
+                              disease: d.disease_name,
+                              tests: d.test_count,
+                              deptColor: 'green'
+                            });
+                          });
+                      }
+                      
+                      return rows;
+                    }).map((row, idx, arr) => {
+                      const isFirstOfCompany = idx === 0 || arr[idx - 1].company !== row.company;
+                      const companyRowCount = arr.filter(r => r.company === row.company).length;
+                      
+                      return (
+                        <tr key={`${row.company}-${row.dept}-${row.disease}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-purple-50 transition-colors`}>
+                          {isFirstOfCompany ? (
+                            <td rowSpan={companyRowCount} className="px-4 py-3 text-sm font-bold text-gray-900 border-r border-gray-200 bg-gray-50 align-top">
+                              {row.company}
+                            </td>
+                          ) : null}
+                          <td className="px-4 py-2 text-sm">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
+                              row.deptColor === 'blue' ? 'bg-blue-100 text-blue-800' :
+                              row.deptColor === 'purple' ? 'bg-purple-100 text-purple-800' :
+                              'bg-green-100 text-green-800'
+                            }`}>
+                              {row.dept}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-700">{row.disease}</td>
+                          <td className="px-4 py-2 text-sm text-center">
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
+                              row.deptColor === 'blue' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' :
+                              row.deptColor === 'purple' ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-200' :
+                              'bg-green-50 text-green-700 ring-1 ring-green-200'
+                            }`}>
+                              {row.tests}
+                            </span>
+                          </td>
+                          {row.positive !== undefined && (
+                            <>
+                              <td className="px-4 py-2 text-sm text-center">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">
+                                  {row.positive}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-sm text-center">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
+                                  {row.negative}
+                                </span>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Disease-Kit Type Breakdown */}
           <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">

@@ -454,8 +454,14 @@ export const SerologySamples = () => {
 
   const uniqueStatuses = useMemo(() => {
     const statuses = new Set<string>();
+    // Add predefined statuses to ensure they're always available
+    ['in_progress', 'completed', 'need_approval', 'postponed', 'hold'].forEach(s => statuses.add(s));
     samples.forEach((sample) => {
       if (sample.status) statuses.add(sample.status);
+      // Also include coa_status from units
+      sample.units?.forEach((unit: any) => {
+        if (unit.coa_status) statuses.add(unit.coa_status);
+      });
     });
     return Array.from(statuses).sort();
   }, [samples]);

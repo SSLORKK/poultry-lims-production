@@ -6,7 +6,8 @@ import {
     escapeHtml,
     addSerialNumbers,
     filterByDateRange,
-    sortByMicCode
+    sortByMicCode,
+    calculateRowColors
 } from '../../utils/sheetUtils';
 import { SheetRef, SheetProps, BaseSheetRow } from '../../types/sheetTypes';
 
@@ -149,13 +150,19 @@ export const TotalCountSheet = forwardRef<SheetRef, SheetProps>(({ startDate, en
 
         const pdfTotalPages = descriptionPageCount + resultsPageCount + 1; // Description + Results + Procedures
 
+        // Calculate row colors for the entire sheet
+        const allRowColors = calculateRowColors(sheetRows);
+
         // Generate Description Pages
         let descriptionPagesHtml = '';
         for (let i = 0; i < descriptionPageCount; i++) {
-            const batchRows = sheetRows.slice(i * rowsPerDescriptionPage, (i + 1) * rowsPerDescriptionPage);
-            const batchRowsHtml = batchRows.map((row) => {
+            const startIdx = i * rowsPerDescriptionPage;
+            const batchRows = sheetRows.slice(startIdx, (i + 1) * rowsPerDescriptionPage);
+            const batchRowsHtml = batchRows.map((row, idx) => {
+                const globalIdx = startIdx + idx;
+                const bgColor = allRowColors[globalIdx] === 'bg-gray-200' ? '#e5e7eb' : '#ffffff';
                 return `
-        <tr>
+        <tr style="background-color: ${bgColor}">
           <td>${escapeHtml(row.labCode)}</td>
           <td>${escapeHtml(row.micCode)}</td>
           <td>${escapeHtml(row.sampleType)}</td>
@@ -211,10 +218,13 @@ export const TotalCountSheet = forwardRef<SheetRef, SheetProps>(({ startDate, en
         // Generate Results Pages
         let resultsPagesHtml = '';
         for (let i = 0; i < resultsPageCount; i++) {
-            const batchRows = sheetRows.slice(i * rowsPerResultsPage, (i + 1) * rowsPerResultsPage);
-            const batchRowsHtml = batchRows.map((row) => {
+            const startIdx = i * rowsPerResultsPage;
+            const batchRows = sheetRows.slice(startIdx, (i + 1) * rowsPerResultsPage);
+            const batchRowsHtml = batchRows.map((row, idx) => {
+                const globalIdx = startIdx + idx;
+                const bgColor = allRowColors[globalIdx] === 'bg-gray-200' ? '#e5e7eb' : '#ffffff';
                 return `
-        <tr>
+        <tr style="background-color: ${bgColor}">
           <td style="font-size: 11px;">${escapeHtml(row.labCode)}</td>
           <td style="font-size: 11px;">${escapeHtml(row.micCode)}</td>
           <td>${escapeHtml(row.serialNo)}</td>
@@ -415,17 +425,20 @@ export const TotalCountSheet = forwardRef<SheetRef, SheetProps>(({ startDate, en
                         </tr>
                     </thead>
                     <tbody>
-                        {sheetRows.map((row, i) => (
-                            <tr key={i} className="bg-white">
-                                <td className="border border-black p-2 h-8 text-black">{row.labCode}</td>
-                                <td className="border border-black p-2 text-black">{row.micCode}</td>
-                                <td className="border border-black p-2 text-black">{row.sampleType}</td>
-                                <td className="border border-black p-2 text-center text-black">{row.serialNo}</td>
-                                <td className="border border-black p-2 text-black">{row.sampleIndex}</td>
-                                <td className="border border-black p-2"></td>
-                                <td className="border border-black p-2"></td>
-                            </tr>
-                        ))}
+                        {(() => {
+                            const rowColors = calculateRowColors(sheetRows);
+                            return sheetRows.map((row, i) => (
+                                <tr key={i} className={rowColors[i]}>
+                                    <td className="border border-black p-2 h-8 text-black">{row.labCode}</td>
+                                    <td className="border border-black p-2 text-black">{row.micCode}</td>
+                                    <td className="border border-black p-2 text-black">{row.sampleType}</td>
+                                    <td className="border border-black p-2 text-center text-black">{row.serialNo}</td>
+                                    <td className="border border-black p-2 text-black">{row.sampleIndex}</td>
+                                    <td className="border border-black p-2"></td>
+                                    <td className="border border-black p-2"></td>
+                                </tr>
+                            ));
+                        })()}
                     </tbody>
                 </table>
 
