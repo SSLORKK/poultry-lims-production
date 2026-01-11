@@ -61,6 +61,8 @@ class SerologyDiseaseCount(BaseModel):
     disease_name: str
     kit_type: str
     test_count: int
+    sample_count: int = 0
+    sub_sample_count: int = 0
 
 
 class PCRDiseaseCount(BaseModel):
@@ -69,11 +71,15 @@ class PCRDiseaseCount(BaseModel):
     test_count: int
     positive_count: int
     negative_count: int
+    sample_count: int = 0
+    sub_sample_count: int = 0
 
 
 class MicrobiologyDiseaseCount(BaseModel):
     disease_name: str
     test_count: int
+    sample_count: int = 0
+    sub_sample_count: int = 0
 
 
 class CompanyStats(BaseModel):
@@ -234,17 +240,21 @@ def get_comprehensive_reports(
             'kit_type': '',
             'test_count': 0,
             'positive_count': 0,
-            'negative_count': 0
+            'negative_count': 0,
+            'sample_ids': set(),
+            'sub_sample_count': 0
         }),
         'micro_sample_types': defaultdict(lambda: {
             'total': 0,
             'above_limit': 0,
             'locations': []
         }),
-        'mic_diseases': defaultdict(int),  # Track microbiology diseases per company
+        'mic_diseases': defaultdict(lambda: {'count': 0, 'sample_ids': set(), 'sub_sample_count': 0}),  # Track microbiology diseases per company
         'serology_diseases': defaultdict(lambda: {
             'kit_type': '',
-            'count': 0
+            'count': 0,
+            'sample_ids': set(),
+            'sub_sample_count': 0
         })
     })
     
@@ -335,6 +345,10 @@ def get_comprehensive_reports(
                             # Track per company for PCR
                             company_data[company]['pcr_diseases'][disease]['kit_type'] = kit_type
                             company_data[company]['pcr_diseases'][disease]['test_count'] += count_val
+                            company_data[company]['pcr_diseases'][disease]['sample_ids'].add(sample_id)
+                            # Track sub-samples for PCR (extraction count)
+                            if unit.pcr_data and unit.pcr_data.extraction:
+                                company_data[company]['pcr_diseases'][disease]['sub_sample_count'] += unit.pcr_data.extraction
                             
                             # Count positive/negative
                             if result:
@@ -396,6 +410,7 @@ def get_comprehensive_reports(
                 # Track per company
                 company_data[company]['serology_diseases'][disease]['kit_type'] = disease_kit_type
                 company_data[company]['serology_diseases'][disease]['count'] += disease_test_count
+                company_data[company]['serology_diseases'][disease]['sample_ids'].add(sample_id)
                 company_data[company]['serology_diseases'][disease]['wells_count'] = company_data[company]['serology_diseases'][disease].get('wells_count', 0) + disease_wells_count
             
             # Fallback: If no wells in diseases_list, use number_of_wells from serology_data
@@ -451,7 +466,10 @@ def get_comprehensive_reports(
                         disease_kit_data[disease_kit_key]['test_count'] += visible_count
                         
                         # Track per-company microbiology disease counts
-                        company_data[company]['mic_diseases'][disease] += visible_count
+                        company_data[company]['mic_diseases'][disease]['count'] += visible_count
+                        company_data[company]['mic_diseases'][disease]['sample_ids'].add(sample_id)
+                        # Track sub-samples for microbiology (samples_number)
+                        company_data[company]['mic_diseases'][disease]['sub_sample_count'] += unit.samples_number or 0
                 
                 company_data[company]['mic_test_count'] += unit_test_count
     
@@ -575,7 +593,9 @@ def get_comprehensive_reports(
                 SerologyDiseaseCount(
                     disease_name=disease,
                     kit_type=disease_data['kit_type'],
-                    test_count=disease_data['count']
+                    test_count=disease_data['count'],
+                    sample_count=len(disease_data.get('sample_ids', set())),
+                    sub_sample_count=disease_data.get('sub_sample_count', 0)
                 )
                 for disease, disease_data in data['serology_diseases'].items()
             ]
@@ -587,9 +607,11 @@ def get_comprehensive_reports(
             microbiology_diseases = [
                 MicrobiologyDiseaseCount(
                     disease_name=disease,
-                    test_count=count
+                    test_count=disease_data['count'],
+                    sample_count=len(disease_data.get('sample_ids', set())),
+                    sub_sample_count=disease_data.get('sub_sample_count', 0)
                 )
-                for disease, count in data['mic_diseases'].items()
+                for disease, disease_data in data['mic_diseases'].items()
             ]
             microbiology_diseases.sort(key=lambda x: x.test_count, reverse=True)
         
@@ -602,7 +624,9 @@ def get_comprehensive_reports(
                     kit_type=disease_data['kit_type'],
                     test_count=disease_data['test_count'],
                     positive_count=disease_data['positive_count'],
-                    negative_count=disease_data['negative_count']
+                    negative_count=disease_data['negative_count'],
+                    sample_count=len(disease_data.get('sample_ids', set())),
+                    sub_sample_count=disease_data.get('sub_sample_count', 0)
                 )
                 for disease, disease_data in data['pcr_diseases'].items()
             ]
@@ -743,7 +767,7 @@ def export_reports_excel(
     
     # Disease Tests per Company Sheet
     ws_disease_company = wb.create_sheet("Disease Tests per Company")
-    ws_disease_company.append(["Company", "Department", "Disease", "Tests", "Positive", "Negative"])
+    ws_disease_company.append(["Company", "Department", "Disease", "Samples", "Sub Samples", "Tests", "Positive", "Negative"])
     
     disease_header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
     
@@ -755,6 +779,8 @@ def export_reports_excel(
                     company.company_name,
                     "PCR",
                     disease.disease_name,
+                    disease.sample_count,
+                    disease.sub_sample_count,
                     disease.test_count,
                     disease.positive_count,
                     disease.negative_count
@@ -767,6 +793,8 @@ def export_reports_excel(
                     company.company_name,
                     "Microbiology",
                     disease.disease_name,
+                    disease.sample_count,
+                    disease.sub_sample_count,
                     disease.test_count,
                     "",
                     ""
@@ -779,12 +807,14 @@ def export_reports_excel(
                     company.company_name,
                     "Serology",
                     disease.disease_name,
+                    disease.sample_count,
+                    disease.sub_sample_count,
                     disease.test_count,
                     "",
                     ""
                 ])
     
-    for row in ws_disease_company['A1:F1']:
+    for row in ws_disease_company['A1:H1']:
         for cell in row:
             cell.fill = disease_header_fill
             cell.font = header_font
@@ -1372,6 +1402,8 @@ def export_reports_pdf(
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f5f5f5')])
             ]))
+            comp_table.hAlign = 'LEFT'
+            comp_table.keepTogether = True
             elements.append(comp_table)
             elements.append(Spacer(1, 20))
     except Exception as e:
@@ -1434,6 +1466,8 @@ def export_reports_pdf(
             ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
+        summary_table.hAlign = 'LEFT'
+        summary_table.keepTogether = True
         elements.append(summary_table)
         elements.append(Spacer(1, 20))
         
@@ -1562,6 +1596,8 @@ def export_reports_pdf(
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
             ]))
+            company_table.hAlign = 'LEFT'
+            company_table.keepTogether = True
             elements.append(company_table)
             elements.append(Spacer(1, 15))
         
@@ -1602,7 +1638,90 @@ def export_reports_pdf(
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
         ]))
+        disease_table.hAlign = 'LEFT'
+        disease_table.keepTogether = True
         elements.append(disease_table)
+        
+        # Disease Tests per Company Table
+        has_diseases_by_company = any(
+            c.pcr_diseases or c.microbiology_diseases or c.serology_diseases 
+            for c in dept_data.companies
+        )
+        if has_diseases_by_company:
+            elements.append(Spacer(1, 15))
+            elements.append(Paragraph("Disease Tests per Company", heading_style))
+            
+            disease_company_headers = ['Company', 'Department', 'Disease', 'Samples', 'Sub Samples', 'Tests']
+            if dept_code_str != 'SER':
+                disease_company_headers.extend(['Positive', 'Negative'])
+            
+            disease_company_data = [disease_company_headers]
+            for company in dept_data.companies:
+                # PCR Diseases
+                if company.pcr_diseases:
+                    for disease in sorted(company.pcr_diseases, key=lambda x: x.test_count, reverse=True):
+                        row = [
+                            company.company_name[:25],
+                            'PCR',
+                            disease.disease_name[:25],
+                            str(disease.sample_count),
+                            str(disease.sub_sample_count),
+                            str(disease.test_count)
+                        ]
+                        if dept_code_str != 'SER':
+                            row.extend([str(disease.positive_count), str(disease.negative_count)])
+                        disease_company_data.append(row)
+                
+                # Microbiology Diseases
+                if company.microbiology_diseases:
+                    for disease in sorted(company.microbiology_diseases, key=lambda x: x.test_count, reverse=True):
+                        row = [
+                            company.company_name[:25],
+                            'MIC',
+                            disease.disease_name[:25],
+                            str(disease.sample_count),
+                            str(disease.sub_sample_count),
+                            str(disease.test_count)
+                        ]
+                        if dept_code_str != 'SER':
+                            row.extend(['', ''])
+                        disease_company_data.append(row)
+                
+                # Serology Diseases
+                if company.serology_diseases:
+                    for disease in sorted(company.serology_diseases, key=lambda x: x.test_count, reverse=True):
+                        row = [
+                            company.company_name[:25],
+                            'SER',
+                            disease.disease_name[:25],
+                            str(disease.sample_count),
+                            str(disease.sub_sample_count),
+                            str(disease.test_count)
+                        ]
+                        if dept_code_str != 'SER':
+                            row.extend(['', ''])
+                        disease_company_data.append(row)
+            
+            disease_company_col_widths = [2.2*inch, 0.7*inch, 2*inch, 0.7*inch, 0.7*inch, 0.7*inch]
+            if dept_code_str != 'SER':
+                disease_company_col_widths.extend([0.6*inch, 0.6*inch])
+            
+            disease_company_table = Table(disease_company_data[:30], colWidths=disease_company_col_widths)
+            disease_company_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), table_color),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (3, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 7),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
+            ]))
+            disease_company_table.hAlign = 'LEFT'
+            disease_company_table.keepTogether = True
+            elements.append(disease_company_table)
         
         # Add page break between departments (except for last one)
         if dept_code_str != departments_to_process[-1]:

@@ -282,6 +282,31 @@ export const SerologySamples = () => {
     fetchSamples();
   }, [selectedYear, page, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, startDate, endDate]);
 
+  // Fetch total count and navigate to last page on initial load
+  useEffect(() => {
+    const fetchTotalAndGoToLastPage = async () => {
+      try {
+        const response = await apiClient.get('/samples/total-count', { params: { year: selectedYear, department_id: 2 } });
+        const total = response.data.total || 0;
+        
+        // Always navigate to last page on first load if no saved page
+        if (!localStorage.getItem('serologySamples_page')) {
+          const lastPage = Math.max(1, Math.ceil(total / 100));
+          setPage(lastPage);
+          localStorage.setItem('serologySamples_page', String(lastPage));
+        }
+      } catch (err) {
+        console.error('Failed to fetch total count:', err);
+      }
+    };
+    fetchTotalAndGoToLastPage();
+  }, [selectedYear]);
+
+  // Save page to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('serologySamples_page', String(page));
+  }, [page]);
+
   // Auto-refresh data every 30 seconds without showing loading state
   useEffect(() => {
     const autoRefresh = setInterval(async () => {
@@ -342,7 +367,7 @@ export const SerologySamples = () => {
             cycle: sample.cycle || '-',
             house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
             age: unit.age,
-            source: unit.source || '-',
+            source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
             technician: unit.serology_data?.technician_name || unit.technician_name || '-',
             notes: combinedNotes,
             sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',

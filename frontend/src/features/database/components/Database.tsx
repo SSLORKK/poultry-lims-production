@@ -1970,7 +1970,7 @@ function PCRTable({
             unit.sample.cycle || '-',
             getPoolHouses(unit.id),
             unit.age || '-',
-            unit.source || '-',
+            Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
             selectedSampleTypes.length > 0
               ? (unit.sample_type?.filter((st: string) => selectedSampleTypes.includes(st)).join(', ') || '-')
               : (unit.sample_type?.join(', ') || '-'),

@@ -180,6 +180,24 @@ export const PCRSamples = () => {
       if (selectedSampleTypes.length > 0) {
         params.sample_type = selectedSampleTypes;
       }
+      if (selectedSources.length > 0) {
+        params.source = selectedSources;
+      }
+      if (selectedStatuses.length > 0) {
+        params.status = selectedStatuses;
+      }
+      if (selectedHouses.length > 0) {
+        params.house = selectedHouses;
+      }
+      if (selectedCycles.length > 0) {
+        params.cycle = selectedCycles;
+      }
+      if (startDate) {
+        params.start_date = startDate;
+      }
+      if (endDate) {
+        params.end_date = endDate;
+      }
 
       const response = await apiClient.get('/samples/', { params });
       setSamples(response.data);
@@ -292,9 +310,11 @@ export const PCRSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
+        // Always navigate to last page on first load if no saved page, regardless of search/filters
         if (!lastPageLoaded && !localStorage.getItem('pcrSamples_page')) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
+          localStorage.setItem('pcrSamples_page', String(lastPage));
         }
         setLastPageLoaded(true);
       } catch (err) {
@@ -303,7 +323,7 @@ export const PCRSamples = () => {
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear]);
+  }, [selectedYear, lastPageLoaded]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -488,8 +508,6 @@ export const PCRSamples = () => {
 
   const uniqueStatuses = useMemo(() => {
     const statuses = new Set<string>();
-    // Add predefined statuses to ensure they're always available
-    ['in_progress', 'completed', 'need_approval', 'postponed', 'hold'].forEach(s => statuses.add(s));
     samples.forEach((sample) => {
       if (sample.status) statuses.add(sample.status);
       // Also include coa_status from units
@@ -609,25 +627,6 @@ export const PCRSamples = () => {
     }
 
     // Apply frontend-only multi-select filters
-    if (selectedSources.length > 0) {
-      filtered = filtered.filter((row) => {
-        // Handle both array and string sources
-        const rowSources = row.source.split(', ').map(s => s.trim());
-        return selectedSources.some(selected => rowSources.includes(selected));
-      });
-    }
-    if (selectedStatuses.length > 0) {
-      filtered = filtered.filter((row) => selectedStatuses.includes(row.status));
-    }
-    if (selectedHouses.length > 0) {
-      filtered = filtered.filter((row) => {
-        const houses = row.house.split(', ');
-        return houses.some(h => selectedHouses.includes(h));
-      });
-    }
-    if (selectedCycles.length > 0) {
-      filtered = filtered.filter((row) => selectedCycles.includes(row.cycle));
-    }
     if (selectedDiseases.length > 0) {
       filtered = filtered.filter((row) => {
         const diseases = row.diseases.split(', ');

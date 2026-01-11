@@ -1240,6 +1240,12 @@ export function MicrobiologyCOA() {
     // Helper function to determine background color based on result value
     const getResultStyle = (value: string, diseaseType?: string, isFeedSample?: boolean) => {
       const upperValue = value.toUpperCase().trim();
+      
+      // TNTC* always gets light red background
+      if (upperValue === 'TNTC*' || upperValue === 'TNTC') {
+        return 'background-color: #fee2e2 !important; color: #b91c1c; -webkit-print-color-adjust: exact; print-color-adjust: exact;';
+      }
+      
       const isNotDetected = upperValue === 'NOT DETECTED' || upperValue.includes('LESS THAN') || upperValue.includes('NO BACTERIAL') || upperValue.includes('NO COLIFORM') || upperValue.includes('NO FUNGAL');
       const isDetected = upperValue === 'DETECTED' || upperValue === 'POSITIVE' || upperValue === 'POS';
       
@@ -1560,7 +1566,7 @@ export function MicrobiologyCOA() {
             <tr><td style="border: 1px solid #d1d5db; padding: 1px;">more than 10³</td><td style="border: 1px solid #d1d5db; padding: 1px; text-align: center;">3</td><td style="border: 1px solid #d1d5db; padding: 1px;">more than 50</td><td style="border: 1px solid #d1d5db; padding: 1px;">Poor</td></tr>
           </tbody>
         </table>
-        <div style="font-size: 7px; color: #6b7280; margin-top: 1px;">*TNTC = too numerous to count</div>
+        <div style="font-size: 7px; color: #6b7280; margin-top: 1px;">TNTC* = too numerous to count</div>
         `}
       </div>
       ` : ''}
@@ -1583,7 +1589,7 @@ export function MicrobiologyCOA() {
             <tr><td style="border: 1px solid #d1d5db; padding: 1px;">>56</td><td style="border: 1px solid #d1d5db; padding: 1px; text-align: center;">2</td><td style="border: 1px solid #d1d5db; padding: 1px;">>1</td><td style="border: 1px solid #d1d5db; padding: 1px;">Poor</td></tr>
           </tbody>
         </table>
-        <div style="font-size: 7px; color: #6b7280; margin-top: 1px;">*TNTC = too numerous to count</div>
+        <div style="font-size: 7px; color: #6b7280; margin-top: 1px;">TNTC* = too numerous to count</div>
       </div>
       ` : ''}
     </section>
@@ -2296,6 +2302,10 @@ export function MicrobiologyCOA() {
                 <span>{unitData.age || '-'}</span>
               </div>
               <div className="flex">
+                <span className="font-semibold w-40">Source:</span>
+                <span>{Array.isArray(unitData.source) ? unitData.source.join(', ') : (unitData.source || '-')}</span>
+              </div>
+              <div className="flex">
                 <span className="font-semibold w-40">Sample Type:</span>
                 <span>{unitData.sample_type?.join(', ') || '-'}</span>
               </div>
@@ -2807,10 +2817,14 @@ export function MicrobiologyCOA() {
                                         }
                                         const rawValue = e.target.value;
                                         newResults[currentDisease][`row${rowIdx}_raw`] = rawValue;
-                                        // Calculate and store the result: (entered * dilution) * volume
                                         const numValue = parseFloat(rawValue) || 0;
-                                        const calculated = (numValue * waterDilution) * waterVolume;
-                                        newResults[currentDisease][`row${rowIdx}_tbc_result`] = rawValue ? calculated.toString() : '';
+                                        // TNTC logic: if raw value >= 300, show TNTC*
+                                        if (numValue >= 300) {
+                                          newResults[currentDisease][`row${rowIdx}_tbc_result`] = 'TNTC*';
+                                        } else {
+                                          const calculated = (numValue * waterDilution) * waterVolume;
+                                          newResults[currentDisease][`row${rowIdx}_tbc_result`] = rawValue ? calculated.toString() : '';
+                                        }
                                         setTestResults(newResults);
                                       }}
                                       className="w-full px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -2829,7 +2843,11 @@ export function MicrobiologyCOA() {
                                         }
                                       }}
                                     />
-                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`row${rowIdx}_tbc_result`] || 'Less than 1 CFU'}</span>
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                      testResults[currentDisease]?.[`row${rowIdx}_tbc_result`] === 'TNTC*' 
+                                        ? 'bg-red-100 text-red-700' 
+                                        : 'text-green-600'
+                                    }`}>= {testResults[currentDisease]?.[`row${rowIdx}_tbc_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -2846,8 +2864,13 @@ export function MicrobiologyCOA() {
                                         const rawValue = e.target.value;
                                         newResults[currentDisease][`row${rowIdx}_coliform_raw`] = rawValue;
                                         const numValue = parseFloat(rawValue) || 0;
-                                        const calculated = (numValue * waterDilution) * waterVolume;
-                                        newResults[currentDisease][`row${rowIdx}_coliform_result`] = rawValue ? calculated.toString() : '';
+                                        // TNTC logic: if raw value >= 300, show TNTC*
+                                        if (numValue >= 300) {
+                                          newResults[currentDisease][`row${rowIdx}_coliform_result`] = 'TNTC*';
+                                        } else {
+                                          const calculated = (numValue * waterDilution) * waterVolume;
+                                          newResults[currentDisease][`row${rowIdx}_coliform_result`] = rawValue ? calculated.toString() : '';
+                                        }
                                         setTestResults(newResults);
                                       }}
                                       className="w-full px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -2866,7 +2889,11 @@ export function MicrobiologyCOA() {
                                         }
                                       }}
                                     />
-                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`row${rowIdx}_coliform_result`] || 'Less than 1 CFU'}</span>
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                      testResults[currentDisease]?.[`row${rowIdx}_coliform_result`] === 'TNTC*' 
+                                        ? 'bg-red-100 text-red-700' 
+                                        : 'text-green-600'
+                                    }`}>= {testResults[currentDisease]?.[`row${rowIdx}_coliform_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -2883,8 +2910,13 @@ export function MicrobiologyCOA() {
                                         const rawValue = e.target.value;
                                         newResults[currentDisease][`row${rowIdx}_ecoli_raw`] = rawValue;
                                         const numValue = parseFloat(rawValue) || 0;
-                                        const calculated = (numValue * waterDilution) * waterVolume;
-                                        newResults[currentDisease][`row${rowIdx}_ecoli_result`] = rawValue ? calculated.toString() : '';
+                                        // TNTC logic: if raw value >= 300, show TNTC*
+                                        if (numValue >= 300) {
+                                          newResults[currentDisease][`row${rowIdx}_ecoli_result`] = 'TNTC*';
+                                        } else {
+                                          const calculated = (numValue * waterDilution) * waterVolume;
+                                          newResults[currentDisease][`row${rowIdx}_ecoli_result`] = rawValue ? calculated.toString() : '';
+                                        }
                                         setTestResults(newResults);
                                       }}
                                       className="w-full px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -2903,7 +2935,11 @@ export function MicrobiologyCOA() {
                                         }
                                       }}
                                     />
-                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`row${rowIdx}_ecoli_result`] || 'Less than 1 CFU'}</span>
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                      testResults[currentDisease]?.[`row${rowIdx}_ecoli_result`] === 'TNTC*' 
+                                        ? 'bg-red-100 text-red-700' 
+                                        : 'text-green-600'
+                                    }`}>= {testResults[currentDisease]?.[`row${rowIdx}_ecoli_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                                 <td className="border border-gray-300 px-2 py-2">
@@ -2920,8 +2956,13 @@ export function MicrobiologyCOA() {
                                         const rawValue = e.target.value;
                                         newResults[currentDisease][`row${rowIdx}_pseudomonas_raw`] = rawValue;
                                         const numValue = parseFloat(rawValue) || 0;
-                                        const calculated = (numValue * waterDilution) * waterVolume;
-                                        newResults[currentDisease][`row${rowIdx}_pseudomonas_result`] = rawValue ? calculated.toString() : '';
+                                        // TNTC logic: if raw value >= 300, show TNTC*
+                                        if (numValue >= 300) {
+                                          newResults[currentDisease][`row${rowIdx}_pseudomonas_result`] = 'TNTC*';
+                                        } else {
+                                          const calculated = (numValue * waterDilution) * waterVolume;
+                                          newResults[currentDisease][`row${rowIdx}_pseudomonas_result`] = rawValue ? calculated.toString() : '';
+                                        }
                                         setTestResults(newResults);
                                       }}
                                       className="w-full px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -2940,7 +2981,11 @@ export function MicrobiologyCOA() {
                                         }
                                       }}
                                     />
-                                    <span className="text-xs text-green-600 font-semibold">= {testResults[currentDisease]?.[`row${rowIdx}_pseudomonas_result`] || 'Less than 1 CFU'}</span>
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                      testResults[currentDisease]?.[`row${rowIdx}_pseudomonas_result`] === 'TNTC*' 
+                                        ? 'bg-red-100 text-red-700' 
+                                        : 'text-green-600'
+                                    }`}>= {testResults[currentDisease]?.[`row${rowIdx}_pseudomonas_result`] || 'Less than 1 CFU'}</span>
                                   </div>
                                 </td>
                               </>
@@ -2996,9 +3041,14 @@ export function MicrobiologyCOA() {
                                           newResults[currentDisease][`row${rowIdx}_tbc1`] = val1;
                                           const num1 = parseFloat(val1) || 0;
                                           const num2 = parseFloat(newResults[currentDisease][`row${rowIdx}_tbc2`]) || 0;
-                                          const dilution = totalCountDilutions[rowIdx] ?? 0.11;
-                                          const calculated = (num1 + num2) / dilution;
-                                          newResults[currentDisease][`row${rowIdx}_tbc_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          // TNTC logic: if either value >= 300, show TNTC*
+                                          if (num1 >= 300 || num2 >= 300) {
+                                            newResults[currentDisease][`row${rowIdx}_tbc_result`] = 'TNTC*';
+                                          } else {
+                                            const dilution = totalCountDilutions[rowIdx] ?? 0.11;
+                                            const calculated = (num1 + num2) / dilution;
+                                            newResults[currentDisease][`row${rowIdx}_tbc_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          }
                                           setTestResults(newResults);
                                         }}
                                         className="w-1/2 px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -3018,9 +3068,14 @@ export function MicrobiologyCOA() {
                                           newResults[currentDisease][`row${rowIdx}_tbc2`] = val2;
                                           const num1 = parseFloat(newResults[currentDisease][`row${rowIdx}_tbc1`]) || 0;
                                           const num2 = parseFloat(val2) || 0;
-                                          const dilution = totalCountDilutions[rowIdx] ?? 0.11;
-                                          const calculated = (num1 + num2) / dilution;
-                                          newResults[currentDisease][`row${rowIdx}_tbc_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          // TNTC logic: if either value >= 300, show TNTC*
+                                          if (num1 >= 300 || num2 >= 300) {
+                                            newResults[currentDisease][`row${rowIdx}_tbc_result`] = 'TNTC*';
+                                          } else {
+                                            const dilution = totalCountDilutions[rowIdx] ?? 0.11;
+                                            const calculated = (num1 + num2) / dilution;
+                                            newResults[currentDisease][`row${rowIdx}_tbc_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          }
                                           setTestResults(newResults);
                                         }}
                                         className="w-1/2 px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -3029,7 +3084,11 @@ export function MicrobiologyCOA() {
                                       />
                                     </div>
                                     <span 
-                                      className="text-xs text-green-600 font-semibold cursor-pointer"
+                                      className={`text-xs font-semibold cursor-pointer px-2 py-0.5 rounded ${
+                                        testResults[currentDisease]?.[`row${rowIdx}_tbc_result`] === 'TNTC*' 
+                                          ? 'bg-red-100 text-red-700' 
+                                          : 'text-green-600'
+                                      }`}
                                       onContextMenu={(e) => {
                                         if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_tbc_result`]) {
                                           e.preventDefault();
@@ -3062,9 +3121,14 @@ export function MicrobiologyCOA() {
                                           newResults[currentDisease][`row${rowIdx}_mould1`] = val1;
                                           const num1 = parseFloat(val1) || 0;
                                           const num2 = parseFloat(newResults[currentDisease][`row${rowIdx}_mould2`]) || 0;
-                                          const dilution = totalCountDilutions[rowIdx] ?? 0.11;
-                                          const calculated = (num1 + num2) / dilution;
-                                          newResults[currentDisease][`row${rowIdx}_mould_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          // TNTC logic: if either value >= 300, show TNTC*
+                                          if (num1 >= 300 || num2 >= 300) {
+                                            newResults[currentDisease][`row${rowIdx}_mould_result`] = 'TNTC*';
+                                          } else {
+                                            const dilution = totalCountDilutions[rowIdx] ?? 0.11;
+                                            const calculated = (num1 + num2) / dilution;
+                                            newResults[currentDisease][`row${rowIdx}_mould_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          }
                                           setTestResults(newResults);
                                         }}
                                         className="w-1/2 px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -3084,9 +3148,14 @@ export function MicrobiologyCOA() {
                                           newResults[currentDisease][`row${rowIdx}_mould2`] = val2;
                                           const num1 = parseFloat(newResults[currentDisease][`row${rowIdx}_mould1`]) || 0;
                                           const num2 = parseFloat(val2) || 0;
-                                          const dilution = totalCountDilutions[rowIdx] ?? 0.11;
-                                          const calculated = (num1 + num2) / dilution;
-                                          newResults[currentDisease][`row${rowIdx}_mould_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          // TNTC logic: if either value >= 300, show TNTC*
+                                          if (num1 >= 300 || num2 >= 300) {
+                                            newResults[currentDisease][`row${rowIdx}_mould_result`] = 'TNTC*';
+                                          } else {
+                                            const dilution = totalCountDilutions[rowIdx] ?? 0.11;
+                                            const calculated = (num1 + num2) / dilution;
+                                            newResults[currentDisease][`row${rowIdx}_mould_result`] = (num1 || num2) ? calculated.toFixed(0) : '';
+                                          }
                                           setTestResults(newResults);
                                         }}
                                         className="w-1/2 px-2 py-1 border-2 border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 rounded text-sm"
@@ -3095,7 +3164,11 @@ export function MicrobiologyCOA() {
                                       />
                                     </div>
                                     <span 
-                                      className="text-xs text-green-600 font-semibold cursor-pointer"
+                                      className={`text-xs font-semibold cursor-pointer px-2 py-0.5 rounded ${
+                                        testResults[currentDisease]?.[`row${rowIdx}_mould_result`] === 'TNTC*' 
+                                          ? 'bg-red-100 text-red-700' 
+                                          : 'text-green-600'
+                                      }`}
                                       onContextMenu={(e) => {
                                         if (rowIdx === 0 && testResults[currentDisease]?.[`row${rowIdx}_mould_result`]) {
                                           e.preventDefault();

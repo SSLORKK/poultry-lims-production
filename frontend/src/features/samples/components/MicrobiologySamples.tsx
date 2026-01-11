@@ -329,6 +329,31 @@ export const MicrobiologySamples = () => {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
 
+  // Fetch total count and navigate to last page on initial load
+  useEffect(() => {
+    const fetchTotalAndGoToLastPage = async () => {
+      try {
+        const response = await apiClient.get('/samples/total-count', { params: { year: selectedYear, department_id: 3 } });
+        const total = response.data.total || 0;
+        
+        // Always navigate to last page on first load if no saved page
+        if (!localStorage.getItem('microbiologySamples_page')) {
+          const lastPage = Math.max(1, Math.ceil(total / 100));
+          setPage(lastPage);
+          localStorage.setItem('microbiologySamples_page', String(lastPage));
+        }
+      } catch (err) {
+        console.error('Failed to fetch total count:', err);
+      }
+    };
+    fetchTotalAndGoToLastPage();
+  }, [selectedYear]);
+
+  // Save page to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('microbiologySamples_page', String(page));
+  }, [page]);
+
   useEffect(() => {
     fetchSamples();
   }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
@@ -402,7 +427,7 @@ export const MicrobiologySamples = () => {
             cycle: sample.cycle || '-',
             house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
             age: unit.age,
-            source: unit.source || '-',
+            source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
             technician: unit.microbiology_data?.technician_name || '-',
             notes: unit.notes || '',
             sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',

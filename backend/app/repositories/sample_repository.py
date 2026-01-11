@@ -25,7 +25,8 @@ class SampleRepository:
     def get_all(self, skip: int = 0, limit: int = 100, department_id: Optional[int] = None, year: Optional[int] = None, 
                search: Optional[str] = None, company: Optional[List[str]] = None, farm: Optional[List[str]] = None, flock: Optional[List[str]] = None, 
                date_from: Optional[str] = None, date_to: Optional[str] = None, age: Optional[List[str]] = None, 
-               sample_type: Optional[List[str]] = None) -> List[Sample]:
+               sample_type: Optional[List[str]] = None, source: Optional[List[str]] = None, status: Optional[List[str]] = None, 
+               house: Optional[List[str]] = None, cycle: Optional[List[str]] = None) -> List[Sample]:
         """Get samples with intelligent filtering: 
         - Returns samples ordered by ID ASC (oldest first, so page numbers stay stable)
         - Page 1 = oldest samples, last page = newest samples
@@ -110,11 +111,28 @@ class SampleRepository:
             # No filters: apply default limit for performance
             samples = query.offset(skip).limit(limit).all()
         
-        # Filter units by department, age, and sample_type at Python level
-        if department_id is not None or (age is not None and len(age) > 0) or (sample_type is not None and len(sample_type) > 0):
+        # Filter units by department, age, sample_type, source, status, house, cycle at Python level
+        unit_filters_applied = (
+            department_id is not None or 
+            (age is not None and len(age) > 0) or 
+            (sample_type is not None and len(sample_type) > 0) or
+            (source is not None and len(source) > 0) or
+            (status is not None and len(status) > 0) or
+            (house is not None and len(house) > 0)
+        )
+        
+        sample_filters_applied = (cycle is not None and len(cycle) > 0)
+        
+        if unit_filters_applied or sample_filters_applied:
             filtered_samples = []
             
             for sample in samples:
+                # Apply sample-level filters
+                if sample_filters_applied:
+                    # Apply cycle filter
+                    if cycle is not None and len(cycle) > 0 and (sample.cycle is None or sample.cycle not in cycle):
+                        continue
+                
                 # Filter units based on criteria
                 filtered_units = []
                 for unit in sample.units:
@@ -128,9 +146,6 @@ class SampleRepository:
                     
                     # Apply sample type filter - check if unit has ANY of the selected sample types
                     if sample_type is not None and len(sample_type) > 0:
-                        # unit.sample_type is a JSON array like ['Liver', 'Heart']
-                        # sample_type is selected filters like ['Liver', 'Spleen']
-                        # Keep unit if it has at least one matching sample type
                         if not unit.sample_type:
                             continue  # Skip if unit has no sample types
                         
@@ -143,6 +158,44 @@ class SampleRepository:
                         
                         if not has_match:
                             continue  # Skip this unit if no match found
+                    
+                    # Apply source filter - handle both string and array sources
+                    if source is not None and len(source) > 0:
+                        if not unit.source:
+                            continue
+                        
+                        # Handle both string and array source formats
+                        if isinstance(unit.source, list):
+                            # Source is an array, check if any source matches
+                            has_match = any(s in source for s in unit.source)
+                            if not has_match:
+                                continue
+                        else:
+                            # Source is a string
+                            if unit.source not in source:
+                                continue
+                    
+                    # Apply status filter - check both sample status and unit coa_status
+                    if status is not None and len(status) > 0:
+                        unit_status = unit.coa_status or sample.status
+                        if unit_status is None or unit_status not in status:
+                            continue
+                    
+                    # Apply house filter - handle both string and array houses
+                    if house is not None and len(house) > 0:
+                        if not unit.house:
+                            continue
+                        
+                        # Handle both string and array house formats
+                        if isinstance(unit.house, list):
+                            # House is an array, check if any house matches
+                            has_match = any(h in house for h in unit.house)
+                            if not has_match:
+                                continue
+                        else:
+                            # House is a string
+                            if unit.house not in house:
+                                continue
                     
                     filtered_units.append(unit)
                 

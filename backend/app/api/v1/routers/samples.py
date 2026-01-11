@@ -75,6 +75,10 @@ def get_samples(
     date_to: Optional[str] = Query(None, description="Filter by date received to (YYYY-MM-DD)"),
     age: Optional[List[str]] = Query(None, description="Filter by age"),
     sample_type: Optional[List[str]] = Query(None, description="Filter by sample type"),
+    source: Optional[List[str]] = Query(None, description="Filter by source"),
+    status: Optional[List[str]] = Query(None, description="Filter by status"),
+    house: Optional[List[str]] = Query(None, description="Filter by house"),
+    cycle: Optional[List[str]] = Query(None, description="Filter by cycle"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -85,7 +89,7 @@ def get_samples(
     sample_service = SampleService(db)
     samples = sample_service.get_all_samples(skip=skip, limit=limit, department_id=department_id, year=year,
                                           search=search, company=company, farm=farm, flock=flock, date_from=date_from, date_to=date_to,
-                                          age=age, sample_type=sample_type)
+                                          age=age, sample_type=sample_type, source=source, status=status, house=house, cycle=cycle)
     
     # Get user's database permissions to filter results
     permission_repo = PermissionRepository(db)

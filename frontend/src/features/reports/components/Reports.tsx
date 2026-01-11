@@ -22,6 +22,8 @@ interface SerologyDiseaseCount {
   disease_name: string;
   kit_type: string;
   test_count: number;
+  sample_count: number;
+  sub_sample_count: number;
 }
 
 interface PCRDiseaseCount {
@@ -30,11 +32,15 @@ interface PCRDiseaseCount {
   test_count: number;
   positive_count: number;
   negative_count: number;
+  sample_count: number;
+  sub_sample_count: number;
 }
 
 interface MicrobiologyDiseaseCount {
   disease_name: string;
   test_count: number;
+  sample_count: number;
+  sub_sample_count: number;
 }
 
 interface CompanyStats {
@@ -979,9 +985,6 @@ export default function Reports() {
                   {/* Card Header */}
                   <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-6 py-4">
                     <h3 className="text-lg font-bold text-white truncate">{company.company_name}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-slate-300">ID: {company.company_name.split(' ')[0]?.substring(0, 3).toUpperCase() || 'N/A'}</span>
-                    </div>
                   </div>
                   
                   {/* Card Body */}
@@ -1059,27 +1062,6 @@ export default function Reports() {
                         </div>
                       </div>
                     )}
-                    
-                    {/* PCR Specific Stats */}
-                    {(company.pcr_extraction_count || company.pcr_detection_count) && (
-                      <div className="border-t border-gray-100 pt-4">
-                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">PCR Stats</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {company.pcr_extraction_count && (
-                            <div className="bg-indigo-50 rounded-lg p-2 text-center">
-                              <div className="text-sm font-bold text-indigo-700">{company.pcr_extraction_count}</div>
-                              <div className="text-xs text-indigo-600">Extractions</div>
-                            </div>
-                          )}
-                          {company.pcr_detection_count && (
-                            <div className="bg-cyan-50 rounded-lg p-2 text-center">
-                              <div className="text-sm font-bold text-cyan-700">{company.pcr_detection_count}</div>
-                              <div className="text-xs text-cyan-600">Detections</div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}
@@ -1087,123 +1069,141 @@ export default function Reports() {
           </div>
 
           {/* Company Disease Tests Breakdown - Professional Table */}
-          {reportsData.companies.some(c => c.microbiology_diseases?.length || c.serology_diseases?.length || c.pcr_detection_count) && (
+          {reportsData.companies.some(c => c.microbiology_diseases?.length || c.serology_diseases?.length || c.pcr_diseases?.length) && (
             <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow">
               <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
                 <span className="bg-purple-100 text-purple-600 rounded-lg p-2 mr-3">🔬</span>
                 Disease Tests per Company
               </h2>
-              <div className="overflow-x-auto">
-                <table className="min-w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gradient-to-r from-purple-500 to-indigo-600">
-                      <th className="px-4 py-3 text-left text-sm font-bold text-white uppercase tracking-wide">Company</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-white uppercase tracking-wide">Department</th>
-                      <th className="px-4 py-3 text-left text-sm font-bold text-white uppercase tracking-wide">Disease</th>
-                      <th className="px-4 py-3 text-center text-sm font-bold text-white uppercase tracking-wide">Tests</th>
-                      <th className="px-4 py-3 text-center text-sm font-bold text-white uppercase tracking-wide">Positive</th>
-                      <th className="px-4 py-3 text-center text-sm font-bold text-white uppercase tracking-wide">Negative</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {reportsData.companies.flatMap((company) => {
-                      const rows: { company: string; dept: string; disease: string; tests: number; deptColor: string; positive?: number; negative?: number }[] = [];
-                      
-                      // PCR Diseases
-                      if (company.pcr_diseases && company.pcr_diseases.length > 0) {
-                        company.pcr_diseases.forEach(d => {
-                          rows.push({
-                            company: company.company_name,
-                            dept: 'PCR',
-                            disease: d.disease_name,
-                            tests: d.test_count,
-                            positive: d.positive_count,
-                            negative: d.negative_count,
-                            deptColor: 'blue'
-                          });
+              <div className="space-y-8">
+                {reportsData.companies.filter(c => c.pcr_diseases?.length || c.microbiology_diseases?.length || c.serology_diseases?.length).map((company) => {
+                  const rows: { dept: string; disease: string; tests: number; samples: number; subSamples: number; deptColor: string; positive?: number; negative?: number }[] = [];
+                  
+                  // PCR Diseases
+                  if (company.pcr_diseases && company.pcr_diseases.length > 0) {
+                    company.pcr_diseases.forEach(d => {
+                      rows.push({
+                        dept: 'PCR',
+                        disease: d.disease_name,
+                        tests: d.test_count,
+                        samples: d.sample_count || 0,
+                        subSamples: d.sub_sample_count || 0,
+                        positive: d.positive_count,
+                        negative: d.negative_count,
+                        deptColor: 'blue'
+                      });
+                    });
+                  }
+                  
+                  // Microbiology Diseases
+                  if (company.microbiology_diseases) {
+                    company.microbiology_diseases
+                      .sort((a, b) => b.test_count - a.test_count)
+                      .forEach(d => {
+                        rows.push({
+                          dept: 'Microbiology',
+                          disease: d.disease_name,
+                          tests: d.test_count,
+                          samples: d.sample_count || 0,
+                          subSamples: d.sub_sample_count || 0,
+                          deptColor: 'purple'
                         });
-                      }
+                      });
+                  }
+                  
+                  // Serology Diseases
+                  if (company.serology_diseases) {
+                    company.serology_diseases
+                      .sort((a, b) => b.test_count - a.test_count)
+                      .forEach(d => {
+                        rows.push({
+                          dept: 'Serology',
+                          disease: d.disease_name,
+                          tests: d.test_count,
+                          samples: d.sample_count || 0,
+                          subSamples: d.sub_sample_count || 0,
+                          deptColor: 'green'
+                        });
+                      });
+                  }
+                  
+                  if (rows.length === 0) return null;
+                  
+                  return (
+                    <div key={company.company_name} className="border-2 border-gray-100 rounded-xl overflow-hidden hover:border-purple-200 transition-colors">
+                      {/* Company Header */}
+                      <div className="bg-gradient-to-r from-purple-500 to-indigo-600 px-6 py-4">
+                        <h3 className="text-lg font-bold text-white text-center">{company.company_name}</h3>
+                      </div>
                       
-                      // Microbiology Diseases
-                      if (company.microbiology_diseases) {
-                        company.microbiology_diseases
-                          .sort((a, b) => b.test_count - a.test_count)
-                          .forEach(d => {
-                            rows.push({
-                              company: company.company_name,
-                              dept: 'Microbiology',
-                              disease: d.disease_name,
-                              tests: d.test_count,
-                              deptColor: 'purple'
-                            });
-                          });
-                      }
-                      
-                      // Serology Diseases
-                      if (company.serology_diseases) {
-                        company.serology_diseases
-                          .sort((a, b) => b.test_count - a.test_count)
-                          .forEach(d => {
-                            rows.push({
-                              company: company.company_name,
-                              dept: 'Serology',
-                              disease: d.disease_name,
-                              tests: d.test_count,
-                              deptColor: 'green'
-                            });
-                          });
-                      }
-                      
-                      return rows;
-                    }).map((row, idx, arr) => {
-                      const isFirstOfCompany = idx === 0 || arr[idx - 1].company !== row.company;
-                      const companyRowCount = arr.filter(r => r.company === row.company).length;
-                      
-                      return (
-                        <tr key={`${row.company}-${row.dept}-${row.disease}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-purple-50 transition-colors`}>
-                          {isFirstOfCompany ? (
-                            <td rowSpan={companyRowCount} className="px-4 py-3 text-sm font-bold text-gray-900 border-r border-gray-200 bg-gray-50 align-top">
-                              {row.company}
-                            </td>
-                          ) : null}
-                          <td className="px-4 py-2 text-sm">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
-                              row.deptColor === 'blue' ? 'bg-blue-100 text-blue-800' :
-                              row.deptColor === 'purple' ? 'bg-purple-100 text-purple-800' :
-                              'bg-green-100 text-green-800'
-                            }`}>
-                              {row.dept}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-700">{row.disease}</td>
-                          <td className="px-4 py-2 text-sm text-center">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                              row.deptColor === 'blue' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' :
-                              row.deptColor === 'purple' ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-200' :
-                              'bg-green-50 text-green-700 ring-1 ring-green-200'
-                            }`}>
-                              {row.tests}
-                            </span>
-                          </td>
-                          {row.positive !== undefined && (
-                            <>
-                              <td className="px-4 py-2 text-sm text-center">
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">
-                                  {row.positive}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2 text-sm text-center">
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
-                                  {row.negative}
-                                </span>
-                              </td>
-                            </>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      {/* Company Table */}
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full border-collapse">
+                          <thead>
+                            <tr className="bg-gray-50 border-b-2 border-gray-200">
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wide">Department</th>
+                              <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wide">Disease</th>
+                              <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wide">Samples</th>
+                              <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wide">Sub Samples</th>
+                              <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wide">Tests</th>
+                              <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wide">Positive</th>
+                              <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wide">Negative</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {rows.map((row, idx) => (
+                              <tr key={`${row.dept}-${row.disease}-${idx}`} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-purple-50 transition-colors`}>
+                                <td className="px-6 py-3 text-sm">
+                                  <span className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                                    row.deptColor === 'blue' ? 'bg-blue-100 text-blue-800' :
+                                    row.deptColor === 'purple' ? 'bg-purple-100 text-purple-800' :
+                                    'bg-green-100 text-green-800'
+                                  }`}>
+                                    {row.dept}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-3 text-sm text-gray-700">{row.disease}</td>
+                                <td className="px-6 py-3 text-sm text-center">
+                                  <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-sm font-semibold bg-gray-100 text-gray-800">
+                                    {row.samples}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-3 text-sm text-center">
+                                  <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-sm font-semibold bg-indigo-100 text-indigo-800">
+                                    {row.subSamples}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-3 text-sm text-center">
+                                  <span className={`inline-flex items-center justify-center px-4 py-1.5 rounded-full text-sm font-bold ${
+                                    row.deptColor === 'blue' ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' :
+                                    row.deptColor === 'purple' ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-200' :
+                                    'bg-green-50 text-green-700 ring-1 ring-green-200'
+                                  }`}>
+                                    {row.tests}
+                                  </span>
+                                </td>
+                                {row.positive !== undefined && (
+                                  <>
+                                    <td className="px-6 py-3 text-sm text-center">
+                                      <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-sm font-bold bg-red-100 text-red-800">
+                                        {row.positive}
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-3 text-sm text-center">
+                                      <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-sm font-bold bg-gray-100 text-gray-700">
+                                        {row.negative}
+                                      </span>
+                                    </td>
+                                  </>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1272,73 +1272,6 @@ export default function Reports() {
               </table>
             </div>
           </div>
-
-          {/* PCR Extraction & Detection Summary by Company */}
-          {(department === 'PCR' || !department) && reportsData.companies.some(c => c.pcr_extraction_count !== null || c.pcr_detection_count !== null) && (
-            <div className="bg-gradient-to-br from-white to-blue-50 rounded-2xl shadow-xl p-8 hover:shadow-2xl transition-all duration-300 border border-blue-100">
-              <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 mb-6 flex items-center">
-                <span className="bg-gradient-to-br from-blue-500 to-indigo-500 text-white rounded-xl p-3 mr-3 shadow-lg">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                  </svg>
-                </span>
-                PCR Extraction & Detection Summary
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="min-w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gradient-to-r from-blue-500 to-indigo-600">
-                      <th className="px-6 py-4 text-left text-sm font-bold text-white uppercase tracking-wide">Company</th>
-                      <th className="px-6 py-4 text-center text-sm font-bold text-white uppercase tracking-wide">Total Extraction</th>
-                      <th className="px-6 py-4 text-center text-sm font-bold text-white uppercase tracking-wide">Total Detection</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {reportsData.companies
-                      .filter(company => company.pcr_extraction_count !== null || company.pcr_detection_count !== null)
-                      .map((company, idx) => (
-                        <tr key={company.company_name} className={`transition-colors duration-150 ${idx % 2 === 0 ? 'bg-blue-50' : 'bg-white'} hover:bg-blue-100`}>
-                          <td className="px-6 py-4 text-sm font-semibold text-gray-900">{company.company_name}</td>
-                          <td className="px-6 py-4 text-center">
-                            {company.pcr_extraction_count !== null ? (
-                              <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold bg-blue-100 text-blue-800 shadow-sm">
-                                {company.pcr_extraction_count}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            {company.pcr_detection_count !== null ? (
-                              <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold bg-indigo-100 text-indigo-800 shadow-sm">
-                                {company.pcr_detection_count}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-gradient-to-r from-gray-100 to-gray-200 border-t-2 border-gray-300">
-                      <td className="px-6 py-4 text-sm font-bold text-gray-900 uppercase">Total</td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="inline-flex items-center px-5 py-2 rounded-full text-base font-bold bg-blue-200 text-blue-900 shadow-md">
-                          {reportsData.companies.reduce((sum, c) => sum + (c.pcr_extraction_count || 0), 0)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="inline-flex items-center px-5 py-2 rounded-full text-base font-bold bg-indigo-200 text-indigo-900 shadow-md">
-                          {reportsData.companies.reduce((sum, c) => sum + (c.pcr_detection_count || 0), 0)}
-                        </span>
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       ) : null}
     </div>

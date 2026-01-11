@@ -26,11 +26,12 @@ class SampleService:
     def get_all_samples(self, skip: int = 0, limit: int = 100, department_id: Optional[int] = None, year: Optional[int] = None,
                        search: Optional[str] = None, company: Optional[List[str]] = None, farm: Optional[List[str]] = None, flock: Optional[List[str]] = None,
                        date_from: Optional[str] = None, date_to: Optional[str] = None, age: Optional[List[str]] = None,
-                       sample_type: Optional[List[str]] = None) -> List[Sample]:
+                       sample_type: Optional[List[str]] = None, source: Optional[List[str]] = None, status: Optional[List[str]] = None, 
+                       house: Optional[List[str]] = None, cycle: Optional[List[str]] = None) -> List[Sample]:
         """Get all samples, optionally filtered by department, year, and search term at SQL level"""
         return self.sample_repo.get_all(skip=skip, limit=limit, department_id=department_id, year=year,
                                       search=search, company=company, farm=farm, flock=flock, date_from=date_from, date_to=date_to,
-                                      age=age, sample_type=sample_type)
+                                      age=age, sample_type=sample_type, source=source, status=status, house=house, cycle=cycle)
     
     def create_sample(self, sample_data: SampleCreate, user_id: int) -> Optional[Sample]:
         # PHASE 0: Year validation - ensure date_received matches the current year
