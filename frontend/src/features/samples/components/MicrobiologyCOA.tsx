@@ -902,7 +902,6 @@ export function MicrobiologyCOA() {
       await saveApiClient.patch(`/units/${unitId}`, { coa_status: 'need_approval' });
 
       setNotification({ type: 'success', message: 'Certificate of Analysis saved successfully!' });
-      setTimeout(() => navigate('/microbiology/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to save COA:', err);
       
@@ -1045,7 +1044,6 @@ export function MicrobiologyCOA() {
       await saveApiClient.patch(`/samples/${unitData.sample.id}`, { status: 'completed' });
 
       setNotification({ type: 'success', message: 'Certificate of Analysis approved successfully!' });
-      setTimeout(() => navigate('/microbiology/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to approve COA:', err);
       if (err.response?.status === 401) {
@@ -1115,7 +1113,6 @@ export function MicrobiologyCOA() {
       setShowPostponedModal(false);
       setPostponedReason('');
       setNotification({ type: 'success', message: 'Certificate of Analysis postponed successfully!' });
-      setTimeout(() => navigate('/microbiology/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to postpone COA:', err);
       setError(err.response?.data?.detail || 'Failed to postpone COA');

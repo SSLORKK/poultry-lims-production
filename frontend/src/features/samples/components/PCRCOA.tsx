@@ -498,7 +498,6 @@ export function PCRCOA() {
       await apiClient.patch(`/units/${unitId}`, { coa_status: 'need_approval' });
 
       setNotification({ type: 'success', message: 'Certificate of Analysis saved successfully!' });
-      setTimeout(() => navigate('/pcr/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to save COA:', err);
       setError(err.response?.data?.detail || 'Failed to save COA');
@@ -575,7 +574,6 @@ export function PCRCOA() {
       await apiClient.patch(`/samples/${unitData.sample.id}`, { status: 'Completed' });
 
       setNotification({ type: 'success', message: 'Certificate of Analysis approved successfully!' });
-      setTimeout(() => navigate('/pcr/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to approve COA:', err);
       setError(err.response?.data?.detail || 'Failed to approve COA');
@@ -621,7 +619,6 @@ export function PCRCOA() {
       setShowPostponedModal(false);
       setPostponedReason('');
       setNotification({ type: 'success', message: 'Certificate of Analysis postponed successfully!' });
-      setTimeout(() => navigate('/pcr/samples'), 1500);
     } catch (err: any) {
       console.error('Failed to postpone COA:', err);
       setError(err.response?.data?.detail || 'Failed to postpone COA');

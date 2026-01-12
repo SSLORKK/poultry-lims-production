@@ -1455,21 +1455,26 @@ export const MicrobiologySamples = () => {
       )}
 
       {selectedRow && (
-        <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg flex items-center justify-between">
+        <div className="mb-4 p-4 bg-gradient-to-r from-purple-50 to-fuchsia-50 border border-purple-200 rounded-xl flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-sm font-medium text-purple-900">Selected: {selectedRow.unitCode}</span>
+            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <span className="text-sm font-bold text-purple-900">{selectedRow.unitCode}</span>
+              <span className="text-xs text-purple-600 ml-2">• {selectedRow.company} - {selectedRow.farm}</span>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => hasWriteAccess && handleEdit(selectedRow.sampleId)}
               disabled={!hasWriteAccess}
-              className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 ${hasWriteAccess ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+              className={`group px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95 ${hasWriteAccess ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
               title={!hasWriteAccess ? 'No write permission' : 'Edit sample'}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 transition-transform group-hover:rotate-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
               Edit
@@ -1477,10 +1482,10 @@ export const MicrobiologySamples = () => {
             {isAdmin && (
               <button
                 onClick={() => handleDelete(selectedRow.unitId, selectedRow.unitCode)}
-                className="px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 bg-red-600 text-white hover:bg-red-700"
-                title="Delete unit"
+                className="group px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 bg-red-600 text-white hover:bg-red-700 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95"
+                title="Delete unit permanently"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
                 Delete
@@ -1489,13 +1494,13 @@ export const MicrobiologySamples = () => {
             <button
               onClick={() => hasWriteAccess && handleCOAClick(selectedRow.unitId)}
               disabled={!hasWriteAccess}
-              className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 ${
+              className={`group px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95 ${
                 !hasWriteAccess 
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : selectedRow.coaStatus === 'completed' 
-                    ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                    ? 'bg-green-600 text-white hover:bg-green-700' 
                     : selectedRow.coaStatus === 'need_approval'
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      ? 'bg-amber-500 text-white hover:bg-amber-600'
                       : selectedRow.coaStatus === 'postponed'
                         ? 'bg-orange-500 text-white hover:bg-orange-600'
                         : 'bg-purple-600 text-white hover:bg-purple-700'
@@ -1512,41 +1517,15 @@ export const MicrobiologySamples = () => {
                         : 'Create new certificate'
               }
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              {selectedRow.coaStatus === 'completed' ? (
-                <>
-                  Edit Certificate
-                  <svg className="w-3 h-3 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <title>Approved</title>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </>
-              ) : selectedRow.coaStatus === 'need_approval' ? (
-                <>
-                  View Certificate
-                  <svg className="w-3 h-3 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <title>Awaiting approval</title>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </>
-              ) : selectedRow.coaStatus === 'postponed' ? (
-                <>
-                  View Certificate
-                  <svg className="w-3 h-3 opacity-75" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <title>Postponed</title>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </>
-              ) : (
-                'Create Certificate'
-              )}
+              {selectedRow.coaStatus === 'completed' ? 'Edit COA ✓' : selectedRow.coaStatus === 'need_approval' ? 'View COA ⏳' : selectedRow.coaStatus === 'postponed' ? 'View COA ⏸' : 'Create COA'}
             </button>
             <button
               onClick={() => setSelectedRow(null)}
-              className="ml-2 p-2 text-gray-400 hover:text-gray-600 rounded"
-              aria-label="Deselect"
+              className="ml-1 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200"
+              title="Deselect row"
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
