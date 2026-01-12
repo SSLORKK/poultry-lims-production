@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import distinct, func, or_
+from sqlalchemy import distinct, func, or_, String
 from typing import Optional, List
 from app.models.sample import Sample
 from app.models.unit import Unit
@@ -60,20 +60,32 @@ class SampleRepository:
         if flock is not None and len(flock) > 0:
             query = query.filter(Sample.flock.in_(flock))
             
-        # Global search
+        # Global search - search across all relevant columns
         if search:
             search_term = f"%{search}%"
             # Join with Unit if not already joined (for department_id)
             if department_id is None:
                 query = query.join(Unit)
             
+            # Search across all relevant Sample and Unit columns
             query = query.filter(
                 or_(
+                    # Sample columns
                     Sample.sample_code.ilike(search_term),
                     Sample.company.ilike(search_term),
                     Sample.farm.ilike(search_term),
                     Sample.flock.ilike(search_term),
-                    Unit.unit_code.ilike(search_term)
+                    Sample.cycle.ilike(search_term),
+                    Sample.status.ilike(search_term),
+                    # Unit columns
+                    Unit.unit_code.ilike(search_term),
+                    Unit.age.ilike(search_term),
+                    Unit.notes.ilike(search_term),
+                    Unit.coa_status.ilike(search_term),
+                    # Cast JSON fields to text for searching
+                    func.cast(Unit.house, String).ilike(search_term),
+                    func.cast(Unit.source, String).ilike(search_term),
+                    func.cast(Unit.sample_type, String).ilike(search_term),
                 )
             ).distinct()
         

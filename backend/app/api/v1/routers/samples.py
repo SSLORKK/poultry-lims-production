@@ -142,21 +142,75 @@ def get_available_years(
 def get_total_count(
     department_id: Optional[int] = Query(None, description="Filter by department ID"),
     year: Optional[int] = Query(None, description="Filter by year"),
+    search: Optional[str] = Query(None, description="Global search term"),
+    company: Optional[List[str]] = Query(None, description="Filter by company"),
+    farm: Optional[List[str]] = Query(None, description="Filter by farm"),
+    flock: Optional[List[str]] = Query(None, description="Filter by flock"),
+    date_from: Optional[str] = Query(None, description="Filter by date from"),
+    date_to: Optional[str] = Query(None, description="Filter by date to"),
+    age: Optional[List[str]] = Query(None, description="Filter by age"),
+    sample_type: Optional[List[str]] = Query(None, description="Filter by sample type"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get total count of samples for pagination (to know last page number)"""
-    from sqlalchemy import func
+    from sqlalchemy import func, or_, String
     from app.models.sample import Sample
     from app.models.unit import Unit
     
     query = db.query(func.count(distinct(Sample.id)))
     
+    # Apply year filter
     if year is not None:
         query = query.filter(Sample.year == year)
     
+    # Apply date range filters
+    if date_from is not None:
+        query = query.filter(Sample.date_received >= date_from)
+    if date_to is not None:
+        query = query.filter(Sample.date_received <= date_to)
+    
+    # Apply company, farm, flock filters
+    if company is not None and len(company) > 0:
+        query = query.filter(Sample.company.in_(company))
+    if farm is not None and len(farm) > 0:
+        query = query.filter(Sample.farm.in_(farm))
+    if flock is not None and len(flock) > 0:
+        query = query.filter(Sample.flock.in_(flock))
+    
+    # Track if we need to join Unit table
+    needs_unit_join = department_id is not None or search is not None
+    
+    if needs_unit_join:
+        query = query.join(Unit)
+    
+    # Apply department filter
     if department_id is not None:
-        query = query.join(Unit).filter(Unit.department_id == department_id)
+        query = query.filter(Unit.department_id == department_id)
+    
+    # Apply search filter across all relevant columns
+    if search is not None and search.strip():
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                # Sample columns
+                Sample.sample_code.ilike(search_term),
+                Sample.company.ilike(search_term),
+                Sample.farm.ilike(search_term),
+                Sample.flock.ilike(search_term),
+                Sample.cycle.ilike(search_term),
+                Sample.status.ilike(search_term),
+                # Unit columns
+                Unit.unit_code.ilike(search_term),
+                Unit.age.ilike(search_term),
+                Unit.notes.ilike(search_term),
+                Unit.coa_status.ilike(search_term),
+                # Cast JSON fields to text for searching
+                func.cast(Unit.house, String).ilike(search_term),
+                func.cast(Unit.source, String).ilike(search_term),
+                func.cast(Unit.sample_type, String).ilike(search_term),
+            )
+        )
     
     total = query.scalar() or 0
     return {"total": total}
@@ -165,59 +219,90 @@ def get_total_count(
 @router.get("/filter-options")
 def get_filter_options(
     department_id: Optional[int] = Query(None, description="Filter by department ID"),
+    year: Optional[int] = Query(None, description="Filter by year"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all unique values for filter dropdowns"""
+    """Get all unique values for filter dropdowns based on year and department"""
     from sqlalchemy.orm import selectinload
     from app.models.sample import Sample
     from app.models.unit import Unit
+    from app.models.department import Department
     
     # Base query with eager loading of units
     query = db.query(Sample).options(selectinload(Sample.units))
+    
+    # Filter by year if specified
+    if year is not None:
+        query = query.filter(Sample.year == year)
     
     # Filter by department if specified
     if department_id is not None:
         query = query.join(Unit).filter(Unit.department_id == department_id).distinct()
     
-    # Get all samples (limit to avoid performance issues)
-    samples = query.limit(10000).all()
+    # Get all samples
+    samples = query.all()
     
     # Extract unique values
     companies = set()
     farms = set()
     flocks = set()
+    cycles = set()
+    statuses = set()
     ages = set()
     sample_types = set()
+    sources = set()
+    houses = set()
+    departments_set = set()
     
     for sample in samples:
-        companies.add(sample.company)  # type: ignore
-        farms.add(sample.farm)  # type: ignore
-        flocks.add(sample.flock)  # type: ignore
+        if sample.company:
+            companies.add(sample.company)
+        if sample.farm:
+            farms.add(sample.farm)
+        if sample.flock:
+            flocks.add(sample.flock)
+        if sample.cycle:
+            cycles.add(sample.cycle)
+        if sample.status:
+            statuses.add(sample.status)
         
         for unit in sample.units:
             if department_id is None or unit.department_id == department_id:
-                ages.add(unit.age)  # type: ignore
+                if unit.age:
+                    ages.add(str(unit.age))
                 if unit.sample_type:
                     for st in unit.sample_type:
-                        sample_types.add(st)
+                        if st:
+                            sample_types.add(st)
+                if unit.source:
+                    for src in unit.source:
+                        if src:
+                            sources.add(src)
+                if unit.house:
+                    for h in unit.house:
+                        if h:
+                            houses.add(h)
+                if unit.department_id:
+                    departments_set.add(unit.department_id)
     
-    # Remove None and empty values
-    companies.discard(None)
-    companies.discard('')
-    farms.discard(None)
-    farms.discard('')
-    flocks.discard(None)
-    flocks.discard('')
-    ages.discard(None)
-    ages.discard('')
+    # Get department names
+    dept_names = []
+    if departments_set:
+        depts = db.query(Department).filter(Department.id.in_(departments_set)).all()
+        dept_names = sorted([d.name for d in depts])
     
     return {
         "companies": sorted(list(companies)),
         "farms": sorted(list(farms)),
         "flocks": sorted(list(flocks)),
-        "ages": sorted(list(ages)),
-        "sample_types": sorted(list(sample_types))
+        "cycles": sorted(list(cycles)),
+        "statuses": sorted(list(statuses)),
+        "ages": sorted(list(ages), key=lambda x: (x.isdigit(), int(x) if x.isdigit() else x)),
+        "sample_types": sorted(list(sample_types)),
+        "sources": sorted(list(sources)),
+        "houses": sorted(list(houses)),
+        "departments": dept_names
     }
 
 

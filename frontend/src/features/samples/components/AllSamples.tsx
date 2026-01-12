@@ -211,14 +211,25 @@ export const AllSamples = () => {
   }, []);
 
   useEffect(() => {
-    const fetchTotalAndGoToLastPage = async () => {
+    const fetchTotalCount = async () => {
       try {
-        const response = await apiClient.get('/samples/total-count', { params: { year: selectedYear } });
+        // Build params matching all active filters
+        const params: any = { year: selectedYear };
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (dateFrom) params.date_from = dateFrom;
+        if (dateTo) params.date_to = dateTo;
+        if (selectedCompanies.length > 0) params.company = selectedCompanies;
+        if (selectedFarms.length > 0) params.farm = selectedFarms;
+        if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+        if (selectedAges.length > 0) params.age = selectedAges;
+        if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+        
+        const response = await apiClient.get('/samples/total-count', { params });
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Only auto-navigate to last page on first load if no saved page
-        if (!lastPageLoaded && !localStorage.getItem('allSamples_page')) {
+        // Only auto-navigate to last page on first load if no saved page and no search
+        if (!lastPageLoaded && !localStorage.getItem('allSamples_page') && !debouncedSearch) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
         }
@@ -228,8 +239,8 @@ export const AllSamples = () => {
         setLastPageLoaded(true);
       }
     };
-    fetchTotalAndGoToLastPage();
-  }, [selectedYear]);
+    fetchTotalCount();
+  }, [selectedYear, debouncedSearch, dateFrom, dateTo, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes]);
 
   useEffect(() => {
     localStorage.setItem('allSamples_page', String(page));
@@ -349,102 +360,59 @@ export const AllSamples = () => {
     });
   }, [samples]);
 
-  // Extract unique values for filter dropdowns (matching PCRSamples pattern)
-  const uniqueCompanies = useMemo(() => {
-    const companies = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.company) companies.add(sample.company);
-    });
-    return Array.from(companies).sort();
-  }, [samples]);
+  // Filter options from backend
+  const [filterOptions, setFilterOptions] = useState<{
+    companies: string[];
+    farms: string[];
+    flocks: string[];
+    cycles: string[];
+    statuses: string[];
+    ages: string[];
+    sample_types: string[];
+    sources: string[];
+    houses: string[];
+    departments: string[];
+  }>({
+    companies: [],
+    farms: [],
+    flocks: [],
+    cycles: [],
+    statuses: [],
+    ages: [],
+    sample_types: [],
+    sources: [],
+    houses: [],
+    departments: [],
+  });
 
-  const uniqueFarms = useMemo(() => {
-    const farms = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.farm) farms.add(sample.farm);
-    });
-    return Array.from(farms).sort();
-  }, [samples]);
+  // Fetch filter options from backend when year changes
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        const response = await apiClient.get('/samples/filter-options', {
+          params: { year: selectedYear }
+        });
+        setFilterOptions(response.data);
+      } catch (err) {
+        console.error('Failed to fetch filter options:', err);
+      }
+    };
+    fetchFilterOptions();
+  }, [selectedYear]);
 
-  const uniqueFlocks = useMemo(() => {
-    const flocks = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.flock) flocks.add(sample.flock);
-    });
-    return Array.from(flocks).sort();
-  }, [samples]);
-
-  const uniqueAges = useMemo(() => {
-    const ages = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.age) ages.add(unit.age);
-      });
-    });
-    return Array.from(ages).sort();
-  }, [samples]);
-
-  const uniqueSampleTypes = useMemo(() => {
-    const types = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.sample_type) {
-          if (Array.isArray(unit.sample_type)) {
-            unit.sample_type.forEach((t: string) => types.add(t));
-          } else {
-            types.add(unit.sample_type);
-          }
-        }
-      });
-    });
-    return Array.from(types).sort();
-  }, [samples]);
-
-  const uniqueSources = useMemo(() => {
-    const sources = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.source) sources.add(unit.source);
-      });
-    });
-    return Array.from(sources).sort();
-  }, [samples]);
-
-  const uniqueStatuses = useMemo(() => {
-    const statuses = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.status) statuses.add(sample.status);
-    });
-    return Array.from(statuses).sort();
-  }, [samples]);
-
-  const uniqueHouses = useMemo(() => {
-    const houses = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.house) {
-          if (Array.isArray(unit.house)) {
-            unit.house.forEach((h: string) => houses.add(h));
-          } else {
-            houses.add(unit.house);
-          }
-        }
-      });
-    });
-    return Array.from(houses).sort();
-  }, [samples]);
-
-  const uniqueCycles = useMemo(() => {
-    const cycles = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.cycle) cycles.add(sample.cycle);
-    });
-    return Array.from(cycles).sort();
-  }, [samples]);
-
-  const uniqueDepartments = useMemo(() => {
-    return ['PCR', 'Serology', 'Microbiology'];
-  }, []);
+  // Use backend filter options
+  const uniqueCompanies = filterOptions.companies;
+  const uniqueFarms = filterOptions.farms;
+  const uniqueFlocks = filterOptions.flocks;
+  const uniqueAges = filterOptions.ages;
+  const uniqueSampleTypes = filterOptions.sample_types;
+  const uniqueSources = filterOptions.sources;
+  const uniqueStatuses = filterOptions.statuses;
+  const uniqueHouses = filterOptions.houses;
+  const uniqueCycles = filterOptions.cycles;
+  const uniqueDepartments = filterOptions.departments.length > 0 
+    ? filterOptions.departments 
+    : ['PCR', 'Serology', 'Microbiology'];
 
   const filteredRows = useMemo(() => {
     let filtered = unitRows;

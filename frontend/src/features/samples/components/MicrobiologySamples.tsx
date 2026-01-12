@@ -329,15 +329,24 @@ export const MicrobiologySamples = () => {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
 
-  // Fetch total count and navigate to last page on initial load
+  // Fetch total count - updates when search or filters change
   useEffect(() => {
-    const fetchTotalAndGoToLastPage = async () => {
+    const fetchTotalCount = async () => {
       try {
-        const response = await apiClient.get('/samples/total-count', { params: { year: selectedYear, department_id: 3 } });
+        // Build params matching all active filters
+        const params: any = { year: selectedYear, department_id: 3 };
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (selectedCompanies.length > 0) params.company = selectedCompanies;
+        if (selectedFarms.length > 0) params.farm = selectedFarms;
+        if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+        if (selectedAges.length > 0) params.age = selectedAges;
+        if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+        
+        const response = await apiClient.get('/samples/total-count', { params });
         const total = response.data.total || 0;
         
-        // Always navigate to last page on first load if no saved page
-        if (!localStorage.getItem('microbiologySamples_page')) {
+        // Only auto-navigate to last page on first load if no saved page and no search
+        if (!localStorage.getItem('microbiologySamples_page') && !debouncedSearch) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
           localStorage.setItem('microbiologySamples_page', String(lastPage));
@@ -346,8 +355,8 @@ export const MicrobiologySamples = () => {
         console.error('Failed to fetch total count:', err);
       }
     };
-    fetchTotalAndGoToLastPage();
-  }, [selectedYear]);
+    fetchTotalCount();
+  }, [selectedYear, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -452,113 +461,73 @@ export const MicrobiologySamples = () => {
     });
   }, [samples, coaHiddenIndexes]);
 
-  // Auto-select persisted unit when data loads
+  // Auto-select persisted unit or last row when data loads
   useEffect(() => {
-    if (persistedUnitId && !selectedRow && unitRows.length > 0) {
-      const row = unitRows.find(r => r.unitId === persistedUnitId);
-      if (row) setSelectedRow(row);
+    if (!selectedRow && unitRows.length > 0) {
+      if (persistedUnitId) {
+        const row = unitRows.find(r => r.unitId === persistedUnitId);
+        if (row) {
+          setSelectedRow(row);
+          return;
+        }
+      }
+      // If no persisted unit or not found, select the last row (newest sample)
+      setSelectedRow(unitRows[unitRows.length - 1]);
     }
   }, [unitRows, persistedUnitId]);
 
-  // Extract unique values for filter dropdowns
-  const uniqueCompanies = useMemo(() => {
-    const companies = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.company) companies.add(sample.company);
-    });
-    return Array.from(companies).sort();
-  }, [samples]);
+  // Filter options from backend
+  const [filterOptions, setFilterOptions] = useState<{
+    companies: string[];
+    farms: string[];
+    flocks: string[];
+    cycles: string[];
+    statuses: string[];
+    ages: string[];
+    sample_types: string[];
+    sources: string[];
+    houses: string[];
+  }>({
+    companies: [],
+    farms: [],
+    flocks: [],
+    cycles: [],
+    statuses: [],
+    ages: [],
+    sample_types: [],
+    sources: [],
+    houses: [],
+  });
 
-  const uniqueFarms = useMemo(() => {
-    const farms = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.farm) farms.add(sample.farm);
-    });
-    return Array.from(farms).sort();
-  }, [samples]);
+  // Fetch filter options from backend when year changes
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        const response = await apiClient.get('/samples/filter-options', {
+          params: { year: selectedYear, department_id: 3 }
+        });
+        setFilterOptions(response.data);
+      } catch (err) {
+        console.error('Failed to fetch filter options:', err);
+      }
+    };
+    fetchFilterOptions();
+  }, [selectedYear]);
 
-  const uniqueFlocks = useMemo(() => {
-    const flocks = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.flock) flocks.add(sample.flock);
-    });
-    return Array.from(flocks).sort();
-  }, [samples]);
+  // Use backend filter options
+  const uniqueCompanies = filterOptions.companies;
+  const uniqueFarms = filterOptions.farms;
+  const uniqueFlocks = filterOptions.flocks;
+  const uniqueAges = filterOptions.ages;
+  const uniqueSampleTypes = filterOptions.sample_types;
+  const uniqueSources = filterOptions.sources;
+  const uniqueStatuses = filterOptions.statuses.length > 0 
+    ? filterOptions.statuses 
+    : ['in_progress', 'completed', 'need_approval', 'postponed', 'hold'];
+  const uniqueHouses = filterOptions.houses;
+  const uniqueCycles = filterOptions.cycles;
 
-  const uniqueAges = useMemo(() => {
-    const ages = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 3 && unit.age) ages.add(unit.age);
-      });
-    });
-    return Array.from(ages).sort();
-  }, [samples]);
-
-  const uniqueSampleTypes = useMemo(() => {
-    const types = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 3 && unit.sample_type) {
-          if (Array.isArray(unit.sample_type)) {
-            unit.sample_type.forEach((t: string) => types.add(t));
-          } else {
-            types.add(unit.sample_type);
-          }
-        }
-      });
-    });
-    return Array.from(types).sort();
-  }, [samples]);
-
-  const uniqueSources = useMemo(() => {
-    const sources = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 3 && unit.source) sources.add(unit.source);
-      });
-    });
-    return Array.from(sources).sort();
-  }, [samples]);
-
-  const uniqueStatuses = useMemo(() => {
-    const statuses = new Set<string>();
-    // Add predefined statuses to ensure they're always available
-    ['in_progress', 'completed', 'need_approval', 'postponed', 'hold'].forEach(s => statuses.add(s));
-    samples.forEach((sample) => {
-      if (sample.status) statuses.add(sample.status);
-      // Also include coa_status from units
-      sample.units?.forEach((unit: any) => {
-        if (unit.coa_status) statuses.add(unit.coa_status);
-      });
-    });
-    return Array.from(statuses).sort();
-  }, [samples]);
-
-  const uniqueHouses = useMemo(() => {
-    const houses = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 3 && unit.house) {
-          if (Array.isArray(unit.house)) {
-            unit.house.forEach((h: string) => houses.add(h));
-          } else {
-            houses.add(unit.house);
-          }
-        }
-      });
-    });
-    return Array.from(houses).sort();
-  }, [samples]);
-
-  const uniqueCycles = useMemo(() => {
-    const cycles = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.cycle) cycles.add(sample.cycle);
-    });
-    return Array.from(cycles).sort();
-  }, [samples]);
-
+  // Department-specific filters from current data
   const uniqueDiseases = useMemo(() => {
     const diseases = new Set<string>();
     samples.forEach((sample) => {

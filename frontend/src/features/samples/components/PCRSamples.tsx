@@ -431,116 +431,69 @@ export const PCRSamples = () => {
     }
   }, [selectedRow]);
 
-  // Auto-select persisted unit when data loads
+  // Auto-select persisted unit or last row when data loads
   useEffect(() => {
-    if (persistedUnitId && !selectedRow && unitRows.length > 0) {
-      const row = unitRows.find(r => r.unitId === persistedUnitId);
-      if (row) setSelectedRow(row);
+    if (!selectedRow && unitRows.length > 0) {
+      if (persistedUnitId) {
+        const row = unitRows.find(r => r.unitId === persistedUnitId);
+        if (row) {
+          setSelectedRow(row);
+          return;
+        }
+      }
+      // If no persisted unit or not found, select the last row (newest sample)
+      setSelectedRow(unitRows[unitRows.length - 1]);
     }
   }, [unitRows, persistedUnitId]);
 
-  // Extract unique values for filter dropdowns
-  const uniqueCompanies = useMemo(() => {
-    const companies = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.company) companies.add(sample.company);
-    });
-    return Array.from(companies).sort();
-  }, [samples]);
+  // Filter options from backend
+  const [filterOptions, setFilterOptions] = useState<{
+    companies: string[];
+    farms: string[];
+    flocks: string[];
+    cycles: string[];
+    statuses: string[];
+    ages: string[];
+    sample_types: string[];
+    sources: string[];
+    houses: string[];
+  }>({
+    companies: [],
+    farms: [],
+    flocks: [],
+    cycles: [],
+    statuses: [],
+    ages: [],
+    sample_types: [],
+    sources: [],
+    houses: [],
+  });
 
-  const uniqueFarms = useMemo(() => {
-    const farms = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.farm) farms.add(sample.farm);
-    });
-    return Array.from(farms).sort();
-  }, [samples]);
+  // Fetch filter options from backend when year changes
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        const response = await apiClient.get('/samples/filter-options', {
+          params: { year: selectedYear, department_id: 1 }
+        });
+        setFilterOptions(response.data);
+      } catch (err) {
+        console.error('Failed to fetch filter options:', err);
+      }
+    };
+    fetchFilterOptions();
+  }, [selectedYear]);
 
-  const uniqueFlocks = useMemo(() => {
-    const flocks = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.flock) flocks.add(sample.flock);
-    });
-    return Array.from(flocks).sort();
-  }, [samples]);
-
-  const uniqueAges = useMemo(() => {
-    const ages = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.age) ages.add(unit.age);
-      });
-    });
-    return Array.from(ages).sort();
-  }, [samples]);
-
-  const uniqueSampleTypes = useMemo(() => {
-    const types = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.sample_type) {
-          if (Array.isArray(unit.sample_type)) {
-            unit.sample_type.forEach((t: string) => types.add(t));
-          } else {
-            types.add(unit.sample_type);
-          }
-        }
-      });
-    });
-    return Array.from(types).sort();
-  }, [samples]);
-
-  const uniqueSources = useMemo(() => {
-    const sources = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.source) {
-          if (Array.isArray(unit.source)) {
-            unit.source.forEach((s: string) => sources.add(s));
-          } else {
-            sources.add(unit.source);
-          }
-        }
-      });
-    });
-    return Array.from(sources).sort();
-  }, [samples]);
-
-  const uniqueStatuses = useMemo(() => {
-    const statuses = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.status) statuses.add(sample.status);
-      // Also include coa_status from units
-      sample.units?.forEach((unit: any) => {
-        if (unit.coa_status) statuses.add(unit.coa_status);
-      });
-    });
-    return Array.from(statuses).sort();
-  }, [samples]);
-
-  const uniqueHouses = useMemo(() => {
-    const houses = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.house) {
-          if (Array.isArray(unit.house)) {
-            unit.house.forEach((h: string) => houses.add(h));
-          } else {
-            houses.add(unit.house);
-          }
-        }
-      });
-    });
-    return Array.from(houses).sort();
-  }, [samples]);
-
-  const uniqueCycles = useMemo(() => {
-    const cycles = new Set<string>();
-    samples.forEach((sample) => {
-      if (sample.cycle) cycles.add(sample.cycle);
-    });
-    return Array.from(cycles).sort();
-  }, [samples]);
+  // Use backend filter options for main filters
+  const uniqueCompanies = filterOptions.companies;
+  const uniqueFarms = filterOptions.farms;
+  const uniqueFlocks = filterOptions.flocks;
+  const uniqueAges = filterOptions.ages;
+  const uniqueSampleTypes = filterOptions.sample_types;
+  const uniqueSources = filterOptions.sources;
+  const uniqueStatuses = filterOptions.statuses;
+  const uniqueHouses = filterOptions.houses;
+  const uniqueCycles = filterOptions.cycles;
 
   const uniqueDiseases = useMemo(() => {
     const diseases = new Set<string>();
