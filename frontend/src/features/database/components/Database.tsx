@@ -2839,7 +2839,15 @@ function MicrobiologyTable({
   };
 
   // Get isolate type for a unit
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
   // Format: "culture (type1, type2), salmonella (type3)" for multiple diseases
+=======
+  // Shows unique isolate types only (no duplicates, no dash patterns)
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+=======
+  // Shows unique isolate types only (no duplicates, no dash patterns)
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
   const getIsolateType = (unitId: number): string => {
     const coa = coaResults[unitId];
     if (!coa) return '-';
@@ -2848,6 +2856,8 @@ function MicrobiologyTable({
     const isolateTypes = (coa as any).isolate_types;
     if (!isolateTypes) return '-';
     
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
     // Group isolate types by disease
     const diseaseIsolates: Record<string, Set<string>> = {};
     
@@ -2879,6 +2889,39 @@ function MicrobiologyTable({
     });
     
     return diseaseStrings.length > 0 ? diseaseStrings.join(', ') : '-';
+=======
+=======
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+    // Collect ALL unique isolate types across all diseases (no grouping by disease)
+    const allUniqueTypes = new Set<string>();
+    
+    Object.entries(isolateTypes).forEach(([_disease, locations]: [string, any]) => {
+      if (typeof locations === 'object') {
+        Object.values(locations).forEach((type: any) => {
+          // Filter out empty, dash-only, and placeholder values
+          // More comprehensive dash pattern filtering
+          if (type && 
+              typeof type === 'string' &&
+              type.trim() !== '' && 
+              !type.match(/^-+$/) &&           // matches -, --, ---, ----, etc.
+              !type.match(/^[\-─━]+$/) &&      // matches various dash characters
+              type !== 'Not Detected' &&
+              type !== 'NO BACTERIAL GROWTH' &&
+              type !== 'NO COLIFORM GROWTH' &&
+              type !== 'NO FUNGAL GROWTH') {
+            allUniqueTypes.add(type.trim());
+          }
+        });
+      }
+    });
+    
+    // Return unique types as comma-separated list (no disease grouping)
+    const sortedTypes = Array.from(allUniqueTypes).sort();
+    return sortedTypes.length > 0 ? sortedTypes.join(', ') : '-';
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+=======
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
   };
 
   // Get positive locations for a unit (sub-samples with positive/over-limit results)
@@ -2891,6 +2934,18 @@ function MicrobiologyTable({
     const sampleTypes = unit?.sample_type || [];
     const isFeed = sampleTypes.some(t => t.toLowerCase().includes('feed'));
     
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+=======
+    // Get the index_list from unit's microbiology_data to map row indices to actual names
+    const indexList = unit?.microbiology_data?.index_list || [];
+    
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+=======
+    // Get the index_list from unit's microbiology_data to map row indices to actual names
+    const indexList = unit?.microbiology_data?.index_list || [];
+    
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
     // Group positive locations by disease - use Set of strings for location names
     const diseaseLocations: Record<string, Set<string>> = {};
     
@@ -2933,6 +2988,8 @@ function MicrobiologyTable({
         }
         
         if (isPositive) {
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
           // Extract base location name (e.g., "Liver" from "Liver_fungi" or just "Liver")
           // The location key is the actual index name, not a numeric index
           const baseLocation = location.split('_')[0];
@@ -2943,6 +3000,47 @@ function MicrobiologyTable({
               diseaseLocations[disease] = new Set();
             }
             diseaseLocations[disease].add(baseLocation);
+=======
+=======
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+          let actualLocationName = '';
+          
+          // For water/total count diseases, keys are like "row0_tbc_result", "row1_coliform_result"
+          // Extract the row index and map to actual location name from index_list
+          const rowMatch = location.match(/^row(\d+)_/);
+          if (rowMatch) {
+            const rowIndex = parseInt(rowMatch[1], 10);
+            if (rowIndex >= 0 && rowIndex < indexList.length) {
+              actualLocationName = indexList[rowIndex];
+            }
+          } else {
+            // For other diseases (culture, salmonella, fungi), the key IS the location name
+            // But check if it looks like a row index pattern first
+            const directRowMatch = location.match(/^row(\d+)$/i);
+            if (directRowMatch) {
+              const rowIndex = parseInt(directRowMatch[1], 10);
+              if (rowIndex >= 0 && rowIndex < indexList.length) {
+                actualLocationName = indexList[rowIndex];
+              }
+            } else {
+              // The key is the actual location name (e.g., "Liver", "Heart")
+              actualLocationName = location;
+            }
+          }
+          
+          // Skip if location name is empty, a dash pattern, or row-like
+          if (actualLocationName && 
+              actualLocationName.trim() !== '' && 
+              !actualLocationName.match(/^-+$/) &&
+              !actualLocationName.match(/^row\d+$/i)) {
+            if (!diseaseLocations[disease]) {
+              diseaseLocations[disease] = new Set();
+            }
+            diseaseLocations[disease].add(actualLocationName);
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+=======
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
           }
         }
       });
@@ -3257,6 +3355,8 @@ function MicrobiologyTable({
                           
                           // Get isolate type and location from COA
                           const coa = exportCoaResults[unit.id];
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
                           let isolateTypes = '-';
                           let locations = '-';
                           if (coa?.test_results) {
@@ -3272,6 +3372,120 @@ function MicrobiologyTable({
                           }
                           row.push(isolateTypes);
                           row.push(locations);
+=======
+=======
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+                          let isolateTypesStr = '-';
+                          let locationsStr = '-';
+                          
+                          // Get isolate types - filter out dash patterns and duplicates
+                          const coaIsolateTypes = (coa as any)?.isolate_types;
+                          if (coaIsolateTypes) {
+                            const allUniqueTypes = new Set<string>();
+                            Object.values(coaIsolateTypes).forEach((locations: any) => {
+                              if (typeof locations === 'object') {
+                                Object.values(locations).forEach((type: any) => {
+                                  if (type && 
+                                      typeof type === 'string' &&
+                                      type.trim() !== '' && 
+                                      !type.match(/^-+$/) &&
+                                      !type.match(/^[\-─━]+$/) &&
+                                      type !== 'Not Detected' &&
+                                      type !== 'NO BACTERIAL GROWTH' &&
+                                      type !== 'NO COLIFORM GROWTH' &&
+                                      type !== 'NO FUNGAL GROWTH') {
+                                    allUniqueTypes.add(type.trim());
+                                  }
+                                });
+                              }
+                            });
+                            const sortedTypes = Array.from(allUniqueTypes).sort();
+                            isolateTypesStr = sortedTypes.length > 0 ? sortedTypes.join(', ') : '-';
+                          }
+                          
+                          // Get locations - map row indices to actual names from index_list
+                          if (coa?.test_results) {
+                            const indexList = unit.microbiology_data?.index_list || [];
+                            const sampleTypes = unit.sample_type || [];
+                            const isFeed = sampleTypes.some(t => t.toLowerCase().includes('feed'));
+                            const diseaseLocations: Record<string, Set<string>> = {};
+                            
+                            Object.entries(coa.test_results).forEach(([disease, results]) => {
+                              const lowerDisease = disease.toLowerCase();
+                              Object.entries(results as Record<string, string>).forEach(([location, value]) => {
+                                if (!value || value === '-' || value === '') return;
+                                const upper = value.toUpperCase();
+                                let isPositive = false;
+                                
+                                if (lowerDisease.includes('water')) {
+                                  const num = parseNumericValue(value);
+                                  if (num !== null) {
+                                    if (lowerDisease.includes('bacterial') || lowerDisease.includes('tbc')) {
+                                      isPositive = num > 56;
+                                    } else {
+                                      isPositive = num > 1;
+                                    }
+                                  }
+                                } else if (lowerDisease.includes('total count')) {
+                                  const num = parseNumericValue(value);
+                                  if (num !== null) {
+                                    isPositive = isFeed ? num >= 100000 : num > 1000;
+                                  }
+                                } else {
+                                  isPositive = upper !== 'NOT DETECTED' && upper !== 'NEGATIVE' && 
+                                               !upper.includes('LESS THAN') && upper !== 'NO BACTERIAL GROWTH' && 
+                                               upper !== 'NO COLIFORM GROWTH' && upper !== 'NO FUNGAL GROWTH';
+                                }
+                                
+                                if (isPositive) {
+                                  let actualLocationName = '';
+                                  const rowMatch = location.match(/^row(\d+)_/);
+                                  if (rowMatch) {
+                                    const rowIndex = parseInt(rowMatch[1], 10);
+                                    if (rowIndex >= 0 && rowIndex < indexList.length) {
+                                      actualLocationName = indexList[rowIndex];
+                                    }
+                                  } else {
+                                    const directRowMatch = location.match(/^row(\d+)$/i);
+                                    if (directRowMatch) {
+                                      const rowIndex = parseInt(directRowMatch[1], 10);
+                                      if (rowIndex >= 0 && rowIndex < indexList.length) {
+                                        actualLocationName = indexList[rowIndex];
+                                      }
+                                    } else {
+                                      actualLocationName = location;
+                                    }
+                                  }
+                                  
+                                  if (actualLocationName && 
+                                      actualLocationName.trim() !== '' && 
+                                      !actualLocationName.match(/^-+$/) &&
+                                      !actualLocationName.match(/^row\d+$/i)) {
+                                    if (!diseaseLocations[disease]) {
+                                      diseaseLocations[disease] = new Set();
+                                    }
+                                    diseaseLocations[disease].add(actualLocationName);
+                                  }
+                                }
+                              });
+                            });
+                            
+                            const diseaseStrings: string[] = [];
+                            Object.entries(diseaseLocations).forEach(([disease, locationNames]) => {
+                              const sortedLocs = Array.from(locationNames).sort();
+                              if (sortedLocs.length > 0) {
+                                diseaseStrings.push(`${disease.toLowerCase()} (${sortedLocs.join(', ')})`);
+                              }
+                            });
+                            locationsStr = diseaseStrings.length > 0 ? diseaseStrings.join(', ') : '-';
+                          }
+                          
+                          row.push(isolateTypesStr);
+                          row.push(locationsStr);
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+=======
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
                           row.push(unit.coa_status || '-');
                           wsData.push(row);
                           
@@ -3470,8 +3684,127 @@ function MicrobiologyTable({
                             const result = getExportDiseaseResult(unit.id, disease, unit);
                             row.push(result === null ? '-' : result);
                           });
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
                           row.push('-'); // Isolate type placeholder
                           row.push('-'); // Location placeholder
+=======
+=======
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+                          
+                          // Get isolate type and location from COA (same logic as Excel export)
+                          const coa = exportCoaResults[unit.id];
+                          let isolateTypesStr = '-';
+                          let locationsStr = '-';
+                          
+                          // Get isolate types - filter out dash patterns and duplicates
+                          const coaIsolateTypes = (coa as any)?.isolate_types;
+                          if (coaIsolateTypes) {
+                            const allUniqueTypes = new Set<string>();
+                            Object.values(coaIsolateTypes).forEach((locations: any) => {
+                              if (typeof locations === 'object') {
+                                Object.values(locations).forEach((type: any) => {
+                                  if (type && 
+                                      typeof type === 'string' &&
+                                      type.trim() !== '' && 
+                                      !type.match(/^-+$/) &&
+                                      !type.match(/^[\-─━]+$/) &&
+                                      type !== 'Not Detected' &&
+                                      type !== 'NO BACTERIAL GROWTH' &&
+                                      type !== 'NO COLIFORM GROWTH' &&
+                                      type !== 'NO FUNGAL GROWTH') {
+                                    allUniqueTypes.add(type.trim());
+                                  }
+                                });
+                              }
+                            });
+                            const sortedTypes = Array.from(allUniqueTypes).sort();
+                            isolateTypesStr = sortedTypes.length > 0 ? sortedTypes.join(', ') : '-';
+                          }
+                          
+                          // Get locations - map row indices to actual names from index_list
+                          if (coa?.test_results) {
+                            const indexList = unit.microbiology_data?.index_list || [];
+                            const sampleTypes = unit.sample_type || [];
+                            const isFeed = sampleTypes.some(t => t.toLowerCase().includes('feed'));
+                            const diseaseLocations: Record<string, Set<string>> = {};
+                            
+                            Object.entries(coa.test_results).forEach(([disease, results]) => {
+                              const lowerDisease = disease.toLowerCase();
+                              Object.entries(results as Record<string, string>).forEach(([location, value]) => {
+                                if (!value || value === '-' || value === '') return;
+                                const upper = value.toUpperCase();
+                                let isPositive = false;
+                                
+                                if (lowerDisease.includes('water')) {
+                                  const num = parseNumericValue(value);
+                                  if (num !== null) {
+                                    if (lowerDisease.includes('bacterial') || lowerDisease.includes('tbc')) {
+                                      isPositive = num > 56;
+                                    } else {
+                                      isPositive = num > 1;
+                                    }
+                                  }
+                                } else if (lowerDisease.includes('total count')) {
+                                  const num = parseNumericValue(value);
+                                  if (num !== null) {
+                                    isPositive = isFeed ? num >= 100000 : num > 1000;
+                                  }
+                                } else {
+                                  isPositive = upper !== 'NOT DETECTED' && upper !== 'NEGATIVE' && 
+                                               !upper.includes('LESS THAN') && upper !== 'NO BACTERIAL GROWTH' && 
+                                               upper !== 'NO COLIFORM GROWTH' && upper !== 'NO FUNGAL GROWTH';
+                                }
+                                
+                                if (isPositive) {
+                                  let actualLocationName = '';
+                                  const rowMatch = location.match(/^row(\d+)_/);
+                                  if (rowMatch) {
+                                    const rowIndex = parseInt(rowMatch[1], 10);
+                                    if (rowIndex >= 0 && rowIndex < indexList.length) {
+                                      actualLocationName = indexList[rowIndex];
+                                    }
+                                  } else {
+                                    const directRowMatch = location.match(/^row(\d+)$/i);
+                                    if (directRowMatch) {
+                                      const rowIndex = parseInt(directRowMatch[1], 10);
+                                      if (rowIndex >= 0 && rowIndex < indexList.length) {
+                                        actualLocationName = indexList[rowIndex];
+                                      }
+                                    } else {
+                                      actualLocationName = location;
+                                    }
+                                  }
+                                  
+                                  if (actualLocationName && 
+                                      actualLocationName.trim() !== '' && 
+                                      !actualLocationName.match(/^-+$/) &&
+                                      !actualLocationName.match(/^row\d+$/i)) {
+                                    if (!diseaseLocations[disease]) {
+                                      diseaseLocations[disease] = new Set();
+                                    }
+                                    diseaseLocations[disease].add(actualLocationName);
+                                  }
+                                }
+                              });
+                            });
+                            
+                            const diseaseStrings: string[] = [];
+                            Object.entries(diseaseLocations).forEach(([disease, locationNames]) => {
+                              const sortedLocs = Array.from(locationNames).sort();
+                              if (sortedLocs.length > 0) {
+                                diseaseStrings.push(`${disease.toLowerCase()} (${sortedLocs.join(', ')})`);
+                              }
+                            });
+                            locationsStr = diseaseStrings.length > 0 ? diseaseStrings.join(', ') : '-';
+                          }
+                          
+                          row.push(`"${isolateTypesStr}"`);
+                          row.push(`"${locationsStr}"`);
+<<<<<<< C:\Users\AL-WAFI\OneDrive\Desktop\POULTRY LIMS\frontend\src\features\database\components\Database.tsx
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
+=======
+>>>>>>> c:\Users\AL-WAFI\.windsurf\worktrees\POULTRY LIMS\POULTRY LIMS-65a35e5d\frontend\src\features\database\components\Database.tsx
                           row.push(unit.coa_status || '-');
                           csvRows.push(row.join(','));
                           
