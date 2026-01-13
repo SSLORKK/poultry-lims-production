@@ -53,8 +53,9 @@ export function PCRCOA() {
   const location = useLocation();
   const { user } = useCurrentUser();
   
-  // Get navigation state to determine where to go back
-  const navigationState = location.state as { fromDatabase?: boolean; department?: string } | null;
+  // Get navigation state to determine where to go back and if read-only mode
+  const navigationState = location.state as { fromDatabase?: boolean; department?: string; readOnly?: boolean } | null;
+  const isReadOnly = navigationState?.readOnly === true;
   
   const [unitData, setUnitData] = useState<UnitData | null>(null);
   const [coaData, setCoaData] = useState<COAData | null>(null);
@@ -1160,6 +1161,17 @@ export function PCRCOA() {
         </svg>
         Back
       </button>
+
+      {/* Read-Only Banner */}
+      {isReadOnly && (
+        <div className="mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-3">
+          <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-blue-800 font-medium">View Only Mode - This COA is displayed in read-only mode from the Database view.</span>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         {/* Simple Header */}
         <div className="text-center border-b-4 border-blue-700 pb-4 mb-6">
@@ -1530,28 +1542,32 @@ export function PCRCOA() {
               </svg>
               Export PDF
             </button>
-            <button
-              onClick={() => setShowPostponedModal(true)}
-              disabled={saving}
-              className="px-6 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:bg-gray-400"
-            >
-              Postpone
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
-            >
-              {saving ? 'Saving...' : 'Save COA'}
-            </button>
-            {canApprove && (
-              <button
-                onClick={handleApprove}
-                disabled={saving}
-                className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400"
-              >
-                {saving ? 'Approving...' : 'Approve COA'}
-              </button>
+            {!isReadOnly && (
+              <>
+                <button
+                  onClick={() => setShowPostponedModal(true)}
+                  disabled={saving}
+                  className="px-6 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:bg-gray-400"
+                >
+                  Postpone
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                >
+                  {saving ? 'Saving...' : 'Save COA'}
+                </button>
+                {canApprove && (
+                  <button
+                    onClick={handleApprove}
+                    disabled={saving}
+                    className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400"
+                  >
+                    {saving ? 'Approving...' : 'Approve COA'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -5,6 +5,8 @@ import { NotesDialog } from '../../../components/NotesDialog';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import { ApiErrorDisplay } from '../../../components/common/ApiErrorDisplay';
+import { SamplesHeaderBar } from './shared/SamplesHeaderBar';
+import { SelectedRowActionBar } from './shared/SelectedRowActionBar';
 import * as XLSX from 'xlsx-js-style';
 
 interface UnitRow {
@@ -753,27 +755,42 @@ export const SerologySamples = () => {
               </tbody>
             </table>
           </div>
+
         </div>
       </div>
     );
   }
 
+  // Calculate active filter count for header
+  const activeFilterCount = selectedCompanies.length + selectedFarms.length + selectedFlocks.length +
+    selectedAges.length + selectedSampleTypes.length + selectedSources.length +
+    selectedStatuses.length + selectedHouses.length + selectedCycles.length +
+    selectedDiseases.length + selectedTechnicians.length +
+    (startDate ? 1 : 0) + (endDate ? 1 : 0);
+
   return (
     <div className="p-3 sm:p-4 lg:p-6 pb-20 lg:pb-6">
       <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
-        {/* Header - Mobile Responsive */}
-        <div className="flex items-center justify-between mb-4 lg:mb-6">
-          <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-green-700">Serology Samples</h2>
-          {/* Mobile: Show filter button */}
-          <button
-            onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-            className="lg:hidden p-2 rounded-lg bg-green-100 hover:bg-green-200"
-          >
-            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-            </svg>
-          </button>
-        </div>
+        <SamplesHeaderBar
+          title="Serology Samples"
+          themeColor="green"
+          globalSearch={globalSearch}
+          setGlobalSearch={setGlobalSearch}
+          loading={loading}
+          selectedYear={selectedYear}
+          setSelectedYear={setSelectedYear}
+          availableYears={availableYears}
+          filterPanelOpen={filterPanelOpen}
+          setFilterPanelOpen={setFilterPanelOpen}
+          activeFilterCount={activeFilterCount}
+          clearFilters={clearFilters}
+          exportDropdownOpen={exportDropdownOpen}
+          setExportDropdownOpen={setExportDropdownOpen}
+          isExporting={isExporting}
+          exportToExcel={exportToExcel}
+          exportToCSV={exportToCSV}
+          filteredRowsCount={filteredRows.length}
+        />
 
         {error && (
           <ApiErrorDisplay 
@@ -784,113 +801,26 @@ export const SerologySamples = () => {
           />
         )}
 
+        {/* Selected Row Action Bar */}
+        {selectedRow && (
+          <SelectedRowActionBar
+            unitCode={selectedRow.unitCode}
+            company={selectedRow.company}
+            farm={selectedRow.farm}
+            themeColor="green"
+            hasWriteAccess={hasWriteAccess}
+            isAdmin={isAdmin}
+            coaStatus={selectedRow.coaStatus}
+            onEdit={() => handleEdit(selectedRow.sampleId)}
+            onDelete={() => handleDelete(selectedRow.unitId, selectedRow.unitCode)}
+            onStatusChange={() => setShowStatusModal(true)}
+            onDeselect={() => setSelectedRow(null)}
+            showCOA={false}
+            showStatusChange={true}
+          />
+        )}
+
         <div className="mb-4 lg:mb-6 space-y-3 lg:space-y-4">
-          {/* Search and Year row - Responsive */}
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-end">
-            <div className="flex-shrink-0">
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Year</label>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="w-full sm:w-auto px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              >
-                {availableYears.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex-1 relative">
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Search</label>
-              <input
-                type="text"
-                placeholder="🔍 Search..."
-                value={globalSearch}
-                onChange={(e) => setGlobalSearch(e.target.value)}
-                className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-              />
-              {loading && (
-                <div className="absolute right-3 top-9 transform -translate-y-1/2">
-                  <svg className="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                </div>
-              )}
-            </div>
-            <div className="hidden lg:flex flex-shrink-0 gap-2">
-              <button
-                onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-                className="px-3 sm:px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 whitespace-nowrap flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-                <span className="hidden sm:inline">Filters</span>
-              </button>
-              <button
-                onClick={clearFilters}
-                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 whitespace-nowrap"
-              >
-                Clear All
-              </button>
-              {/* Export Dropdown */}
-              <div className="relative" ref={exportDropdownRef}>
-                <button
-                  onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
-                  disabled={isExporting || filteredRows.length === 0}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isExporting ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span className="text-sm">Exporting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      <span className="text-sm font-medium">Export</span>
-                      <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </>
-                  )}
-                </button>
-
-                {exportDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-20">
-                    <div className="py-1">
-                      <button
-                        onClick={exportToExcel}
-                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                      >
-                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        Export to Excel
-                      </button>
-                      <button
-                        onClick={exportToCSV}
-                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                      >
-                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        Export to CSV
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
           {filterPanelOpen && (
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1471,67 +1401,6 @@ export const SerologySamples = () => {
             </div>
           </div>
         </div>
-
-        {selectedRow && (
-          <div className="mb-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <span className="text-sm font-bold text-green-900">{selectedRow.unitCode}</span>
-                <span className="text-xs text-green-600 ml-2">• {selectedRow.company} - {selectedRow.farm}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => hasWriteAccess && handleEdit(selectedRow.sampleId)}
-                disabled={!hasWriteAccess}
-                className={`group px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95 ${hasWriteAccess ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
-                title={!hasWriteAccess ? 'No write permission' : 'Edit sample'}
-              >
-                <svg className="w-4 h-4 transition-transform group-hover:rotate-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                Edit
-              </button>
-              {isAdmin && (
-                <button
-                  onClick={() => handleDelete(selectedRow.unitId, selectedRow.unitCode)}
-                  className="group px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 bg-red-600 text-white hover:bg-red-700 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95"
-                  title="Delete unit permanently"
-                >
-                  <svg className="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Delete
-                </button>
-              )}
-              <button
-                onClick={() => hasWriteAccess && setShowStatusModal(true)}
-                disabled={!hasWriteAccess}
-                className={`group px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95 ${hasWriteAccess ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
-                title={!hasWriteAccess ? 'No write permission' : 'Change sample status'}
-              >
-                <svg className="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Status
-              </button>
-              <button
-                onClick={() => setSelectedRow(null)}
-                className="ml-1 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200"
-                title="Deselect row"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
 
         {filteredRows.length === 0 ? (
           <div className="text-center py-12">

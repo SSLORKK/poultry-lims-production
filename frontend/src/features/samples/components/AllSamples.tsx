@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { apiClient } from '../../../services/apiClient';
 import { NotesDialog } from '../../../components/NotesDialog';
 import { usePermissions } from '../../../hooks/usePermissions';
@@ -31,8 +31,10 @@ interface UnitRow {
 }
 
 export const AllSamples = () => {
-  const { canRead, isLoading: permissionsLoading } = usePermissions();
+  const navigate = useNavigate();
+  const { canRead, canWrite, isLoading: permissionsLoading } = usePermissions();
   const hasReadAccess = canRead('All Samples');
+  const hasWriteAccess = canWrite('All Samples');
 
   // Check permission - redirect if no access
   if (!permissionsLoading && !hasReadAccess) {
@@ -40,6 +42,7 @@ export const AllSamples = () => {
   }
 
   const [samples, setSamples] = useState<any[]>([]);
+  const [selectedRow, setSelectedRow] = useState<UnitRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);  // Only true on first load
   const [error, setError] = useState<string | null>(null);
@@ -1357,19 +1360,24 @@ export const AllSamples = () => {
               )}
           </div>
         ) : (
-          <>            
+          <>
             {/* Mobile Card View */}
             <div className="lg:hidden space-y-3">
               {filteredRows.map((row: UnitRow) => (
                 <div
                   key={`mobile-${row.sampleId}-${row.unitId}`}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-4"
+                  onClick={() => setSelectedRow(row)}
+                  className={`bg-white rounded-xl shadow-sm border-2 p-4 cursor-pointer transition-all active:scale-[0.98] ${
+                    selectedRow?.unitId === row.unitId
+                      ? 'border-orange-500 bg-gradient-to-br from-orange-50 to-amber-50 ring-2 ring-orange-200'
+                      : 'border-gray-100 hover:border-gray-200'
+                  }`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-gray-700 text-base">{row.unitCode}</span>
                       <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-semibold $
+                        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                           row.department === 'PCR' ? 'bg-blue-100 text-blue-700' :
                           row.department === 'Serology' ? 'bg-green-100 text-green-700' :
                           row.department === 'Microbiology' ? 'bg-purple-100 text-purple-700' :
@@ -1379,7 +1387,7 @@ export const AllSamples = () => {
                         {row.department}
                       </span>
                       <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-semibold $
+                        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                           row.status === 'completed' ? 'bg-green-100 text-green-700' :
                           row.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
                           'bg-gray-100 text-gray-700'
@@ -1417,13 +1425,32 @@ export const AllSamples = () => {
                     </div>
                     {row.notes && (
                       <button
-                        onClick={() => setNoteDialog({ open: true, note: row.notes })}
+                        onClick={(e) => { e.stopPropagation(); setNoteDialog({ open: true, note: row.notes }); }}
                         className="text-blue-600 text-xs font-medium"
                       >
                         View Note
                       </button>
                     )}
                   </div>
+                  {/* Mobile Action Buttons - Only show on selected card */}
+                  {selectedRow?.unitId === row.unitId && (
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/register-sample?edit=${row.sampleId}`); }}
+                        disabled={!hasWriteAccess}
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all ${
+                          hasWriteAccess 
+                            ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white active:scale-95 shadow-lg' 
+                            : 'bg-gray-200 text-gray-500'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Edit Sample
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

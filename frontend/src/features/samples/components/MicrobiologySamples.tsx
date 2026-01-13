@@ -1494,33 +1494,26 @@ export const MicrobiologySamples = () => {
             <button
               onClick={() => hasWriteAccess && handleCOAClick(selectedRow.unitId)}
               disabled={!hasWriteAccess}
-              className={`group px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95 ${
+              className={`group px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg font-medium text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95 ${
                 !hasWriteAccess 
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : selectedRow.coaStatus === 'completed' 
-                    ? 'bg-green-600 text-white hover:bg-green-700' 
-                    : selectedRow.coaStatus === 'need_approval'
-                      ? 'bg-amber-500 text-white hover:bg-amber-600'
-                      : selectedRow.coaStatus === 'postponed'
-                        ? 'bg-orange-500 text-white hover:bg-orange-600'
-                        : 'bg-purple-600 text-white hover:bg-purple-700'
+                  : selectedRow.coaStatus 
+                    ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                    : 'bg-green-600 text-white hover:bg-green-700'
               }`}
               title={
                 !hasWriteAccess 
                   ? 'No write permission' 
-                  : selectedRow.coaStatus === 'completed' 
-                    ? 'View and edit certificate (approved)' 
-                    : selectedRow.coaStatus === 'need_approval'
-                      ? 'View certificate (awaiting approval)'
-                      : selectedRow.coaStatus === 'postponed'
-                        ? 'View certificate (postponed)'
-                        : 'Create new certificate'
+                  : selectedRow.coaStatus 
+                    ? 'Edit certificate of analysis'
+                    : 'Create new certificate'
               }
             >
               <svg className="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              {selectedRow.coaStatus === 'completed' ? 'Edit COA ✓' : selectedRow.coaStatus === 'need_approval' ? 'View COA ⏳' : selectedRow.coaStatus === 'postponed' ? 'View COA ⏸' : 'Create COA'}
+              <span className="hidden xs:inline">{selectedRow.coaStatus ? 'Edit COA' : 'Create COA'}</span>
+              <span className="xs:hidden">COA</span>
             </button>
             <button
               onClick={() => setSelectedRow(null)}

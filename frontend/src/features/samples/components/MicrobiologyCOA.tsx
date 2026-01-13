@@ -74,8 +74,9 @@ export function MicrobiologyCOA() {
   const location = useLocation();
   const { user } = useCurrentUser();
 
-  // Get navigation state to determine where to go back
-  const navigationState = location.state as { fromDatabase?: boolean; department?: string } | null;
+  // Get navigation state to determine where to go back and if read-only mode
+  const navigationState = location.state as { fromDatabase?: boolean; department?: string; readOnly?: boolean } | null;
+  const isReadOnly = navigationState?.readOnly === true;
 
   const [unitData, setUnitData] = useState<UnitData | null>(null);
   const [coaData, setCoaData] = useState<COAData | null>(null);
@@ -2180,6 +2181,16 @@ export function MicrobiologyCOA() {
         </div>
       )}
 
+      {/* Read-Only Banner */}
+      {isReadOnly && (
+        <div className="max-w-7xl mx-auto mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-3">
+          <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-blue-800 font-medium">View Only Mode - This COA is displayed in read-only mode from the Database view.</span>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto">
         {/* Action Buttons */}
         <div className="flex justify-between items-center mb-6 print:hidden">
@@ -2205,31 +2216,35 @@ export function MicrobiologyCOA() {
               </svg>
               Export PDF
             </button>
-            <button
-              type="button"
-              onClick={() => setShowPostponedModal(true)}
-              disabled={saving}
-              className="px-6 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:bg-gray-400"
-            >
-              Postpone
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
-            >
-              {saving ? 'Saving...' : 'Save COA'}
-            </button>
-            {(user?.role === 'admin' || user?.role === 'manager' || user?.role === 'lab_supervisor') && (
-              <button
-                type="button"
-                onClick={handleApprove}
-                disabled={saving}
-                className="px-6 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-400"
-              >
-                {saving ? 'Approving...' : 'Approve'}
-              </button>
+            {!isReadOnly && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowPostponedModal(true)}
+                  disabled={saving}
+                  className="px-6 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:bg-gray-400"
+                >
+                  Postpone
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                >
+                  {saving ? 'Saving...' : 'Save COA'}
+                </button>
+                {(user?.role === 'admin' || user?.role === 'manager' || user?.role === 'lab_supervisor') && (
+                  <button
+                    type="button"
+                    onClick={handleApprove}
+                    disabled={saving}
+                    className="px-6 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-400"
+                  >
+                    {saving ? 'Approving...' : 'Approve'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -282,32 +282,47 @@ def get_units_statistics(
                 )
             ).scalar() or 0
         elif dept.code == 'SER':
-            test_count = db.query(func.sum(SerologyData.tests_count)).join(
-                Unit, Unit.id == SerologyData.unit_id
-            ).join(
+            # For serology: tests = sum of disease-level test counts from diseases_list
+            # This matches the reports.py logic for consistency
+            ser_units = db.query(Unit).join(
                 Sample, Sample.id == Unit.sample_id
+            ).join(
+                SerologyData, Unit.id == SerologyData.unit_id
             ).filter(
                 and_(
                     Unit.department_id == dept.id,
                     Sample.date_received >= first_interval_start.date(),
                     Sample.date_received < last_interval_end.date()
                 )
-            ).scalar() or 0
+            ).all()
+            
+            test_count = 0
+            for unit in ser_units:
+                if unit.serology_data and unit.serology_data.diseases_list:
+                    diseases_list = unit.serology_data.diseases_list
+                    if isinstance(diseases_list, list):
+                        for disease_item in diseases_list:
+                            if isinstance(disease_item, dict):
+                                # Use disease-specific test_count (default to 1 if not set)
+                                disease_test_count = disease_item.get('test_count', 1) or 1
+                                test_count += disease_test_count
         
-        # Calculate wells count for Serology
+        # Calculate wells count for Serology (matching reports.py logic)
         wells_count = 0
         if dept.code == 'SER':
-            wells_count = db.query(func.sum(SerologyData.number_of_wells)).join(
-                Unit, Unit.id == SerologyData.unit_id
-            ).join(
-                Sample, Sample.id == Unit.sample_id
-            ).filter(
-                and_(
-                    Unit.department_id == dept.id,
-                    Sample.date_received >= first_interval_start.date(),
-                    Sample.date_received < last_interval_end.date()
-                )
-            ).scalar() or 0
+            # Use per-disease wells counts from diseases_list, with fallback to number_of_wells
+            for unit in ser_units:
+                if unit.serology_data:
+                    unit_wells_total = 0
+                    if unit.serology_data.diseases_list and isinstance(unit.serology_data.diseases_list, list):
+                        for disease_item in unit.serology_data.diseases_list:
+                            if isinstance(disease_item, dict):
+                                disease_wells = disease_item.get('wells_count', 0) or 0
+                                unit_wells_total += disease_wells
+                    # Fallback to number_of_wells if no per-disease wells
+                    if unit_wells_total == 0 and unit.serology_data.number_of_wells:
+                        unit_wells_total = unit.serology_data.number_of_wells
+                    wells_count += unit_wells_total
         elif dept.code == 'MIC':
             # For microbiology: tests = sum of visible indexes per disease (excluding hidden indexes)
             mic_units = db.query(Unit).join(
@@ -337,13 +352,13 @@ def get_units_statistics(
                     visible_count = len(index_list) - len(disease_hidden)
                     test_count += max(0, visible_count)
                 
-                # Count AST tests if ast_data is present and has results with interpretation
+                # Count AST tests - each form with include_in_pdf=true counts as 1 test
                 if unit.microbiology_coa and unit.microbiology_coa.ast_data:
                     ast_data = unit.microbiology_coa.ast_data
-                    ast_results = ast_data.get('ast_results', []) if isinstance(ast_data, dict) else []
-                    # Count as 1 AST test if there are any results with interpretation
-                    if any(r.get('interpretation') for r in ast_results if isinstance(r, dict)):
-                        test_count += 1
+                    if isinstance(ast_data, dict):
+                        include_in_pdf = ast_data.get('include_in_pdf', False)
+                        if include_in_pdf:
+                            test_count += 1
         
         for start, end in intervals:
             # Calculate sample count for this period

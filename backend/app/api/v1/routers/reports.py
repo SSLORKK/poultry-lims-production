@@ -472,6 +472,23 @@ def get_comprehensive_reports(
                         company_data[company]['mic_diseases'][disease]['sub_sample_count'] += unit.samples_number or 0
                 
                 company_data[company]['mic_test_count'] += unit_test_count
+            
+            # Count AST tests - each form with include_in_pdf=true counts as 1 test
+            if unit.microbiology_coa and unit.microbiology_coa.ast_data:
+                ast_data = unit.microbiology_coa.ast_data
+                if isinstance(ast_data, dict):
+                    # Check if "Include AST in exported PDF" checkbox is checked
+                    include_in_pdf = ast_data.get('include_in_pdf', False)
+                    if include_in_pdf:
+                        # Add AST as a disease entry (1 per form)
+                        disease_kit_key = "AST (Antimicrobial Susceptibility Testing)|||"
+                        disease_kit_data[disease_kit_key]['test_count'] += 1
+                        
+                        # Track per-company AST counts
+                        company_data[company]['mic_diseases']['AST']['count'] += 1
+                        company_data[company]['mic_diseases']['AST']['sample_ids'].add(sample_id)
+                        company_data[company]['mic_diseases']['AST']['sub_sample_count'] += unit.samples_number or 0
+                        company_data[company]['mic_test_count'] += 1
     
     # Calculate total tests - sum all tests when no department filter, otherwise use department-specific logic
     try:
