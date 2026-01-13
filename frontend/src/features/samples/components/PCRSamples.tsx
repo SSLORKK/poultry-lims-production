@@ -77,7 +77,8 @@ export const PCRSamples = () => {
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
-  
+  const selectedRowRef = useRef<HTMLTableRowElement>(null);
+
   // Edit history tracking
   const [editedSampleIds, setEditedSampleIds] = useState<Set<number>>(new Set());
   const [editedUnitIds, setEditedUnitIds] = useState<Set<number>>(new Set());
@@ -310,11 +311,10 @@ export const PCRSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Always navigate to last page on first load if no saved page, regardless of search/filters
-        if (!lastPageLoaded && !localStorage.getItem('pcrSamples_page')) {
+        // Always navigate to last page on first load (every time screen opens)
+        if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
-          localStorage.setItem('pcrSamples_page', String(lastPage));
         }
         setLastPageLoaded(true);
       } catch (err) {
@@ -340,7 +340,7 @@ export const PCRSamples = () => {
     if (lastPageLoaded) {
       fetchSamples();
     }
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch, lastPageLoaded]);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch, lastPageLoaded]);
 
   // Auto-refresh data every 30 seconds without showing loading state
   useEffect(() => {
@@ -367,7 +367,7 @@ export const PCRSamples = () => {
     }, 30000); // 30 seconds
 
     return () => clearInterval(autoRefresh);
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods]);
 
   const unitRows: UnitRow[] = useMemo(() => {
     const rows: UnitRow[] = [];
@@ -445,6 +445,15 @@ export const PCRSamples = () => {
       setSelectedRow(unitRows[unitRows.length - 1]);
     }
   }, [unitRows, persistedUnitId]);
+
+  // Scroll to selected row when it changes - optimized for performance
+  useEffect(() => {
+    if (selectedRow && selectedRowRef.current) {
+      requestAnimationFrame(() => {
+        selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  }, [selectedRow?.unitId]);
 
   // Filter options from backend
   const [filterOptions, setFilterOptions] = useState<{
@@ -1876,6 +1885,7 @@ export const PCRSamples = () => {
                 {filteredRows.map((row: UnitRow) => (
                   <tr
                     key={`${row.sampleId}-${row.unitId}`}
+                    ref={selectedRow?.unitId === row.unitId ? selectedRowRef : null}
                     onClick={() => setSelectedRow(row)}
                     className={`cursor-pointer transition-all duration-150 ${selectedRow?.unitId === row.unitId
                       ? 'bg-blue-200 border-l-4 border-l-blue-600 ring-2 ring-blue-400 ring-inset'

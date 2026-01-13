@@ -122,6 +122,7 @@ export const SerologySamples = () => {
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   
   // Edit history tracking
@@ -142,6 +143,16 @@ export const SerologySamples = () => {
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const selectedRowRef = useRef<HTMLTableRowElement>(null);
+
+  // Scroll to selected row when it changes - optimized for performance
+  useEffect(() => {
+    if (selectedRow && selectedRowRef.current) {
+      requestAnimationFrame(() => {
+        selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  }, [selectedRow?.unitId]);
 
   const fetchAvailableYears = async () => {
     try {
@@ -284,33 +295,29 @@ export const SerologySamples = () => {
     fetchSamples();
   }, [selectedYear, page, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, startDate, endDate]);
 
+  const [lastPageLoaded, setLastPageLoaded] = useState(false);
+
   useEffect(() => {
-    const fetchTotalCount = async () => {
+    const fetchTotalAndGoToLastPage = async () => {
       try {
-        // Build params matching all active filters
         const params: any = { year: selectedYear, department_id: 2 };
-        if (debouncedSearch) params.search = debouncedSearch;
-        if (selectedCompanies.length > 0) params.company = selectedCompanies;
-        if (selectedFarms.length > 0) params.farm = selectedFarms;
-        if (selectedFlocks.length > 0) params.flock = selectedFlocks;
-        if (selectedAges.length > 0) params.age = selectedAges;
-        if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
-        
         const response = await apiClient.get('/samples/total-count', { params });
         const total = response.data.total || 0;
+        setTotalCount(total);
         
-        // Only auto-navigate to last page on first load if no saved page and no search
-        if (!localStorage.getItem('serologySamples_page') && !debouncedSearch) {
+        // Always navigate to last page on first load (every time screen opens)
+        if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
-          localStorage.setItem('serologySamples_page', String(lastPage));
         }
+        setLastPageLoaded(true);
       } catch (err) {
         console.error('Failed to fetch total count:', err);
+        setLastPageLoaded(true);
       }
     };
-    fetchTotalCount();
-  }, [selectedYear, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes]);
+    fetchTotalAndGoToLastPage();
+  }, [selectedYear, lastPageLoaded]);
 
   useEffect(() => {
     localStorage.setItem('serologySamples_page', String(page));
@@ -1511,8 +1518,8 @@ export const SerologySamples = () => {
             </div>
 
             {/* Desktop Table View */}
-            <div className="hidden lg:block overflow-x-auto max-h-[600px] relative border rounded-lg">
-              <table className="w-full border-collapse text-sm">
+            <div className="hidden lg:block overflow-x-auto border rounded-lg shadow-sm" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+              <table className="min-w-full border-collapse text-sm whitespace-nowrap">
                 <thead className="sticky top-0 z-10 bg-green-100 shadow-sm">
                   <tr>
                     <th className="border border-gray-300 px-1 py-2 w-8 text-center font-semibold" title="Edit History"></th>
@@ -1541,6 +1548,7 @@ export const SerologySamples = () => {
                   {filteredRows.map((row: UnitRow) => (
                     <tr
                       key={`${row.sampleId}-${row.unitId}`}
+                      ref={selectedRow?.unitId === row.unitId ? selectedRowRef : null}
                       onClick={() => setSelectedRow(row)}
                       className={`cursor-pointer transition-colors ${selectedRow?.unitId === row.unitId
                         ? 'bg-green-200 border-l-4 border-l-green-600 ring-2 ring-green-400 ring-inset'
@@ -1697,11 +1705,11 @@ export const SerologySamples = () => {
                       &lsaquo;
                     </button>
 
-                    {/* Show numbered page buttons - dynamically based on data */}
+                    {/* Show numbered page buttons - using actual total count */}
                     {(() => {
                       const itemsPerPage = 100;
-                      const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage) + (filteredRows.length === itemsPerPage ? page : page - 1));
-                      const pagesToShow = [];
+                      const totalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
+                      const pagesToShow: number[] = [];
                       const startPage = Math.max(1, page - 2);
                       const endPage = Math.min(totalPages, page + 2);
                       for (let i = startPage; i <= endPage; i++) {
@@ -1723,7 +1731,7 @@ export const SerologySamples = () => {
 
                     <button
                       onClick={() => setPage((p) => p + 1)}
-                      disabled={filteredRows.length < 100}
+                      disabled={page >= Math.ceil(totalCount / 100)}
                       className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                       aria-label="Next page"
                     >
@@ -1731,7 +1739,7 @@ export const SerologySamples = () => {
                     </button>
                     <button
                       onClick={() => setPage((p) => p + 10)}
-                      disabled={filteredRows.length < 100}
+                      disabled={page >= Math.ceil(totalCount / 100)}
                       className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                       aria-label="Jump forward"
                     >

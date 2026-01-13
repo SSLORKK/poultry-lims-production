@@ -84,6 +84,16 @@ export const MicrobiologySamples = () => {
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const selectedRowRef = useRef<HTMLTableRowElement>(null);
+
+  // Scroll to selected row when it changes - optimized for performance
+  useEffect(() => {
+    if (selectedRow && selectedRowRef.current) {
+      requestAnimationFrame(() => {
+        selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  }, [selectedRow?.unitId]);
   
   // Edit history tracking
   const [editedSampleIds, setEditedSampleIds] = useState<Set<number>>(new Set());
@@ -192,6 +202,24 @@ export const MicrobiologySamples = () => {
       }
       if (selectedSampleTypes.length > 0) {
         params.sample_type = selectedSampleTypes;
+      }
+      if (selectedSources.length > 0) {
+        params.source = selectedSources;
+      }
+      if (selectedStatuses.length > 0) {
+        params.status = selectedStatuses;
+      }
+      if (selectedHouses.length > 0) {
+        params.house = selectedHouses;
+      }
+      if (selectedCycles.length > 0) {
+        params.cycle = selectedCycles;
+      }
+      if (startDate) {
+        params.start_date = startDate;
+      }
+      if (endDate) {
+        params.end_date = endDate;
       }
 
       const response = await apiClient.get('/samples/', { params });
@@ -329,34 +357,30 @@ export const MicrobiologySamples = () => {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
 
-  // Fetch total count - updates when search or filters change
+  // Track if we've navigated to last page on initial load
+  const [lastPageLoaded, setLastPageLoaded] = useState(false);
+
+  // Fetch total count and navigate to last page on initial load
   useEffect(() => {
-    const fetchTotalCount = async () => {
+    const fetchTotalAndGoToLastPage = async () => {
       try {
-        // Build params matching all active filters
         const params: any = { year: selectedYear, department_id: 3 };
-        if (debouncedSearch) params.search = debouncedSearch;
-        if (selectedCompanies.length > 0) params.company = selectedCompanies;
-        if (selectedFarms.length > 0) params.farm = selectedFarms;
-        if (selectedFlocks.length > 0) params.flock = selectedFlocks;
-        if (selectedAges.length > 0) params.age = selectedAges;
-        if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
-        
         const response = await apiClient.get('/samples/total-count', { params });
         const total = response.data.total || 0;
         
-        // Only auto-navigate to last page on first load if no saved page and no search
-        if (!localStorage.getItem('microbiologySamples_page') && !debouncedSearch) {
+        // Always navigate to last page on first load (every time screen opens)
+        if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
-          localStorage.setItem('microbiologySamples_page', String(lastPage));
         }
+        setLastPageLoaded(true);
       } catch (err) {
         console.error('Failed to fetch total count:', err);
+        setLastPageLoaded(true);
       }
     };
-    fetchTotalCount();
-  }, [selectedYear, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes]);
+    fetchTotalAndGoToLastPage();
+  }, [selectedYear, lastPageLoaded]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -365,7 +389,7 @@ export const MicrobiologySamples = () => {
 
   useEffect(() => {
     fetchSamples();
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch]);
 
   // Auto-refresh data every 30 seconds without showing loading state
   useEffect(() => {
@@ -392,7 +416,7 @@ export const MicrobiologySamples = () => {
     }, 30000);
 
     return () => clearInterval(autoRefresh);
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, page, debouncedSearch]);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch]);
 
   const unitRows: UnitRow[] = useMemo(() => {
     const rows: UnitRow[] = [];
@@ -1642,6 +1666,7 @@ export const MicrobiologySamples = () => {
                 {filteredRows.map((row: UnitRow) => (
                   <tr
                     key={`${row.sampleId}-${row.unitId}`}
+                    ref={selectedRow?.unitId === row.unitId ? selectedRowRef : null}
                     onClick={() => setSelectedRow(row)}
                     className={`cursor-pointer transition-colors ${selectedRow?.unitId === row.unitId
                       ? 'bg-purple-200 border-l-4 border-l-purple-600 ring-2 ring-purple-400 ring-inset'

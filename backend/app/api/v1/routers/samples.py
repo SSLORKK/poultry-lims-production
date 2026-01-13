@@ -269,6 +269,9 @@ def get_filter_options(
         
         for unit in sample.units:
             if department_id is None or unit.department_id == department_id:
+                # Also collect unit coa_status values for status filter
+                if unit.coa_status:
+                    statuses.add(unit.coa_status)
                 if unit.age:
                     ages.add(str(unit.age))
                 if unit.sample_type:

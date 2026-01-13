@@ -32,10 +32,6 @@ export function MicrobiologyDatabaseTable({
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const [refetchKey, setRefetchKey] = useState(0);
 
-  // Memoize unit IDs to prevent unnecessary refetches
-  const unitIds = useMemo(() => units.map(u => u.id), [units]);
-  const unitIdsKey = useMemo(() => unitIds.join(','), [unitIds]);
-
   useEffect(() => {
     setRefetchKey(prev => prev + 1);
   }, [location.key]);
@@ -58,72 +54,47 @@ export function MicrobiologyDatabaseTable({
     return Array.from(diseaseSet).sort();
   }, [units]);
 
-  // Optimized COA fetching with batch processing
+  // Fetch COA results for all units
   useEffect(() => {
-    const controller = new AbortController();
-    
     const fetchAllCOAResults = async () => {
+      setLoading(true);
+      const results: Record<number, MicrobiologyCOAData | null> = {};
+
       if (units.length === 0) {
         setCoaResults({});
         setLoading(false);
         return;
       }
 
-      setLoading(true);
-      const results: Record<number, MicrobiologyCOAData | null> = {};
-
       try {
-        // Batch fetch in chunks of 100 for very large datasets
-        const BATCH_SIZE = 100;
-        const chunks: number[][] = [];
-        for (let i = 0; i < unitIds.length; i += BATCH_SIZE) {
-          chunks.push(unitIds.slice(i, i + BATCH_SIZE));
-        }
+        const unitIds = units.map(u => u.id);
+        const response = await apiClient.get('/microbiology-coa/batch/', {
+          params: { unit_ids: unitIds.join(',') }
+        });
 
-        // Process chunks in parallel (max 3 concurrent)
-        for (let i = 0; i < chunks.length; i += 3) {
-          const batch = chunks.slice(i, i + 3);
-          const promises = batch.map(chunk =>
-            apiClient.get('/microbiology-coa/batch/', {
-              params: { unit_ids: chunk.join(',') },
-              signal: controller.signal
-            })
-          );
-          
-          const responses = await Promise.all(promises);
-          responses.forEach(response => {
-            const coaList: MicrobiologyCOAData[] = response.data;
-            coaList.forEach(coa => {
-              results[coa.unit_id] = coa;
-            });
-          });
-        }
+        const coaList: MicrobiologyCOAData[] = response.data;
+        coaList.forEach(coa => {
+          results[coa.unit_id] = coa;
+        });
 
-        // Mark missing COAs as null
         unitIds.forEach(unitId => {
-          if (!(unitId in results)) {
+          if (!results[unitId]) {
             results[unitId] = null;
           }
         });
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
-          console.error('Failed to fetch Microbiology COAs:', error);
-          unitIds.forEach(unitId => {
-            results[unitId] = null;
-          });
-        }
+      } catch (error) {
+        console.error('Failed to fetch Microbiology COAs:', error);
+        units.forEach(unit => {
+          results[unit.id] = null;
+        });
       }
 
-      if (!controller.signal.aborted) {
-        setCoaResults(results);
-        setLoading(false);
-      }
+      setCoaResults(results);
+      setLoading(false);
     };
 
     fetchAllCOAResults();
-    
-    return () => controller.abort();
-  }, [unitIdsKey, refetchKey]);
+  }, [units, refetchKey]);
 
   const parseNumericValue = (value: string): number | null => {
     if (!value || value === '-' || value === '') return null;
@@ -222,7 +193,8 @@ export function MicrobiologyDatabaseTable({
     const isolateTypes = (coa as any).isolate_types;
     if (!isolateTypes) return '-';
     
-    const diseaseIsolates: Record<string, Set<string>> = {};
+    // Use a Map to track unique isolates with normalized keys for deduplication
+    const diseaseIsolates: Record<string, Map<string, string>> = {};
     
     Object.entries(isolateTypes).forEach(([disease, locations]: [string, any]) => {
       if (typeof locations === 'object') {
@@ -232,22 +204,26 @@ export function MicrobiologyDatabaseTable({
               type.trim() !== '' && 
               !type.match(/^-+$/) &&
               !type.match(/^[\-─━]+$/) &&
-              type !== 'Not Detected' &&
-              type !== 'NO BACTERIAL GROWTH' &&
-              type !== 'NO COLIFORM GROWTH' &&
-              type !== 'NO FUNGAL GROWTH') {
+              type.toUpperCase() !== 'NOT DETECTED' &&
+              type.toUpperCase() !== 'NO BACTERIAL GROWTH' &&
+              type.toUpperCase() !== 'NO COLIFORM GROWTH' &&
+              type.toUpperCase() !== 'NO FUNGAL GROWTH') {
             if (!diseaseIsolates[disease]) {
-              diseaseIsolates[disease] = new Set();
+              diseaseIsolates[disease] = new Map();
             }
-            diseaseIsolates[disease].add(type.trim());
+            // Use lowercase trimmed value as key for deduplication, store original for display
+            const normalizedKey = type.trim().toLowerCase();
+            if (!diseaseIsolates[disease].has(normalizedKey)) {
+              diseaseIsolates[disease].set(normalizedKey, type.trim());
+            }
           }
         });
       }
     });
     
     const diseaseStrings: string[] = [];
-    Object.entries(diseaseIsolates).forEach(([disease, types]) => {
-      const sortedTypes = Array.from(types).sort();
+    Object.entries(diseaseIsolates).forEach(([disease, typesMap]) => {
+      const sortedTypes = Array.from(typesMap.values()).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
       if (sortedTypes.length > 0) {
         diseaseStrings.push(`${disease.toLowerCase()} (${sortedTypes.join(', ')})`);
       }
@@ -262,7 +238,8 @@ export function MicrobiologyDatabaseTable({
     const sampleTypes = unit.sample_type || [];
     const isFeed = sampleTypes.some(t => t.toLowerCase().includes('feed'));
     const indexList = unit.microbiology_data?.index_list || [];
-    const diseaseLocations: Record<string, Set<string>> = {};
+    // Use Map for deduplication with normalized keys
+    const diseaseLocations: Record<string, Map<string, string>> = {};
     
     Object.entries(coa.test_results).forEach(([disease, results]) => {
       const lowerDisease = disease.toLowerCase();
@@ -323,9 +300,13 @@ export function MicrobiologyDatabaseTable({
               !actualLocationName.match(/^-+$/) &&
               !actualLocationName.match(/^row\d+$/i)) {
             if (!diseaseLocations[disease]) {
-              diseaseLocations[disease] = new Set();
+              diseaseLocations[disease] = new Map();
             }
-            diseaseLocations[disease].add(actualLocationName);
+            // Use lowercase trimmed value as key for deduplication, store original for display
+            const normalizedKey = actualLocationName.trim().toLowerCase();
+            if (!diseaseLocations[disease].has(normalizedKey)) {
+              diseaseLocations[disease].set(normalizedKey, actualLocationName.trim());
+            }
           }
         }
       });
@@ -333,8 +314,8 @@ export function MicrobiologyDatabaseTable({
     
     const diseaseStrings: string[] = [];
     
-    Object.entries(diseaseLocations).forEach(([disease, locationNames]) => {
-      const sortedLocations = Array.from(locationNames).sort();
+    Object.entries(diseaseLocations).forEach(([disease, locationMap]) => {
+      const sortedLocations = Array.from(locationMap.values()).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
       
       if (sortedLocations.length > 0) {
         const displayDisease = disease.toLowerCase();

@@ -38,85 +38,52 @@ export function PCRDatabaseTable({
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const [refetchKey, setRefetchKey] = useState(0);
 
-  // Memoize unit IDs to prevent unnecessary refetches
-  const unitIds = useMemo(() => units.map(u => u.id), [units]);
-  const unitIdsKey = useMemo(() => unitIds.join(','), [unitIds]);
-
   // Refetch COA data when navigating back to this page
   useEffect(() => {
     setRefetchKey(prev => prev + 1);
   }, [location.key]);
 
-  // Optimized COA fetching with batch processing
+  // Fetch COA results for all units
   useEffect(() => {
-    const controller = new AbortController();
-    
     const fetchAllCOAResults = async () => {
+      setLoading(true);
+      const results: Record<number, PCRCOAData | null> = {};
+
       if (units.length === 0) {
         setCoaResults({});
         setLoading(false);
         return;
       }
 
-      setLoading(true);
-      const results: Record<number, PCRCOAData | null> = {};
-
       try {
-        // Batch fetch in chunks of 100 for very large datasets
-        const BATCH_SIZE = 100;
-        const chunks: number[][] = [];
-        for (let i = 0; i < unitIds.length; i += BATCH_SIZE) {
-          chunks.push(unitIds.slice(i, i + BATCH_SIZE));
-        }
+        const unitIds = units.map(u => u.id);
+        const response = await apiClient.get('/pcr-coa/batch/', {
+          params: { unit_ids: unitIds.join(',') }
+        });
 
-        // Process chunks in parallel (max 3 concurrent)
-        const processChunks = async () => {
-          for (let i = 0; i < chunks.length; i += 3) {
-            const batch = chunks.slice(i, i + 3);
-            const promises = batch.map(chunk =>
-              apiClient.get('/pcr-coa/batch/', {
-                params: { unit_ids: chunk.join(',') },
-                signal: controller.signal
-              })
-            );
-            
-            const responses = await Promise.all(promises);
-            responses.forEach(response => {
-              const coaList: PCRCOAData[] = response.data;
-              coaList.forEach(coa => {
-                results[coa.unit_id] = coa;
-              });
-            });
-          }
-        };
+        const coaList: PCRCOAData[] = response.data;
+        coaList.forEach(coa => {
+          results[coa.unit_id] = coa;
+        });
 
-        await processChunks();
-
-        // Mark missing COAs as null
         unitIds.forEach(unitId => {
-          if (!(unitId in results)) {
+          if (!results[unitId]) {
             results[unitId] = null;
           }
         });
-      } catch (error: any) {
-        if (error.name !== 'AbortError') {
-          console.error('Failed to fetch COAs:', error);
-          unitIds.forEach(unitId => {
-            results[unitId] = null;
-          });
-        }
+      } catch (error) {
+        console.error('Failed to fetch COAs:', error);
+        units.forEach(unit => {
+          results[unit.id] = null;
+        });
       }
 
-      if (!controller.signal.aborted) {
-        setCoaResults(results);
-        setLoading(false);
-      }
+      setCoaResults(results);
+      setLoading(false);
     };
 
     fetchAllCOAResults();
-    
-    return () => controller.abort();
-  }, [unitIdsKey, refetchKey]);
+  }, [units, refetchKey]);
 
   // Close export dropdown when clicking outside
   useEffect(() => {
