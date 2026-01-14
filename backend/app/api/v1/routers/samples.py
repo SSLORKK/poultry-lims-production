@@ -544,11 +544,24 @@ def update_sample(
     current_user: User = Depends(get_current_user)
 ):
     """Update an existing sample"""
+    # DEBUG: Log sample update details
+    print(f"🔄 SAMPLE UPDATE DEBUG - ID: {sample_id}, User: {current_user.full_name}")
+    print(f"📊 Units in update: {len(sample_data.units) if sample_data.units else 0}")
+    if sample_data.units:
+        units_with_ids = [u for u in sample_data.units if u.id]
+        units_without_ids = [u for u in sample_data.units if not u.id]
+        print(f"🆔 Existing units: {len(units_with_ids)}, New units: {len(units_without_ids)}")
+        for i, unit in enumerate(sample_data.units):
+            print(f"   Unit {i+1}: ID={unit.id}, Dept={unit.department_id}, Code={getattr(unit, 'unit_code', 'None')}")
+    
     sample_service = SampleService(db)
     sample = sample_service.update_sample(sample_id, sample_data, edited_by=current_user.full_name)  # type: ignore
     
     if not sample:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sample not found")
+    
+    # DEBUG: Log result
+    print(f"✅ Sample updated - Code: {sample.sample_code}, Units: {len(sample.units)}")
     
     return sample
 

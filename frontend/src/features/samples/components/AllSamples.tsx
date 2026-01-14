@@ -59,6 +59,7 @@ export const AllSamples = () => {
     const saved = localStorage.getItem('allSamples_page');
     return saved ? parseInt(saved) : 1;
   });
+  const [isInitialPageSet, setIsInitialPageSet] = useState(false); // Track if initial page calculation is done
   const [totalCount, setTotalCount] = useState(0);
   const [lastPageLoaded, setLastPageLoaded] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
@@ -251,32 +252,34 @@ export const AllSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Always navigate to last page on first load - more robust approach
-        if (!lastPageLoaded) {
+        // FORCE navigation to last page on initial load - production-ready approach
+        if (!isInitialPageSet) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`AllSamples: Navigating to last page ${lastPage} (total records: ${total})`);
+          console.log(`AllSamples: FORCING navigation to last page ${lastPage} (total records: ${total})`);
           
-          // Clear localStorage to prevent interference
+          // Clear ANY localStorage interference
           localStorage.removeItem('allSamples_page');
           
-          // Set page and mark as loaded in one go
+          // Force set both page and flags immediately
           setPage(lastPage);
           setLastPageLoaded(true);
+          setIsInitialPageSet(true);
           
-          // Ensure localStorage gets the correct page after state update
-          setTimeout(() => {
-            localStorage.setItem('allSamples_page', String(lastPage));
-          }, 100);
+          // Force localStorage update immediately
+          localStorage.setItem('allSamples_page', String(lastPage));
+          
+          console.log(`AllSamples: Successfully set page to ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
-        if (!lastPageLoaded) {
+        if (!isInitialPageSet) {
           setLastPageLoaded(true);
+          setIsInitialPageSet(true);
         }
       }
     };
     fetchTotalCount();
-  }, [selectedYear, debouncedSearch, dateFrom, dateTo, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDepartments]);
+  }, [selectedYear, debouncedSearch, dateFrom, dateTo, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDepartments, isInitialPageSet]);
 
   useEffect(() => {
     localStorage.setItem('allSamples_page', String(page));
@@ -417,26 +420,13 @@ export const AllSamples = () => {
         }
       }
       
-      // If still no target, select the last row (newest sample)
-      if (!targetRow) {
-        targetRow = unitRows[unitRows.length - 1];
+      // If still no target, select the first row
+      if (!targetRow && unitRows.length > 0) {
+        targetRow = unitRows[0];
       }
       
-      setSelectedRow(targetRow);
-      
-      // Scroll to selected row and center it
-      if (returnUnitId || !selectedRow) {
-        setTimeout(() => {
-          const selectedElement = document.querySelector(`[data-unit-id="${targetRow?.unitId}"]`);
-          if (selectedElement) {
-            selectedElement.scrollIntoView({ 
-              behavior: 'smooth', 
-              block: 'center',
-              inline: 'nearest'
-            });
-            console.log(`AllSamples: Scrolled to and centered unit ${targetRow?.unitCode}`);
-          }
-        }, 300);
+      if (targetRow) {
+        setSelectedRow(targetRow);
       }
     }
   }, [unitRows, lastPageLoaded, selectedRow]);

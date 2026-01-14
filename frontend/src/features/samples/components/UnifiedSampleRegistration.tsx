@@ -2438,6 +2438,16 @@ export const UnifiedSampleRegistration = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // DEBUG: Log edit mode detection and sample data
+    console.log('🔍 SAMPLE SUBMIT DEBUG:', {
+      isEditMode,
+      editSampleId,
+      existingSampleCode: existingSample?.sample_code,
+      unitsCount: units.length,
+      unitsWithIds: units.filter(u => u.id).length,
+      unitsWithoutIds: units.filter(u => !u.id).length
+    });
 
     // Validation
     const errors: string[] = [];
@@ -2547,6 +2557,21 @@ export const UnifiedSampleRegistration = () => {
       status,
       units: transformedUnits,
     };
+
+    // DEBUG: Log API call decision and data being sent
+    console.log('🚀 API CALL DEBUG:', {
+      mode: isEditMode ? 'UPDATE' : 'CREATE',
+      url: isEditMode ? `PUT /samples/${editSampleId}` : 'POST /samples/',
+      sampleData: {
+        ...sampleData,
+        units: sampleData.units.map(u => ({ 
+          id: u.id, 
+          unit_code: u.unit_code, 
+          department_id: u.department_id,
+          hasId: !!u.id 
+        }))
+      }
+    });
 
     // Use update mutation in edit mode, create mutation otherwise
     if (isEditMode) {

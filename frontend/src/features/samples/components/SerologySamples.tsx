@@ -116,6 +116,7 @@ export const SerologySamples = () => {
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [isInitialPageSet, setIsInitialPageSet] = useState(false); // Track if initial page calculation is done
   const [totalCount, setTotalCount] = useState(0);
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   
@@ -136,18 +137,8 @@ export const SerologySamples = () => {
   // Export state
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [initialScrollDone, setInitialScrollDone] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
-
-  // Scroll to selected row when it changes (after initial load)
-  useEffect(() => {
-    if (selectedRow && selectedRowRef.current && initialScrollDone) {
-      requestAnimationFrame(() => {
-        selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-    }
-  }, [selectedRow?.unitId, initialScrollDone]);
 
   const fetchAvailableYears = async () => {
     try {
@@ -314,32 +305,34 @@ export const SerologySamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Always navigate to last page on first load - more robust approach
-        if (!lastPageLoaded) {
+        // FORCE navigation to last page on initial load - production-ready approach
+        if (!isInitialPageSet) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`Serology: Navigating to last page ${lastPage} (total records: ${total})`);
+          console.log(`Serology: FORCING navigation to last page ${lastPage} (total records: ${total})`);
           
-          // Clear localStorage to prevent interference
+          // Clear ANY localStorage interference
           localStorage.removeItem('serologySamples_page');
           
-          // Set page and mark as loaded in one go
+          // Force set both page and flags immediately
           setPage(lastPage);
           setLastPageLoaded(true);
+          setIsInitialPageSet(true);
           
-          // Ensure localStorage gets the correct page after state update
-          setTimeout(() => {
-            localStorage.setItem('serologySamples_page', String(lastPage));
-          }, 100);
+          // Force localStorage update immediately
+          localStorage.setItem('serologySamples_page', String(lastPage));
+          
+          console.log(`Serology: Successfully set page to ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
-        if (!lastPageLoaded) {
+        if (!isInitialPageSet) {
           setLastPageLoaded(true);
+          setIsInitialPageSet(true);
         }
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear, lastPageLoaded]);
+  }, [selectedYear, isInitialPageSet]);
 
   useEffect(() => {
     localStorage.setItem('serologySamples_page', String(page));
@@ -460,29 +453,16 @@ export const SerologySamples = () => {
         }
       }
       
-      // If still no target, select the last row (newest sample)
-      if (!targetRow) {
-        targetRow = unitRows[unitRows.length - 1];
+      // If still no target, select the first row
+      if (!targetRow && unitRows.length > 0) {
+        targetRow = unitRows[0];
       }
       
-      setSelectedRow(targetRow);
-      
-      // Always scroll to selected row and center it
-      if (!initialScrollDone || returnUnitId) {
-        setTimeout(() => {
-          if (selectedRowRef.current) {
-            selectedRowRef.current.scrollIntoView({ 
-              behavior: 'smooth', 
-              block: 'center',
-              inline: 'nearest'
-            });
-            console.log(`Serology: Scrolled to and centered unit ${targetRow?.unitCode}`);
-          }
-          setInitialScrollDone(true);
-        }, 300);
+      if (targetRow) {
+        setSelectedRow(targetRow);
       }
     }
-  }, [unitRows, lastPageLoaded, initialScrollDone]);
+  }, [unitRows, lastPageLoaded]);
 
   // Close export dropdown when clicking outside
   useEffect(() => {

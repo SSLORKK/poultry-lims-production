@@ -62,9 +62,9 @@ export const PCRSamples = () => {
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1); // Will be set to last page on initial load
+  const [isInitialPageSet, setIsInitialPageSet] = useState(false); // Track if initial page calculation is done
   const [_totalCount, setTotalCount] = useState(0);
   const [lastPageLoaded, setLastPageLoaded] = useState(false);
-  const [initialScrollDone, setInitialScrollDone] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -327,32 +327,34 @@ export const PCRSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Always navigate to last page on first load - more robust approach
-        if (!lastPageLoaded) {
+        // FORCE navigation to last page on initial load - production-ready approach
+        if (!isInitialPageSet) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`PCR: Navigating to last page ${lastPage} (total records: ${total})`);
+          console.log(`PCR: FORCING navigation to last page ${lastPage} (total records: ${total})`);
           
-          // Clear localStorage to prevent interference
+          // Clear ANY localStorage interference
           localStorage.removeItem('pcrSamples_page');
           
-          // Set page and mark as loaded in one go
+          // Force set both page and flags immediately
           setPage(lastPage);
           setLastPageLoaded(true);
+          setIsInitialPageSet(true);
           
-          // Ensure localStorage gets the correct page after state update
-          setTimeout(() => {
-            localStorage.setItem('pcrSamples_page', String(lastPage));
-          }, 100);
+          // Force localStorage update immediately
+          localStorage.setItem('pcrSamples_page', String(lastPage));
+          
+          console.log(`PCR: Successfully set page to ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
-        if (!lastPageLoaded) {
+        if (!isInitialPageSet) {
           setLastPageLoaded(true);
+          setIsInitialPageSet(true);
         }
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear, lastPageLoaded]);
+  }, [selectedYear, isInitialPageSet]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -470,7 +472,7 @@ export const PCRSamples = () => {
     }
   }, [selectedRow]);
 
-  // Auto-select row when data loads - prioritize returning from edit/COA, then last saved, then last row
+  // Auto-select row when data loads - no auto-scroll
   useEffect(() => {
     if (unitRows.length > 0 && lastPageLoaded) {
       let targetRow = null;
@@ -491,38 +493,17 @@ export const PCRSamples = () => {
         }
       }
       
-      // If still no target, select the last row (newest sample)
-      if (!targetRow) {
-        targetRow = unitRows[unitRows.length - 1];
+      // If still no target, select the first row
+      if (!targetRow && unitRows.length > 0) {
+        targetRow = unitRows[0];
       }
       
-      setSelectedRow(targetRow);
-      
-      // Always scroll to selected row and center it
-      if (!initialScrollDone || returnUnitId) {
-        setTimeout(() => {
-          if (selectedRowRef.current) {
-            selectedRowRef.current.scrollIntoView({ 
-              behavior: 'smooth', 
-              block: 'center',
-              inline: 'nearest'
-            });
-            console.log(`PCR: Scrolled to and centered unit ${targetRow?.unitCode}`);
-          }
-          setInitialScrollDone(true);
-        }, 300);
+      if (targetRow) {
+        setSelectedRow(targetRow);
       }
+      // Removed auto-scroll functionality - no more centering
     }
-  }, [unitRows, lastPageLoaded, initialScrollDone]);
-
-  // Scroll to selected row when it changes (after initial load)
-  useEffect(() => {
-    if (selectedRow && selectedRowRef.current && initialScrollDone) {
-      requestAnimationFrame(() => {
-        selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-    }
-  }, [selectedRow?.unitId, initialScrollDone]);
+  }, [unitRows, lastPageLoaded]);
 
   // Filter options from backend
   const [filterOptions, setFilterOptions] = useState<{
@@ -2171,7 +2152,11 @@ export const PCRSamples = () => {
                     &rsaquo;
                   </button>
                   <button
-                    onClick={() => setPage(Math.ceil(_totalCount / 100))}
+                    onClick={() => {
+                      const lastPage = Math.max(1, Math.ceil(_totalCount / 100));
+                      console.log(`Going to last page: ${lastPage} (total: ${_totalCount})`);
+                      setPage(lastPage);
+                    }}
                     disabled={page >= Math.ceil(_totalCount / 100)}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     aria-label="Last page"

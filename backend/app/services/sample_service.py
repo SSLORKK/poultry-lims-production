@@ -245,6 +245,16 @@ class SampleService:
         if not sample:
             return None
         
+        # DEBUG: Log sample update service details
+        print(f"🔧 SERVICE UPDATE - Sample: {sample.sample_code} (ID: {sample_id})")
+        print(f"📋 Existing units: {len(sample.units)}")
+        for unit in sample.units:
+            print(f"   Existing unit: {unit.unit_code} (ID: {unit.id}, Dept: {unit.department_id})")
+        if sample_data.units:
+            print(f"📥 Incoming units: {len(sample_data.units)}")
+            for i, unit in enumerate(sample_data.units):
+                print(f"   Incoming unit {i+1}: Code={getattr(unit, 'unit_code', 'None')}, ID={unit.id}, Dept={unit.department_id}")
+        
         # Track changes for edit history
         changes = []
         
