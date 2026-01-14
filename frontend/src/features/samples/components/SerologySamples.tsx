@@ -112,13 +112,7 @@ export const SerologySamples = () => {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   // Load persisted selected unit from localStorage
-  const getPersistedSelectedUnitId = () => {
-    try {
-      return parseInt(localStorage.getItem('serology_selected_unit') || '0') || null;
-    } catch { return null; }
-  };
   const [selectedRow, setSelectedRow] = useState<UnitRow | null>(null);
-  const [persistedUnitId] = useState<number | null>(getPersistedSelectedUnitId());
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -142,17 +136,18 @@ export const SerologySamples = () => {
   // Export state
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [initialScrollDone, setInitialScrollDone] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
 
-  // Scroll to selected row when it changes - optimized for performance
+  // Scroll to selected row when it changes (after initial load)
   useEffect(() => {
-    if (selectedRow && selectedRowRef.current) {
+    if (selectedRow && selectedRowRef.current && initialScrollDone) {
       requestAnimationFrame(() => {
         selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     }
-  }, [selectedRow?.unitId]);
+  }, [selectedRow?.unitId, initialScrollDone]);
 
   const fetchAvailableYears = async () => {
     try {
@@ -207,11 +202,23 @@ export const SerologySamples = () => {
       if (selectedStatuses.length > 0) {
         params.status = selectedStatuses;
       }
+      if (selectedHouses.length > 0) {
+        params.house = selectedHouses;
+      }
+      if (selectedCycles.length > 0) {
+        params.cycle = selectedCycles;
+      }
+      if (selectedDiseases.length > 0) {
+        params.diseases = selectedDiseases;
+      }
+      if (selectedTechnicians.length > 0) {
+        params.technicians = selectedTechnicians;
+      }
       if (startDate) {
-        params.start_date = startDate;
+        params.date_from = startDate;
       }
       if (endDate) {
-        params.end_date = endDate;
+        params.date_to = endDate;
       }
 
       const response = await apiClient.get('/samples/', { params });
@@ -291,11 +298,13 @@ export const SerologySamples = () => {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
 
-  useEffect(() => {
-    fetchSamples();
-  }, [selectedYear, page, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, startDate, endDate]);
-
   const [lastPageLoaded, setLastPageLoaded] = useState(false);
+
+  useEffect(() => {
+    if (lastPageLoaded) {
+      fetchSamples();
+    }
+  }, [selectedYear, page, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, startDate, endDate, lastPageLoaded]);
 
   useEffect(() => {
     const fetchTotalAndGoToLastPage = async () => {
@@ -309,15 +318,17 @@ export const SerologySamples = () => {
         if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
+          setLastPageLoaded(true);
         }
-        setLastPageLoaded(true);
       } catch (err) {
         console.error('Failed to fetch total count:', err);
-        setLastPageLoaded(true);
+        if (!lastPageLoaded) {
+          setLastPageLoaded(true);
+        }
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear, lastPageLoaded]);
+  }, [selectedYear]);
 
   useEffect(() => {
     localStorage.setItem('serologySamples_page', String(page));
@@ -341,8 +352,12 @@ export const SerologySamples = () => {
         if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
         if (selectedSources.length > 0) params.source = selectedSources;
         if (selectedStatuses.length > 0) params.status = selectedStatuses;
-        if (startDate) params.start_date = startDate;
-        if (endDate) params.end_date = endDate;
+        if (selectedHouses.length > 0) params.house = selectedHouses;
+        if (selectedCycles.length > 0) params.cycle = selectedCycles;
+        if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+        if (selectedTechnicians.length > 0) params.technicians = selectedTechnicians;
+        if (startDate) params.date_from = startDate;
+        if (endDate) params.date_to = endDate;
 
         const response = await apiClient.get('/samples/', { params });
         setSamples(response.data);
@@ -413,20 +428,24 @@ export const SerologySamples = () => {
     }
   }, [selectedRow]);
 
-  // Auto-select persisted unit or last row when data loads
+  // Auto-select last row when data loads and scroll to it
   useEffect(() => {
-    if (!selectedRow && unitRows.length > 0) {
-      if (persistedUnitId) {
-        const row = unitRows.find(r => r.unitId === persistedUnitId);
-        if (row) {
-          setSelectedRow(row);
-          return;
-        }
+    if (unitRows.length > 0 && lastPageLoaded) {
+      // Always select the last row (biggest unit code number) on initial load
+      const lastRow = unitRows[unitRows.length - 1];
+      setSelectedRow(lastRow);
+      
+      // Scroll to last row after a short delay to ensure DOM is ready
+      if (!initialScrollDone) {
+        setTimeout(() => {
+          if (selectedRowRef.current) {
+            selectedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          setInitialScrollDone(true);
+        }, 300);
       }
-      // If no persisted unit or not found, select the last row (newest sample)
-      setSelectedRow(unitRows[unitRows.length - 1]);
     }
-  }, [unitRows, persistedUnitId]);
+  }, [unitRows, lastPageLoaded, initialScrollDone]);
 
   // Close export dropdown when clicking outside
   useEffect(() => {
@@ -450,6 +469,8 @@ export const SerologySamples = () => {
     sample_types: string[];
     sources: string[];
     houses: string[];
+    diseases: string[];
+    technicians: string[];
   }>({
     companies: [],
     farms: [],
@@ -460,6 +481,8 @@ export const SerologySamples = () => {
     sample_types: [],
     sources: [],
     houses: [],
+    diseases: [],
+    technicians: [],
   });
 
   // Fetch filter options from backend when year changes
@@ -490,59 +513,13 @@ export const SerologySamples = () => {
   const uniqueHouses = filterOptions.houses;
   const uniqueCycles = filterOptions.cycles;
 
-  // Department-specific filters from current data
-  const uniqueDiseases = useMemo(() => {
-    const diseases = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 2 && unit.serology_data?.diseases_list) {
-          unit.serology_data.diseases_list.forEach((d: any) => {
-            if (d.disease) diseases.add(d.disease);
-          });
-        }
-      });
-    });
-    return Array.from(diseases).sort();
-  }, [samples]);
+  // Use serology-specific filter options from backend API
+  const uniqueDiseases = filterOptions.diseases || [];
+  const uniqueTechnicians = filterOptions.technicians || [];
 
-  const uniqueTechnicians = useMemo(() => {
-    const technicians = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 2) {
-          const tech = unit.serology_data?.technician_name || unit.technician_name;
-          if (tech && tech !== '-') technicians.add(tech);
-        }
-      });
-    });
-    return Array.from(technicians).sort();
-  }, [samples]);
-
-  const filteredRows = useMemo(() => {
-    let filtered = unitRows;
-
-    // Apply frontend-only filters (house, cycle, diseases) - these are not sent to backend
-    if (selectedHouses.length > 0) {
-      filtered = filtered.filter((row) => {
-        const rowHouses = row.house.split(', ');
-        return selectedHouses.some(h => rowHouses.includes(h));
-      });
-    }
-    if (selectedCycles.length > 0) {
-      filtered = filtered.filter((row) => selectedCycles.includes(row.cycle));
-    }
-    if (selectedDiseases.length > 0) {
-      filtered = filtered.filter((row) => {
-        const rowDiseases = row.diseases.split(', ');
-        return selectedDiseases.some(d => rowDiseases.includes(d));
-      });
-    }
-    if (selectedTechnicians.length > 0) {
-      filtered = filtered.filter((row) => selectedTechnicians.includes(row.technician));
-    }
-
-    return filtered;
-  }, [unitRows, selectedHouses, selectedCycles, selectedDiseases, selectedTechnicians]);
+  // All filtering is now handled by the backend API
+  // filteredRows is just unitRows since all filtering happens server-side
+  const filteredRows = unitRows;
 
   // For backend pagination, we show the data as-is (already paginated by backend)
 
@@ -562,6 +539,9 @@ export const SerologySamples = () => {
     setStartDate('');
     setEndDate('');
     setPage(1);
+    // Clear localStorage filters
+    localStorage.removeItem('serology_filters');
+    localStorage.removeItem('serologySamples_page');
   };
 
   const formatDate = (dateString: string) => {
@@ -642,7 +622,8 @@ export const SerologySamples = () => {
     setExportDropdownOpen(false);
 
     try {
-      const exportData = filteredRows.map(row => ({
+      // Export current filtered data (same as filteredRows)
+      const exportData = filteredRows.map((row: any) => ({
         'Sample Code': row.sampleCode,
         'Unit Code': row.unitCode,
         'Date Received': formatDate(row.dateReceived),
@@ -656,8 +637,8 @@ export const SerologySamples = () => {
         'Technician': row.technician,
         'Sample Type': row.sampleType,
         'Diseases': row.diseases,
-        'Wells per Disease': row.diseasesWithWells.map(d => `${d.disease}: ${d.wells ?? '-'}`).join(', '),
-        'Total Wells': row.diseasesWithWells.reduce((sum, d) => sum + (d.wells || 0), 0) || row.numberOfWells || '-',
+        'Wells per Disease': row.diseasesWithWells.map((d: any) => `${d.disease}: ${d.wells ?? '-'}`).join(', '),
+        'Total Wells': row.diseasesWithWells.reduce((sum: number, d: any) => sum + (d.wells || 0), 0) || row.numberOfWells || '-',
         'Samples Number': row.samplesNumber ?? '-',
         'Tests Count': row.testsCount ?? '-',
         'Status': row.status,

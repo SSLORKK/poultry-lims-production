@@ -58,21 +58,13 @@ export const PCRSamples = () => {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   // Load persisted selected unit from localStorage
-  const getPersistedSelectedUnitId = () => {
-    try {
-      return parseInt(localStorage.getItem('pcr_selected_unit') || '0') || null;
-    } catch { return null; }
-  };
   const [selectedRow, setSelectedRow] = useState<UnitRow | null>(null);
-  const [persistedUnitId] = useState<number | null>(getPersistedSelectedUnitId());
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(() => {
-    const saved = localStorage.getItem('pcrSamples_page');
-    return saved ? parseInt(saved) : 1;
-  });
+  const [page, setPage] = useState(1); // Will be set to last page on initial load
   const [_totalCount, setTotalCount] = useState(0);
   const [lastPageLoaded, setLastPageLoaded] = useState(false);
+  const [initialScrollDone, setInitialScrollDone] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -193,11 +185,23 @@ export const PCRSamples = () => {
       if (selectedCycles.length > 0) {
         params.cycle = selectedCycles;
       }
+      if (selectedDiseases.length > 0) {
+        params.diseases = selectedDiseases;
+      }
+      if (selectedKitTypes.length > 0) {
+        params.kit_types = selectedKitTypes;
+      }
+      if (selectedTechnicians.length > 0) {
+        params.technicians = selectedTechnicians;
+      }
+      if (selectedExtractionMethods.length > 0) {
+        params.extraction_methods = selectedExtractionMethods;
+      }
       if (startDate) {
-        params.start_date = startDate;
+        params.date_from = startDate;
       }
       if (endDate) {
-        params.end_date = endDate;
+        params.date_to = endDate;
       }
 
       const response = await apiClient.get('/samples/', { params });
@@ -303,11 +307,23 @@ export const PCRSamples = () => {
     return () => clearTimeout(timer);
   }, [globalSearch]);
 
+  // Reset page to 1 when any filter changes
+  useEffect(() => {
+    setPage(1);
+    localStorage.removeItem('pcrSamples_page');
+  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate]);
+
   // Fetch total count and navigate to last page on initial load
   useEffect(() => {
     const fetchTotalAndGoToLastPage = async () => {
       try {
-        const response = await apiClient.get('/samples/total-count', { params: { year: selectedYear, department_id: 1 } });
+        // Build params with all current filters for accurate count
+        const countParams: any = {
+          year: selectedYear,
+          department_id: 1
+        };
+
+        const response = await apiClient.get('/samples/total-count', { params: countParams });
         const total = response.data.total || 0;
         setTotalCount(total);
         
@@ -315,15 +331,17 @@ export const PCRSamples = () => {
         if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
+          setLastPageLoaded(true);
         }
-        setLastPageLoaded(true);
       } catch (err) {
         console.error('Failed to fetch total count:', err);
-        setLastPageLoaded(true);
+        if (!lastPageLoaded) {
+          setLastPageLoaded(true);
+        }
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear, lastPageLoaded]);
+  }, [selectedYear]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -340,7 +358,7 @@ export const PCRSamples = () => {
     if (lastPageLoaded) {
       fetchSamples();
     }
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch, lastPageLoaded]);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate, page, debouncedSearch, lastPageLoaded]);
 
   // Auto-refresh data every 30 seconds without showing loading state
   useEffect(() => {
@@ -358,6 +376,16 @@ export const PCRSamples = () => {
         if (selectedFlocks.length > 0) params.flock = selectedFlocks;
         if (selectedAges.length > 0) params.age = selectedAges;
         if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+        if (selectedSources.length > 0) params.source = selectedSources;
+        if (selectedStatuses.length > 0) params.status = selectedStatuses;
+        if (selectedHouses.length > 0) params.house = selectedHouses;
+        if (selectedCycles.length > 0) params.cycle = selectedCycles;
+        if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+        if (selectedKitTypes.length > 0) params.kit_types = selectedKitTypes;
+        if (selectedTechnicians.length > 0) params.technicians = selectedTechnicians;
+        if (selectedExtractionMethods.length > 0) params.extraction_methods = selectedExtractionMethods;
+        if (startDate) params.date_from = startDate;
+        if (endDate) params.date_to = endDate;
 
         const response = await apiClient.get('/samples/', { params });
         setSamples(response.data);
@@ -431,29 +459,33 @@ export const PCRSamples = () => {
     }
   }, [selectedRow]);
 
-  // Auto-select persisted unit or last row when data loads
+  // Auto-select last row when data loads and scroll to it
   useEffect(() => {
-    if (!selectedRow && unitRows.length > 0) {
-      if (persistedUnitId) {
-        const row = unitRows.find(r => r.unitId === persistedUnitId);
-        if (row) {
-          setSelectedRow(row);
-          return;
-        }
+    if (unitRows.length > 0 && lastPageLoaded) {
+      // Always select the last row (biggest unit code number) on initial load
+      const lastRow = unitRows[unitRows.length - 1];
+      setSelectedRow(lastRow);
+      
+      // Scroll to last row after a short delay to ensure DOM is ready
+      if (!initialScrollDone) {
+        setTimeout(() => {
+          if (selectedRowRef.current) {
+            selectedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          setInitialScrollDone(true);
+        }, 300);
       }
-      // If no persisted unit or not found, select the last row (newest sample)
-      setSelectedRow(unitRows[unitRows.length - 1]);
     }
-  }, [unitRows, persistedUnitId]);
+  }, [unitRows, lastPageLoaded, initialScrollDone]);
 
-  // Scroll to selected row when it changes - optimized for performance
+  // Scroll to selected row when it changes (after initial load)
   useEffect(() => {
-    if (selectedRow && selectedRowRef.current) {
+    if (selectedRow && selectedRowRef.current && initialScrollDone) {
       requestAnimationFrame(() => {
         selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     }
-  }, [selectedRow?.unitId]);
+  }, [selectedRow?.unitId, initialScrollDone]);
 
   // Filter options from backend
   const [filterOptions, setFilterOptions] = useState<{
@@ -466,6 +498,10 @@ export const PCRSamples = () => {
     sample_types: string[];
     sources: string[];
     houses: string[];
+    diseases: string[];
+    kit_types: string[];
+    technicians: string[];
+    extraction_methods: string[];
   }>({
     companies: [],
     farms: [],
@@ -476,6 +512,10 @@ export const PCRSamples = () => {
     sample_types: [],
     sources: [],
     houses: [],
+    diseases: [],
+    kit_types: [],
+    technicians: [],
+    extraction_methods: [],
   });
 
   // Fetch filter options from backend when year changes
@@ -500,114 +540,21 @@ export const PCRSamples = () => {
   const uniqueAges = filterOptions.ages;
   const uniqueSampleTypes = filterOptions.sample_types;
   const uniqueSources = filterOptions.sources;
-  const uniqueStatuses = filterOptions.statuses;
+  const uniqueStatuses = filterOptions.statuses.length > 0 
+    ? filterOptions.statuses 
+    : ['in_progress', 'completed', 'need_approval', 'postponed', 'hold'];
   const uniqueHouses = filterOptions.houses;
   const uniqueCycles = filterOptions.cycles;
 
-  const uniqueDiseases = useMemo(() => {
-    const diseases = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.pcr_data?.diseases_list) {
-          unit.pcr_data.diseases_list.forEach((d: any) => {
-            if (d.disease) diseases.add(d.disease);
-          });
-        }
-      });
-    });
-    return Array.from(diseases).sort();
-  }, [samples]);
+  // Use backend filter options for PCR-specific filters too
+  const uniqueDiseases = filterOptions.diseases;
+  const uniqueKitTypes = filterOptions.kit_types;
+  const uniqueTechnicians = filterOptions.technicians;
+  const uniqueExtractionMethods = filterOptions.extraction_methods;
 
-  const uniqueKitTypes = useMemo(() => {
-    const kitTypes = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1) {
-          // Get kit types from diseases_list (each disease has its own kit_type)
-          if (unit.pcr_data?.diseases_list) {
-            unit.pcr_data.diseases_list.forEach((d: any) => {
-              if (d.kit_type && d.kit_type.trim() !== '') {
-                kitTypes.add(d.kit_type);
-              }
-            });
-          }
-          // Also check top-level kit_type for older data
-          if (unit.pcr_data?.kit_type) {
-            kitTypes.add(unit.pcr_data.kit_type);
-          }
-        }
-      });
-    });
-    return Array.from(kitTypes).sort();
-  }, [samples]);
-
-  const uniqueTechnicians = useMemo(() => {
-    const technicians = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.pcr_data?.technician_name) {
-          technicians.add(unit.pcr_data.technician_name);
-        }
-      });
-    });
-    return Array.from(technicians).sort();
-  }, [samples]);
-
-  const uniqueExtractionMethods = useMemo(() => {
-    const methods = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1 && unit.pcr_data?.extraction_method) {
-          methods.add(unit.pcr_data.extraction_method);
-        }
-      });
-    });
-    return Array.from(methods).sort();
-  }, [samples]);
-
-  const filteredRows = useMemo(() => {
-    let filtered = unitRows;
-
-    // Global search is now handled by the backend API
-    // Only apply frontend-only filters (not sent to backend yet)
-
-    // Apply date range filter
-    if (startDate) {
-      filtered = filtered.filter((row) => {
-        const rowDate = new Date(row.dateReceived);
-        const start = new Date(startDate);
-        return rowDate >= start;
-      });
-    }
-    if (endDate) {
-      filtered = filtered.filter((row) => {
-        const rowDate = new Date(row.dateReceived);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999); // Include the entire end date
-        return rowDate <= end;
-      });
-    }
-
-    // Apply frontend-only multi-select filters
-    if (selectedDiseases.length > 0) {
-      filtered = filtered.filter((row) => {
-        const diseases = row.diseases.split(', ');
-        return diseases.some(d => selectedDiseases.includes(d));
-      });
-    }
-    if (selectedKitTypes.length > 0) {
-      filtered = filtered.filter((row) => selectedKitTypes.includes(row.kitType));
-    }
-    if (selectedTechnicians.length > 0) {
-      filtered = filtered.filter((row) => selectedTechnicians.includes(row.technicianName));
-    }
-    if (selectedExtractionMethods.length > 0) {
-      filtered = filtered.filter((row) => selectedExtractionMethods.includes(row.extractionMethod));
-    }
-
-    return filtered;
-  }, [unitRows, startDate, endDate, selectedSources, selectedStatuses, selectedHouses,
-    selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods]);
+  // All filtering is now handled by the backend API
+  // filteredRows is just unitRows since all filtering happens server-side
+  const filteredRows = unitRows;
 
   // For backend pagination, we show the data as-is (already paginated by backend)
 
@@ -629,6 +576,8 @@ export const PCRSamples = () => {
     setStartDate('');
     setEndDate('');
     setPage(1);
+    localStorage.removeItem('pcr_filters');
+    localStorage.removeItem('pcrSamples_page');
   };
 
   const formatDate = (dateString: string) => {
@@ -640,8 +589,83 @@ export const PCRSamples = () => {
     setExportDropdownOpen(false);
 
     try {
-      // Prepare data for export (filtered data)
-      const exportData = filteredRows.map(row => ({
+      // Fetch ALL filtered data for export (not just current page)
+      const params: any = {
+        year: selectedYear,
+        department_id: 1,
+        skip: 0,
+        limit: 10000  // Get all data for export
+      };
+
+      // Add all current filter parameters
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (selectedCompanies.length > 0) params.company = selectedCompanies;
+      if (selectedFarms.length > 0) params.farm = selectedFarms;
+      if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+      if (selectedAges.length > 0) params.age = selectedAges;
+      if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+      if (selectedSources.length > 0) params.source = selectedSources;
+      if (selectedStatuses.length > 0) params.status = selectedStatuses;
+      if (selectedHouses.length > 0) params.house = selectedHouses;
+      if (selectedCycles.length > 0) params.cycle = selectedCycles;
+      if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+      if (selectedKitTypes.length > 0) params.kit_types = selectedKitTypes;
+      if (selectedTechnicians.length > 0) params.technicians = selectedTechnicians;
+      if (selectedExtractionMethods.length > 0) params.extraction_methods = selectedExtractionMethods;
+      if (startDate) params.date_from = startDate;
+      if (endDate) params.date_to = endDate;
+
+      const exportResponse = await apiClient.get('/samples/', { params });
+      const allSamples = exportResponse.data;
+
+      // Process all filtered data for export
+      const exportRows: any[] = [];
+      allSamples.forEach((sample: any) => {
+        sample.units?.forEach((unit: any) => {
+          if (unit.department_id === 1) {
+            const diseases = unit.pcr_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
+            const kitTypesFromDiseases = unit.pcr_data?.diseases_list
+              ?.map((d: any) => d.kit_type)
+              .filter((kt: string) => kt && kt.trim() !== '') || [];
+            const uniqueKitTypes = [...new Set(kitTypesFromDiseases)];
+            const kitType = uniqueKitTypes.length > 0 
+              ? uniqueKitTypes.join(', ') 
+              : (unit.pcr_data?.kit_type || '-');
+
+            exportRows.push({
+              sampleCode: sample.sample_code,
+              unitCode: unit.unit_code,
+              dateReceived: sample.date_received,
+              company: sample.company,
+              farm: sample.farm,
+              flock: sample.flock || '-',
+              cycle: sample.cycle || '-',
+              house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
+              age: unit.age,
+              source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
+              sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
+              diseases,
+              kitType,
+              extractionMethod: unit.pcr_data?.extraction_method || '-',
+              technicianName: unit.pcr_data?.technician_name || 'N/A',
+              status: unit.coa_status || sample.status,
+              extraction: unit.pcr_data?.extraction || null,
+              detection: unit.pcr_data?.detection || null,
+              notes: unit.notes || ''
+            });
+          }
+        });
+      });
+
+      // Sort by unit code numerically
+      exportRows.sort((a, b) => {
+        const numA = parseInt(a.unitCode.replace(/\D/g, '')) || 0;
+        const numB = parseInt(b.unitCode.replace(/\D/g, '')) || 0;
+        return numA - numB;
+      });
+
+      // Prepare data for export
+      const exportData = exportRows.map(row => ({
         'Sample Code': row.sampleCode,
         'Unit Code': row.unitCode,
         'Date Received': formatDate(row.dateReceived),
@@ -683,12 +707,87 @@ export const PCRSamples = () => {
     setExportDropdownOpen(false);
 
     try {
-      // Prepare data for CSV export (filtered data)
+      // Fetch ALL filtered data for CSV export (not just current page)
+      const params: any = {
+        year: selectedYear,
+        department_id: 1,
+        skip: 0,
+        limit: 10000  // Get all data for export
+      };
+
+      // Add all current filter parameters
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (selectedCompanies.length > 0) params.company = selectedCompanies;
+      if (selectedFarms.length > 0) params.farm = selectedFarms;
+      if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+      if (selectedAges.length > 0) params.age = selectedAges;
+      if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+      if (selectedSources.length > 0) params.source = selectedSources;
+      if (selectedStatuses.length > 0) params.status = selectedStatuses;
+      if (selectedHouses.length > 0) params.house = selectedHouses;
+      if (selectedCycles.length > 0) params.cycle = selectedCycles;
+      if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+      if (selectedKitTypes.length > 0) params.kit_types = selectedKitTypes;
+      if (selectedTechnicians.length > 0) params.technicians = selectedTechnicians;
+      if (selectedExtractionMethods.length > 0) params.extraction_methods = selectedExtractionMethods;
+      if (startDate) params.date_from = startDate;
+      if (endDate) params.date_to = endDate;
+
+      const exportResponse = await apiClient.get('/samples/', { params });
+      const allSamples = exportResponse.data;
+
+      // Process all filtered data for CSV export
+      const exportRows: any[] = [];
+      allSamples.forEach((sample: any) => {
+        sample.units?.forEach((unit: any) => {
+          if (unit.department_id === 1) {
+            const diseases = unit.pcr_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
+            const kitTypesFromDiseases = unit.pcr_data?.diseases_list
+              ?.map((d: any) => d.kit_type)
+              .filter((kt: string) => kt && kt.trim() !== '') || [];
+            const uniqueKitTypes = [...new Set(kitTypesFromDiseases)];
+            const kitType = uniqueKitTypes.length > 0 
+              ? uniqueKitTypes.join(', ') 
+              : (unit.pcr_data?.kit_type || '-');
+
+            exportRows.push({
+              sampleCode: sample.sample_code,
+              unitCode: unit.unit_code,
+              dateReceived: sample.date_received,
+              company: sample.company,
+              farm: sample.farm,
+              flock: sample.flock || '-',
+              cycle: sample.cycle || '-',
+              house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
+              age: unit.age,
+              source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
+              sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
+              diseases,
+              kitType,
+              extractionMethod: unit.pcr_data?.extraction_method || '-',
+              technicianName: unit.pcr_data?.technician_name || 'N/A',
+              status: unit.coa_status || sample.status,
+              extraction: unit.pcr_data?.extraction || null,
+              detection: unit.pcr_data?.detection || null,
+              notes: unit.notes || ''
+            });
+          }
+        });
+      });
+
+      // Sort by unit code numerically
+      exportRows.sort((a, b) => {
+        const numA = parseInt(a.unitCode.replace(/\D/g, '')) || 0;
+        const numB = parseInt(b.unitCode.replace(/\D/g, '')) || 0;
+        return numA - numB;
+      });
+
+      // Prepare data for CSV export
       const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Flock', 'Cycle', 'House', 'Age', 'Source', 'Sample Type', 'Diseases', 'Kit Type', 'Extraction Method', 'Technician', 'Status', 'No. Samples', 'No. Sub Samples', 'Total Tests', 'Notes'];
 
       const csvRows = [
         headers.join(','),
-        ...filteredRows.map(row => [
+        ...exportRows.map(row => [
           `"${row.sampleCode}"`,
           `"${row.unitCode}"`,
           `"${formatDate(row.dateReceived)}"`,
@@ -731,8 +830,6 @@ export const PCRSamples = () => {
       setIsExporting(false);
     }
   };
-
-
 
   const handleCOAClick = (unitId: number) => {
     // Navigate to PCR COA screen
@@ -796,23 +893,15 @@ export const PCRSamples = () => {
 
   return (
     <div className="p-3 sm:p-4 lg:p-6 pb-20 lg:pb-6">
-      {/* Header - Mobile Responsive */}
-      <div className="mb-4 lg:mb-6 border-b border-gray-200 pb-4">
-        {/* Title row */}
-        <div className="flex items-center justify-between mb-3 lg:mb-0">
-          <h2 className="text-xl sm:text-2xl font-bold text-blue-700">PCR Samples</h2>
-          {/* Mobile: Show filter button here */}
-          <button
-            onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-            className="lg:hidden p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-          >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-            </svg>
-          </button>
-        </div>
-        
-        {/* Search and controls row */}
+      <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
+        {error && (
+          <ApiErrorDisplay 
+            error={{ message: error }} 
+            onRetry={() => fetchSamples()}
+            compact={true}
+            className="mb-4"
+          />
+        )}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           {/* Search and Year */}
           <div className="flex items-center gap-2 flex-1">
@@ -854,7 +943,8 @@ export const PCRSamples = () => {
               <button
                 onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
                 disabled={isExporting || filteredRows.length === 0}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                title="Export"
               >
                 {isExporting ? (
                   <>
@@ -862,14 +952,12 @@ export const PCRSamples = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Exporting...
                   </>
                 ) : (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
-                    <span className="text-sm font-medium">Export</span>
                     <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
@@ -908,12 +996,12 @@ export const PCRSamples = () => {
 
             <button
               onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1 p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative"
+              title="Filters"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
-              <span className="text-sm font-medium">Filters</span>
               {(selectedCompanies.length + selectedFarms.length + selectedFlocks.length +
                 selectedAges.length + selectedSampleTypes.length + selectedSources.length +
                 selectedStatuses.length + selectedHouses.length + selectedCycles.length +
@@ -1982,8 +2070,8 @@ export const PCRSamples = () => {
           {filteredRows.length > 0 && (
             <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
               <div className="text-sm text-gray-600">
-                Showing <span className="font-semibold text-gray-800">{filteredRows.length}</span> records
-                {filteredRows.length === 100 && <span className="text-gray-500 ml-2">(Page {page})</span>}
+                Showing <span className="font-semibold text-gray-800">{filteredRows.length}</span> of <span className="font-semibold text-gray-800">{_totalCount}</span> records
+                {_totalCount > 100 && <span className="text-gray-500 ml-2">(Page {page} of {Math.ceil(_totalCount / 100)})</span>}
               </div>
 
               <div className="flex items-center gap-4">
@@ -2009,7 +2097,7 @@ export const PCRSamples = () => {
                   {(() => {
                     // Calculate total pages needed (100 items per page)
                     const itemsPerPage = 100;
-                    const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage) + (filteredRows.length === itemsPerPage ? page : page - 1));
+                    const totalPages = Math.max(1, Math.ceil(_totalCount / itemsPerPage));
                     // Show pages from 1 to current page (and next if data suggests more)
                     const pagesToShow = [];
                     const startPage = Math.max(1, page - 2);
@@ -2033,17 +2121,17 @@ export const PCRSamples = () => {
 
                   <button
                     onClick={() => setPage((p) => p + 1)}
-                    disabled={filteredRows.length < 100}
+                    disabled={page >= Math.ceil(_totalCount / 100)}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     aria-label="Next page"
                   >
                     &rsaquo;
                   </button>
                   <button
-                    onClick={() => setPage((p) => p + 10)}
-                    disabled={filteredRows.length < 100}
+                    onClick={() => setPage(Math.ceil(_totalCount / 100))}
+                    disabled={page >= Math.ceil(_totalCount / 100)}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    aria-label="Jump forward"
+                    aria-label="Last page"
                   >
                     &raquo;
                   </button>

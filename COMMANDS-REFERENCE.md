@@ -15,8 +15,8 @@ NAS User:      alihassan
 #
 --------------------------------------------------------------------------------------------------------------------
 # Pull latest images from Docker Hub
-sudo docker pull sslorkk/poultry-lims-backend:latest
-sudo docker pull sslorkk/poultry-lims-frontend:latest
+sudo docker pull sslorkk/poultry-lims-backend:v1.25
+sudo docker pull sslorkk/poultry-lims-frontend:v1.27
 
 # Restart services
 cd /volume3/docker/poultry-lims
@@ -25,7 +25,38 @@ sudo docker-compose up -d
 
 # Check status
 sudo docker-compose ps
--------------------------------------------------------------------------------------------------------------------------
+
+docker-compose -f docker-compose-dev.yml build --no-cache
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------# when showing you layer already exists and can't push to docker hub use this commands:
+# Build Backend with tags
+docker build --no-cache -t sslorkk/poultry-lims-backend:latest -t sslorkk/poultry-lims-backend:v1.2 -f backend/Dockerfile ./backend
+docker build --no-cache -t sslorkk/poultry-lims-frontend:latest -t sslorkk/poultry-lims-frontend:v1.2 -f frontend/Dockerfile ./frontend
+
+# Push Backend
+docker push sslorkk/poultry-lims-backend:latest
+docker push sslorkk/poultry-lims-backend:v1.24
+
+# Push Frontend
+docker push sslorkk/poultry-lims-frontend:latest
+docker push sslorkk/poultry-lims-frontend:v1.25
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------docker tag poultrylims-frontend:latest sslorkk/poultry-lims-frontend:v1.25; docker tag poultrylims-frontend:latest sslorkk/poultry-lims-frontend:latest; docker tag poultrylims-backend:latest sslorkk/poultry-lims-backend:v1.24; docker tag poultrylims-backend:latest sslorkk/poultry-lims-backend:latest
+
+
+
+ docker push sslorkk/poultry-lims-frontend:latest; docker push sslorkk/poultry-lims-frontend:v1.25; docker push sslorkk/poultry-lims-backend:latest; docker push sslorkk/poultry-lims-backend:v1.24                                                                         
+
+
+-----------------------------------------------------------------------------------------------
+
+
+sudo docker-compose pull
+sudo docker-compose down
+sudo docker-compose up -d --force-recreate
+
+
+
+
+---------------------------------------------------------------------------------
 ## 🐳 DOCKER HUB COMMANDS
 
 ### Build Images
@@ -54,10 +85,10 @@ docker push sslorkk/poultry-lims-frontend:v1.2
 ### Pull from Docker Hub
 ```powershell
 # Pull Backend
-docker pull sslorkk/poultry-lims-backend:latest
+docker pull sslorkk/poultry-lims-backend:v1.24
 
 # Pull Frontend
-docker pull sslorkk/poultry-lims-frontend:latest
+docker pull sslorkk/poultry-lims-frontend:v1.25
 ```
 
 ---

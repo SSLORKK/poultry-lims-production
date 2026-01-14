@@ -82,22 +82,11 @@ export const SamplesHeaderBar = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [setExportDropdownOpen]);
 
+  // Suppress unused variable warning - title is kept for backwards compatibility
+  void title;
+  
   return (
     <div className="mb-4 lg:mb-6 border-b border-gray-200 pb-4">
-      {/* Title row */}
-      <div className="flex items-center justify-between mb-3 lg:mb-0">
-        <h2 className={`text-xl sm:text-2xl font-bold ${colors.title}`}>{title}</h2>
-        {/* Mobile: Show filter button here */}
-        <button
-          onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-          className={`lg:hidden p-2 rounded-lg ${colors.filterBtn}`}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-          </svg>
-        </button>
-      </div>
-      
       {/* Search and controls row */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         {/* Search and Year */}
@@ -135,28 +124,25 @@ export const SamplesHeaderBar = ({
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Export Dropdown */}
+          {/* Export Dropdown - Icon only */}
           <div className="relative" ref={exportDropdownRef}>
             <button
               onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
               disabled={isExporting || filteredRowsCount === 0}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              title="Export"
             >
               {isExporting ? (
-                <>
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <span className="hidden sm:inline">Exporting...</span>
-                </>
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
               ) : (
                 <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  <span className="text-sm font-medium hidden sm:inline">Export</span>
-                  <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={`w-3 h-3 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </>
@@ -194,18 +180,18 @@ export const SamplesHeaderBar = ({
 
           <button
             onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-            className="hidden lg:flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1 p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative"
+            title="Filters"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
-            <span className="text-sm font-medium">Filters</span>
             {activeFilterCount > 0 && (
-              <span className={`px-2 py-0.5 text-xs font-semibold ${colors.badge} rounded-full`}>
+              <span className={`absolute -top-1 -right-1 w-5 h-5 text-xs font-bold ${colors.badge} rounded-full flex items-center justify-center`}>
                 {activeFilterCount}
               </span>
             )}
-            <svg className={`w-4 h-4 transition-transform ${filterPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-3 h-3 transition-transform ${filterPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>

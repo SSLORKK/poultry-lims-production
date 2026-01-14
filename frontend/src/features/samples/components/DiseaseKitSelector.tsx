@@ -29,9 +29,11 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
   showWellsCount = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [dropdownPosition, setDropdownPosition] = useState<'bottom' | 'top'>('bottom');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -191,17 +193,33 @@ export const DiseaseKitSelector: React.FC<DiseaseKitSelectorProps> = ({
 
         {isOpen && (
           <div className={`absolute z-[9999] w-full ${dropdownPosition === 'top' ? 'bottom-full mb-2' : 'mt-2'} border-2 rounded-xl shadow-2xl bg-white ${borderColor}`}>
-            <div className="max-h-96 overflow-y-auto">
-              {availableDiseases.length === 0 ? (
+            {/* Search Input */}
+            <div className={`p-3 border-b ${borderColor} ${bgColor}`}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search diseases..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className={`w-full border-2 ${borderColor} rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-100 transition-all`}
+              />
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {availableDiseases
+                .filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                .length === 0 ? (
                 <div className="px-4 py-6 text-gray-500 text-sm text-center">
                   <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  <p className="font-medium">No diseases available</p>
-                  <p className="text-xs mt-1">Add them in Controls first</p>
+                  <p className="font-medium">No diseases found</p>
+                  <p className="text-xs mt-1">{searchTerm ? 'Try a different search term' : 'Add them in Controls first'}</p>
                 </div>
               ) : (
-                availableDiseases.map((disease) => (
+                availableDiseases
+                  .filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .map((disease) => (
                   <div
                     key={disease.id}
                     className={`px-4 py-3 border-b last:border-b-0 transition-colors hover:${bgColor}`}

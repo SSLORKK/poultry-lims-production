@@ -26,7 +26,9 @@ class SampleRepository:
                search: Optional[str] = None, company: Optional[List[str]] = None, farm: Optional[List[str]] = None, flock: Optional[List[str]] = None, 
                date_from: Optional[str] = None, date_to: Optional[str] = None, age: Optional[List[str]] = None, 
                sample_type: Optional[List[str]] = None, source: Optional[List[str]] = None, status: Optional[List[str]] = None, 
-               house: Optional[List[str]] = None, cycle: Optional[List[str]] = None) -> List[Sample]:
+               house: Optional[List[str]] = None, cycle: Optional[List[str]] = None,
+               diseases: Optional[List[str]] = None, kit_types: Optional[List[str]] = None,
+               technicians: Optional[List[str]] = None, extraction_methods: Optional[List[str]] = None) -> List[Sample]:
         """Get samples with intelligent filtering: 
         - Returns samples ordered by ID ASC (oldest first, so page numbers stay stable)
         - Page 1 = oldest samples, last page = newest samples
@@ -108,7 +110,11 @@ class SampleRepository:
             (farm is not None and len(farm) > 0) or
             (flock is not None and len(flock) > 0) or
             (age is not None and len(age) > 0) or
-            (sample_type is not None and len(sample_type) > 0)
+            (sample_type is not None and len(sample_type) > 0) or
+            (diseases is not None and len(diseases) > 0) or
+            (kit_types is not None and len(kit_types) > 0) or
+            (technicians is not None and len(technicians) > 0) or
+            (extraction_methods is not None and len(extraction_methods) > 0)
         )
         
         # Get samples based on filter status
@@ -123,14 +129,18 @@ class SampleRepository:
             # No filters: apply default limit for performance
             samples = query.offset(skip).limit(limit).all()
         
-        # Filter units by department, age, sample_type, source, status, house, cycle at Python level
+        # Filter units by department, age, sample_type, source, status, house, cycle and department-specific filters at Python level
         unit_filters_applied = (
             department_id is not None or 
             (age is not None and len(age) > 0) or 
             (sample_type is not None and len(sample_type) > 0) or
             (source is not None and len(source) > 0) or
             (status is not None and len(status) > 0) or
-            (house is not None and len(house) > 0)
+            (house is not None and len(house) > 0) or
+            (diseases is not None and len(diseases) > 0) or
+            (kit_types is not None and len(kit_types) > 0) or
+            (technicians is not None and len(technicians) > 0) or
+            (extraction_methods is not None and len(extraction_methods) > 0)
         )
         
         sample_filters_applied = (cycle is not None and len(cycle) > 0)
@@ -208,6 +218,90 @@ class SampleRepository:
                             # House is a string
                             if unit.house not in house:
                                 continue
+                    
+                    # Apply department-specific filters
+                    # Disease filter - check PCR, Serology, and Microbiology data
+                    if diseases is not None and len(diseases) > 0:
+                        disease_match = False
+                        
+                        # Check PCR diseases
+                        if unit.pcr_data and unit.pcr_data.diseases_list:
+                            for disease_data in unit.pcr_data.diseases_list:
+                                if isinstance(disease_data, dict) and disease_data.get('disease') in diseases:
+                                    disease_match = True
+                                    break
+                        
+                        # Check Serology diseases
+                        if not disease_match and unit.serology_data and unit.serology_data.diseases_list:
+                            for disease_data in unit.serology_data.diseases_list:
+                                if isinstance(disease_data, dict) and disease_data.get('disease') in diseases:
+                                    disease_match = True
+                                    break
+                        
+                        # Check Microbiology diseases
+                        if not disease_match and unit.microbiology_data and unit.microbiology_data.diseases_list:
+                            for disease in unit.microbiology_data.diseases_list:
+                                if isinstance(disease, str) and disease in diseases:
+                                    disease_match = True
+                                    break
+                        
+                        if not disease_match:
+                            continue
+                    
+                    # Kit type filter - check PCR and Serology data
+                    if kit_types is not None and len(kit_types) > 0:
+                        kit_match = False
+                        
+                        # Check PCR kit types
+                        if unit.pcr_data:
+                            # Check top-level kit_type
+                            if unit.pcr_data.kit_type and unit.pcr_data.kit_type in kit_types:
+                                kit_match = True
+                            # Check diseases_list kit_types
+                            elif unit.pcr_data.diseases_list:
+                                for disease_data in unit.pcr_data.diseases_list:
+                                    if isinstance(disease_data, dict) and disease_data.get('kit_type') in kit_types:
+                                        kit_match = True
+                                        break
+                        
+                        # Check Serology kit types
+                        if not kit_match and unit.serology_data:
+                            # Check top-level kit_type
+                            if unit.serology_data.kit_type and unit.serology_data.kit_type in kit_types:
+                                kit_match = True
+                            # Check diseases_list kit_types
+                            elif unit.serology_data.diseases_list:
+                                for disease_data in unit.serology_data.diseases_list:
+                                    if isinstance(disease_data, dict) and disease_data.get('kit_type') in kit_types:
+                                        kit_match = True
+                                        break
+                        
+                        if not kit_match:
+                            continue
+                    
+                    # Technician filter - check all department data
+                    if technicians is not None and len(technicians) > 0:
+                        tech_match = False
+                        
+                        # Check PCR technician
+                        if unit.pcr_data and unit.pcr_data.technician_name and unit.pcr_data.technician_name in technicians:
+                            tech_match = True
+                        
+                        # Check Serology technician
+                        if not tech_match and unit.serology_data and unit.serology_data.technician_name and unit.serology_data.technician_name in technicians:
+                            tech_match = True
+                        
+                        # Check Microbiology technician
+                        if not tech_match and unit.microbiology_data and unit.microbiology_data.technician_name and unit.microbiology_data.technician_name in technicians:
+                            tech_match = True
+                        
+                        if not tech_match:
+                            continue
+                    
+                    # Extraction method filter - PCR specific
+                    if extraction_methods is not None and len(extraction_methods) > 0:
+                        if not (unit.pcr_data and unit.pcr_data.extraction_method and unit.pcr_data.extraction_method in extraction_methods):
+                            continue
                     
                     filtered_units.append(unit)
                 

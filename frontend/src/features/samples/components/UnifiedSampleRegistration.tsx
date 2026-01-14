@@ -1013,6 +1013,7 @@ function MicrobiologyFields({
   const { data: diseases = [] } = useDiseases(departmentId);
   const [bulkLocations, setBulkLocations] = useState("");
   const [isDiseaseDropdownOpen, setIsDiseaseDropdownOpen] = useState(false);
+  const [diseaseSearchTerm, setDiseaseSearchTerm] = useState("");
   const diseaseDropdownRef = useRef<HTMLDivElement>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -1225,6 +1226,14 @@ function MicrobiologyFields({
             <div className={`absolute z-[9999] w-full mt-2 bg-white border-2 ${colors.border} rounded-xl shadow-2xl max-h-80 overflow-hidden`}>
               {/* Search and Actions */}
               <div className={`p-3 bg-gradient-to-r ${colors.gradient} border-b-2 ${colors.border}`}>
+                <input
+                  type="text"
+                  placeholder="Search diseases..."
+                  value={diseaseSearchTerm}
+                  onChange={(e) => setDiseaseSearchTerm(e.target.value)}
+                  className={`w-full border-2 ${colors.border} rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-purple-100 transition-all`}
+                  onClick={(e) => e.stopPropagation()}
+                />
                 {(unit.microbiology_data?.diseases_list?.length || 0) > 0 && (
                   <button
                     type="button"
@@ -1237,7 +1246,7 @@ function MicrobiologyFields({
                         },
                       });
                     }}
-                    className="w-full px-3 py-1.5 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition-all"
+                    className="mt-2 w-full px-3 py-1.5 bg-red-100 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-200 transition-all"
                   >
                     Clear All ({unit.microbiology_data?.diseases_list?.length})
                   </button>
@@ -1246,7 +1255,9 @@ function MicrobiologyFields({
 
               {/* Options List */}
               <div className="max-h-60 overflow-y-auto">
-                {diseases.length === 0 ? (
+                {diseases
+                  .filter(d => d.name.toLowerCase().includes(diseaseSearchTerm.toLowerCase()))
+                  .length === 0 ? (
                   <div className="px-4 py-6 text-center">
                     <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1254,21 +1265,23 @@ function MicrobiologyFields({
                     <p className="text-sm text-gray-500 font-medium">No diseases found</p>
                   </div>
                 ) : (
-                  diseases.map((item) => (
-                    <label
-                      key={item.id}
-                      className={`flex items-center px-4 py-2.5 cursor-pointer hover:${colors.bg} transition-colors border-b border-gray-100 last:border-b-0`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={(unit.microbiology_data?.diseases_list || []).includes(item.name)}
-                        onChange={() => toggleDisease(item.name)}
-                        className={`mr-3 h-5 w-5 ${colors.badge.replace('bg-', 'text-')} rounded-md focus:ring-2 cursor-pointer`}
-                      />
-                      <span className="text-sm font-medium text-gray-700">{item.name}</span>
-                    </label>
-                  ))
+                  diseases
+                    .filter(d => d.name.toLowerCase().includes(diseaseSearchTerm.toLowerCase()))
+                    .map((item) => (
+                      <label
+                        key={item.id}
+                        className={`flex items-center px-4 py-2.5 cursor-pointer hover:${colors.bg} transition-colors border-b border-gray-100 last:border-b-0`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={(unit.microbiology_data?.diseases_list || []).includes(item.name)}
+                          onChange={() => toggleDisease(item.name)}
+                          className={`mr-3 h-5 w-5 ${colors.badge.replace('bg-', 'text-')} rounded-md focus:ring-2 cursor-pointer`}
+                        />
+                        <span className="text-sm font-medium text-gray-700">{item.name}</span>
+                      </label>
+                    ))
                 )}
               </div>
             </div>
@@ -1946,6 +1959,7 @@ export const UnifiedSampleRegistration = () => {
               diseases_list: unit.pcr_data.diseases_list || [],
               kit_type: unit.pcr_data.kit_type || "",
               technician_name: unit.pcr_data.technician_name || "",
+              technician_signature_image: unit.pcr_data.technician_signature_image || null,
               extraction_method: unit.pcr_data.extraction_method || "",
               extraction: unit.pcr_data.extraction || undefined,
               detection: unit.pcr_data.detection || undefined,
@@ -1968,6 +1982,8 @@ export const UnifiedSampleRegistration = () => {
               kit_type: unit.serology_data.kit_type || "",
               number_of_wells: unit.serology_data.number_of_wells || 0,
               tests_count: calculatedTestsCount > 0 ? calculatedTestsCount : null,
+              technician_name: unit.serology_data.technician_name || "",
+              technician_signature_image: unit.serology_data.technician_signature_image || null,
             };
           }
 
@@ -1978,6 +1994,7 @@ export const UnifiedSampleRegistration = () => {
               fumigation: unit.microbiology_data.fumigation || "",
               index_list: unit.microbiology_data.index_list || [],
               technician_name: unit.microbiology_data.technician_name || "",
+              technician_signature_image: unit.microbiology_data.technician_signature_image || null,
             };
           }
 
@@ -2311,23 +2328,28 @@ export const UnifiedSampleRegistration = () => {
     const unitToDuplicate = units[index];
     const duplicatedUnit = JSON.parse(JSON.stringify(unitToDuplicate)); // Deep clone
     
-    // Remove id for new unit (will be assigned by backend)
+    // Remove id and unit_code for new unit (will be assigned by backend)
     delete duplicatedUnit.id;
+    delete duplicatedUnit.unit_code;
     
     const newUnits = [...units];
     newUnits.splice(index + 1, 0, duplicatedUnit); // Insert after current unit
     
-    // Renumber all units of each department sequentially
-    // Group units by department and renumber them
+    // Only assign temporary codes to NEW units (without id), preserve existing unit codes
     const departmentCounters: { [deptId: number]: number } = {};
     newUnits.forEach((unit) => {
+      // Skip units that already have an id (existing units from database)
+      if (unit.id) {
+        return; // Keep the original unit_code from database
+      }
+      
       const deptId = unit.department_id;
       if (!departmentCounters[deptId]) {
         departmentCounters[deptId] = 1;
       }
       const deptInfo = getDepartmentInfo(deptId);
       const departmentCode = deptInfo.code || 'UNK';
-      unit.unit_code = `${departmentCode}-${departmentCounters[deptId]}`;
+      unit.unit_code = `${departmentCode}-NEW-${departmentCounters[deptId]}`;
       departmentCounters[deptId]++;
     });
     

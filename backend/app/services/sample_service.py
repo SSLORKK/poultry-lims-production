@@ -27,11 +27,14 @@ class SampleService:
                        search: Optional[str] = None, company: Optional[List[str]] = None, farm: Optional[List[str]] = None, flock: Optional[List[str]] = None,
                        date_from: Optional[str] = None, date_to: Optional[str] = None, age: Optional[List[str]] = None,
                        sample_type: Optional[List[str]] = None, source: Optional[List[str]] = None, status: Optional[List[str]] = None, 
-                       house: Optional[List[str]] = None, cycle: Optional[List[str]] = None) -> List[Sample]:
-        """Get all samples, optionally filtered by department, year, and search term at SQL level"""
+                       house: Optional[List[str]] = None, cycle: Optional[List[str]] = None,
+                       diseases: Optional[List[str]] = None, kit_types: Optional[List[str]] = None, 
+                       technicians: Optional[List[str]] = None, extraction_methods: Optional[List[str]] = None) -> List[Sample]:
+        """Get all samples, optionally filtered by department, year, search term and department-specific filters at SQL level"""
         return self.sample_repo.get_all(skip=skip, limit=limit, department_id=department_id, year=year,
                                       search=search, company=company, farm=farm, flock=flock, date_from=date_from, date_to=date_to,
-                                      age=age, sample_type=sample_type, source=source, status=status, house=house, cycle=cycle)
+                                      age=age, sample_type=sample_type, source=source, status=status, house=house, cycle=cycle,
+                                      diseases=diseases, kit_types=kit_types, technicians=technicians, extraction_methods=extraction_methods)
     
     def create_sample(self, sample_data: SampleCreate, user_id: int) -> Optional[Sample]:
         # PHASE 0: Year validation - ensure date_received matches the current year

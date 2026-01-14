@@ -193,7 +193,7 @@ export function MicrobiologyDatabaseTable({
     const isolateTypes = (coa as any).isolate_types;
     if (!isolateTypes) return '-';
     
-    // Use a Map to track unique isolates with normalized keys for deduplication
+    // Group isolate types by disease to show unique values per disease
     const diseaseIsolates: Record<string, Map<string, string>> = {};
     
     Object.entries(isolateTypes).forEach(([disease, locations]: [string, any]) => {
@@ -208,10 +208,12 @@ export function MicrobiologyDatabaseTable({
               type.toUpperCase() !== 'NO BACTERIAL GROWTH' &&
               type.toUpperCase() !== 'NO COLIFORM GROWTH' &&
               type.toUpperCase() !== 'NO FUNGAL GROWTH') {
+            
             if (!diseaseIsolates[disease]) {
               diseaseIsolates[disease] = new Map();
             }
-            // Use lowercase trimmed value as key for deduplication, store original for display
+            
+            // Use lowercase trimmed value as key for deduplication per disease
             const normalizedKey = type.trim().toLowerCase();
             if (!diseaseIsolates[disease].has(normalizedKey)) {
               diseaseIsolates[disease].set(normalizedKey, type.trim());
@@ -221,15 +223,19 @@ export function MicrobiologyDatabaseTable({
       }
     });
     
+    // Format as "disease1: type1, type2; disease2: type3" 
     const diseaseStrings: string[] = [];
-    Object.entries(diseaseIsolates).forEach(([disease, typesMap]) => {
-      const sortedTypes = Array.from(typesMap.values()).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    Object.entries(diseaseIsolates).forEach(([disease, typeMap]) => {
+      const sortedTypes = Array.from(typeMap.values()).sort((a, b) => 
+        a.toLowerCase().localeCompare(b.toLowerCase())
+      );
       if (sortedTypes.length > 0) {
-        diseaseStrings.push(`${disease.toLowerCase()} (${sortedTypes.join(', ')})`);
+        const displayDisease = disease.toLowerCase();
+        diseaseStrings.push(`${displayDisease}: ${sortedTypes.join(', ')}`);
       }
     });
     
-    return diseaseStrings.length > 0 ? diseaseStrings.join(', ') : '-';
+    return diseaseStrings.length > 0 ? diseaseStrings.join('; ') : '-';
   };
 
   const getUnitPositiveLocations = (unit: Unit, coa: MicrobiologyCOAData | null): string => {
@@ -319,11 +325,11 @@ export function MicrobiologyDatabaseTable({
       
       if (sortedLocations.length > 0) {
         const displayDisease = disease.toLowerCase();
-        diseaseStrings.push(`${displayDisease} (${sortedLocations.join(', ')})`);
+        diseaseStrings.push(`${displayDisease}: ${sortedLocations.join(', ')}`);
       }
     });
     
-    return diseaseStrings.length > 0 ? diseaseStrings.join(', ') : '-';
+    return diseaseStrings.length > 0 ? diseaseStrings.join('; ') : '-';
   };
 
   const getUnitResultStatus = (unitId: number): string[] => {
@@ -402,25 +408,19 @@ export function MicrobiologyDatabaseTable({
       if (filters.sampleTypes.length) params.sample_type = filters.sampleTypes;
       if (filters.dateFrom) params.date_from = filters.dateFrom;
       if (filters.dateTo) params.date_to = filters.dateTo;
+      // Add microbiology-specific backend filtering
+      if (filters.microbiologyDiseases.length) params.diseases = filters.microbiologyDiseases;
 
       const response = await apiClient.get('/samples/', { params });
       const allSamples = response.data;
       
-      // Extract units
+      // Extract units - all filtering now handled by backend
       let allUnits: Array<Unit & { sample: Sample }> = [];
       allSamples.forEach((sample: Sample) => {
         sample.units.forEach((unit: Unit) => {
           allUnits.push({ ...unit, sample });
         });
       });
-
-      // Apply Microbiology specific filters (Diseases) in memory
-      if (filters.microbiologyDiseases.length > 0) {
-        allUnits = allUnits.filter(unit => {
-          const unitDiseases = unit.microbiology_data?.diseases_list || [];
-          return filters.microbiologyDiseases.some(d => unitDiseases.includes(d));
-        });
-      }
 
       const totalRows = allUnits.length;
       updateProgress(15, `Found ${totalRows} records. Fetching COA data...`);
@@ -457,7 +457,7 @@ export function MicrobiologyDatabaseTable({
 
       const wb = XLSX.utils.book_new();
       const wsData: any[] = [];
-      const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Sample Type'];
+      const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Cycle', 'Sample Type'];
       sortedExportDiseases.forEach(d => headers.push(d));
       headers.push('Type of Isolate', 'Location', 'COA Status');
       wsData.push(headers);
@@ -492,6 +492,7 @@ export function MicrobiologyDatabaseTable({
           unit.sample.date_received,
           unit.sample.company,
           unit.sample.farm,
+          unit.sample.cycle || '-',
           unit.sample_type?.join(', ') || '-',
         ];
         
@@ -515,7 +516,7 @@ export function MicrobiologyDatabaseTable({
       updateProgress(90, 'Applying formatting...');
       const ws = XLSX.utils.aoa_to_sheet(wsData);
       
-      const diseaseStartCol = 6;
+      const diseaseStartCol = 7;
       const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
       for (let R = 1; R <= range.e.r; ++R) {
         for (let C = diseaseStartCol; C < diseaseStartCol + sortedExportDiseases.length; ++C) {

@@ -61,14 +61,7 @@ export const MicrobiologySamples = () => {
   });
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [availableYears, setAvailableYears] = useState<number[]>([]);
-  // Load persisted selected unit from localStorage
-  const getPersistedSelectedUnitId = () => {
-    try {
-      return parseInt(localStorage.getItem('microbiology_selected_unit') || '0') || null;
-    } catch { return null; }
-  };
   const [selectedRow, setSelectedRow] = useState<UnitRow | null>(null);
-  const [persistedUnitId] = useState<number | null>(getPersistedSelectedUnitId());
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
 
   // Persist selected unit to localStorage when changed
@@ -83,17 +76,18 @@ export const MicrobiologySamples = () => {
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [initialScrollDone, setInitialScrollDone] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const selectedRowRef = useRef<HTMLTableRowElement>(null);
 
-  // Scroll to selected row when it changes - optimized for performance
+  // Scroll to selected row when it changes (after initial load)
   useEffect(() => {
-    if (selectedRow && selectedRowRef.current) {
+    if (selectedRow && selectedRowRef.current && initialScrollDone) {
       requestAnimationFrame(() => {
         selectedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     }
-  }, [selectedRow?.unitId]);
+  }, [selectedRow?.unitId, initialScrollDone]);
   
   // Edit history tracking
   const [editedSampleIds, setEditedSampleIds] = useState<Set<number>>(new Set());
@@ -215,11 +209,20 @@ export const MicrobiologySamples = () => {
       if (selectedCycles.length > 0) {
         params.cycle = selectedCycles;
       }
+      if (selectedDiseases.length > 0) {
+        params.diseases = selectedDiseases;
+      }
+      if (selectedBatchNos.length > 0) {
+        params.batch_nos = selectedBatchNos;
+      }
+      if (selectedFumigations.length > 0) {
+        params.fumigations = selectedFumigations;
+      }
       if (startDate) {
-        params.start_date = startDate;
+        params.date_from = startDate;
       }
       if (endDate) {
-        params.end_date = endDate;
+        params.date_to = endDate;
       }
 
       const response = await apiClient.get('/samples/', { params });
@@ -347,9 +350,16 @@ export const MicrobiologySamples = () => {
     const timer = setTimeout(() => {
       setDebouncedSearch(globalSearch);
       setPage(1);
+      localStorage.removeItem('microbiologySamples_page');
     }, 300);
     return () => clearTimeout(timer);
   }, [globalSearch]);
+
+  // Reset page to 1 when any filter changes
+  useEffect(() => {
+    setPage(1);
+    localStorage.removeItem('microbiologySamples_page');
+  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate]);
 
   const addToast = (type: 'success' | 'error', message: string) => {
     const id = Date.now();
@@ -372,15 +382,17 @@ export const MicrobiologySamples = () => {
         if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
+          setLastPageLoaded(true);
         }
-        setLastPageLoaded(true);
       } catch (err) {
         console.error('Failed to fetch total count:', err);
-        setLastPageLoaded(true);
+        if (!lastPageLoaded) {
+          setLastPageLoaded(true);
+        }
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear, lastPageLoaded]);
+  }, [selectedYear]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -388,8 +400,10 @@ export const MicrobiologySamples = () => {
   }, [page]);
 
   useEffect(() => {
-    fetchSamples();
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch]);
+    if (lastPageLoaded) {
+      fetchSamples();
+    }
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate, page, debouncedSearch, lastPageLoaded]);
 
   // Auto-refresh data every 30 seconds without showing loading state
   useEffect(() => {
@@ -407,6 +421,15 @@ export const MicrobiologySamples = () => {
         if (selectedFlocks.length > 0) params.flock = selectedFlocks;
         if (selectedAges.length > 0) params.age = selectedAges;
         if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+        if (selectedSources.length > 0) params.source = selectedSources;
+        if (selectedStatuses.length > 0) params.status = selectedStatuses;
+        if (selectedHouses.length > 0) params.house = selectedHouses;
+        if (selectedCycles.length > 0) params.cycle = selectedCycles;
+        if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+        if (selectedBatchNos.length > 0) params.batch_nos = selectedBatchNos;
+        if (selectedFumigations.length > 0) params.fumigations = selectedFumigations;
+        if (startDate) params.date_from = startDate;
+        if (endDate) params.date_to = endDate;
 
         const response = await apiClient.get('/samples/', { params });
         setSamples(response.data);
@@ -416,7 +439,7 @@ export const MicrobiologySamples = () => {
     }, 30000);
 
     return () => clearInterval(autoRefresh);
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch]);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate, page, debouncedSearch]);
 
   const unitRows: UnitRow[] = useMemo(() => {
     const rows: UnitRow[] = [];
@@ -485,20 +508,24 @@ export const MicrobiologySamples = () => {
     });
   }, [samples, coaHiddenIndexes]);
 
-  // Auto-select persisted unit or last row when data loads
+  // Auto-select last row when data loads and scroll to it
   useEffect(() => {
-    if (!selectedRow && unitRows.length > 0) {
-      if (persistedUnitId) {
-        const row = unitRows.find(r => r.unitId === persistedUnitId);
-        if (row) {
-          setSelectedRow(row);
-          return;
-        }
+    if (unitRows.length > 0 && lastPageLoaded) {
+      // Always select the last row (biggest unit code number) on initial load
+      const lastRow = unitRows[unitRows.length - 1];
+      setSelectedRow(lastRow);
+      
+      // Scroll to last row after a short delay to ensure DOM is ready
+      if (!initialScrollDone) {
+        setTimeout(() => {
+          if (selectedRowRef.current) {
+            selectedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          setInitialScrollDone(true);
+        }, 300);
       }
-      // If no persisted unit or not found, select the last row (newest sample)
-      setSelectedRow(unitRows[unitRows.length - 1]);
     }
-  }, [unitRows, persistedUnitId]);
+  }, [unitRows, lastPageLoaded, initialScrollDone]);
 
   // Filter options from backend
   const [filterOptions, setFilterOptions] = useState<{
@@ -511,6 +538,9 @@ export const MicrobiologySamples = () => {
     sample_types: string[];
     sources: string[];
     houses: string[];
+    diseases: string[];
+    batch_nos: string[];
+    fumigations: string[];
   }>({
     companies: [],
     farms: [],
@@ -521,6 +551,9 @@ export const MicrobiologySamples = () => {
     sample_types: [],
     sources: [],
     houses: [],
+    diseases: [],
+    batch_nos: [],
+    fumigations: [],
   });
 
   // Fetch filter options from backend when year changes
@@ -551,100 +584,14 @@ export const MicrobiologySamples = () => {
   const uniqueHouses = filterOptions.houses;
   const uniqueCycles = filterOptions.cycles;
 
-  // Department-specific filters from current data
-  const uniqueDiseases = useMemo(() => {
-    const diseases = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 3 && unit.microbiology_data?.diseases_list) {
-          unit.microbiology_data.diseases_list.forEach((d: string) => {
-            if (d) diseases.add(d);
-          });
-        }
-      });
-    });
-    return Array.from(diseases).sort();
-  }, [samples]);
+  // Use microbiology-specific filter options from backend API
+  const uniqueDiseases = filterOptions.diseases || [];
+  const uniqueBatchNos = filterOptions.batch_nos || [];
+  const uniqueFumigations = filterOptions.fumigations || [];
 
-  const uniqueBatchNos = useMemo(() => {
-    const batchNos = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 3 && unit.microbiology_data?.batch_no) {
-          batchNos.add(unit.microbiology_data.batch_no);
-        }
-      });
-    });
-    return Array.from(batchNos).sort();
-  }, [samples]);
-
-  const uniqueFumigations = useMemo(() => {
-    const fumigations = new Set<string>();
-    samples.forEach((sample) => {
-      sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 3 && unit.microbiology_data?.fumigation) {
-          fumigations.add(unit.microbiology_data.fumigation);
-        }
-      });
-    });
-    return Array.from(fumigations).sort();
-  }, [samples]);
-
-  const filteredRows = useMemo(() => {
-    let filtered = unitRows;
-
-    // Global search is now handled by the backend API
-    // Only apply frontend-only filters (not sent to backend yet)
-
-    // Apply date range filter
-    if (startDate) {
-      filtered = filtered.filter((row) => {
-        const rowDate = new Date(row.dateReceived);
-        const start = new Date(startDate);
-        return rowDate >= start;
-      });
-    }
-    if (endDate) {
-      filtered = filtered.filter((row) => {
-        const rowDate = new Date(row.dateReceived);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999); // Include the entire end date
-        return rowDate <= end;
-      });
-    }
-
-    // Apply frontend-only multi-select filters
-    if (selectedSources.length > 0) {
-      filtered = filtered.filter((row) => selectedSources.includes(row.source));
-    }
-    if (selectedStatuses.length > 0) {
-      filtered = filtered.filter((row) => selectedStatuses.includes(row.status));
-    }
-    if (selectedHouses.length > 0) {
-      filtered = filtered.filter((row) => {
-        const houses = row.house.split(', ');
-        return houses.some(h => selectedHouses.includes(h));
-      });
-    }
-    if (selectedCycles.length > 0) {
-      filtered = filtered.filter((row) => selectedCycles.includes(row.cycle));
-    }
-    if (selectedDiseases.length > 0) {
-      filtered = filtered.filter((row) => {
-        const diseases = row.diseases.split(', ');
-        return diseases.some(d => selectedDiseases.includes(d));
-      });
-    }
-    if (selectedBatchNos.length > 0) {
-      filtered = filtered.filter((row) => selectedBatchNos.includes(row.batchNo));
-    }
-    if (selectedFumigations.length > 0) {
-      filtered = filtered.filter((row) => selectedFumigations.includes(row.fumigation));
-    }
-
-    return filtered;
-  }, [unitRows, startDate, endDate, selectedSources, selectedStatuses, selectedHouses,
-    selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations]);
+  // All filtering is now handled by the backend API
+  // filteredRows is just unitRows since all filtering happens server-side
+  const filteredRows = unitRows;
 
   // For backend pagination, we show the data as-is (already paginated by backend)
 
@@ -665,6 +612,9 @@ export const MicrobiologySamples = () => {
     setStartDate('');
     setEndDate('');
     setPage(1);
+    // Clear localStorage filters
+    localStorage.removeItem('microbiology_filters');
+    localStorage.removeItem('microbiologySamples_page');
   };
 
   const formatDate = (dateString: string) => {
@@ -676,8 +626,76 @@ export const MicrobiologySamples = () => {
     setExportDropdownOpen(false);
 
     try {
-      // Prepare data for export (filtered data)
-      const exportData = filteredRows.map(row => ({
+      // Fetch ALL filtered data from backend instead of just current page
+      const params: any = {
+        year: selectedYear,
+        department_id: 3,
+        skip: 0,
+        limit: 10000  // Large limit to get all data
+      };
+
+      // Add global search parameter
+      if (debouncedSearch) {
+        params.search = debouncedSearch;
+      }
+
+      // Add all current filter parameters
+      if (selectedCompanies.length > 0) params.company = selectedCompanies;
+      if (selectedFarms.length > 0) params.farm = selectedFarms;
+      if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+      if (selectedAges.length > 0) params.age = selectedAges;
+      if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+      if (selectedSources.length > 0) params.source = selectedSources;
+      if (selectedStatuses.length > 0) params.status = selectedStatuses;
+      if (selectedHouses.length > 0) params.house = selectedHouses;
+      if (selectedCycles.length > 0) params.cycle = selectedCycles;
+      if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+      if (selectedBatchNos.length > 0) params.batch_nos = selectedBatchNos;
+      if (selectedFumigations.length > 0) params.fumigations = selectedFumigations;
+      if (startDate) params.date_from = startDate;
+      if (endDate) params.date_to = endDate;
+
+      const exportResponse = await apiClient.get('/samples/', { params });
+      const allSamples = exportResponse.data;
+      
+      // Process all samples to flatten units like in unitRows
+      const allRows: any[] = [];
+      allSamples.forEach((sample: any) => {
+        sample.units?.forEach((unit: any) => {
+          if (unit.department_id === 3) {
+            const diseasesList = unit.microbiology_data?.diseases_list || [];
+            const diseases = diseasesList.join(', ') || '-';
+            const fullIndexList = unit.microbiology_data?.index_list || [];
+            const indexList = fullIndexList.join(', ') || '-';
+            
+            allRows.push({
+              sampleCode: sample.sample_code,
+              unitCode: unit.unit_code,
+              dateReceived: sample.date_received,
+              company: sample.company,
+              farm: sample.farm,
+              flock: sample.flock || '-',
+              cycle: sample.cycle || '-',
+              house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
+              age: unit.age,
+              source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
+              technician: unit.microbiology_data?.technician_name || '-',
+              sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
+              status: unit.coa_status || sample.status,
+              samplesNumber: unit.samples_number,
+              diseases,
+              batchNo: unit.microbiology_data?.batch_no || '-',
+              fumigation: unit.microbiology_data?.fumigation || '-',
+              indexList,
+              notes: unit.notes || '',
+              visibleSubSamples: fullIndexList.length,
+              visibleTestsCount: diseasesList.length * fullIndexList.length
+            });
+          }
+        });
+      });
+
+      const exportData = allRows.map((row: any) => ({
         'Sample Code': row.sampleCode,
         'Unit Code': row.unitCode,
         'Date Received': formatDate(row.dateReceived),
@@ -698,7 +716,7 @@ export const MicrobiologySamples = () => {
         'No. Sub Samples': row.visibleSubSamples > 0 ? row.visibleSubSamples : (row.samplesNumber ?? '-'),
         'No. of Tests': row.visibleTestsCount > 0 ? row.visibleTestsCount : (
           row.diseases && row.diseases !== '-'
-            ? row.diseases.split(', ').filter(d => d.trim()).reduce((sum: number) => {
+            ? row.diseases.split(', ').filter((d: string) => d.trim()).reduce((sum: number) => {
                 const indexCount = row.indexList && row.indexList !== '-' 
                   ? row.indexList.split(', ').length 
                   : (row.samplesNumber || 0);
@@ -715,6 +733,7 @@ export const MicrobiologySamples = () => {
 
       const fileName = `microbiology_samples_export_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
+      addToast('success', 'Export successful');
     } catch (error) {
       console.error('Export error:', error);
       addToast('error', 'Failed to export data. Please try again.');
@@ -728,12 +747,79 @@ export const MicrobiologySamples = () => {
     setExportDropdownOpen(false);
 
     try {
-      // Prepare data for CSV export (filtered data)
+      // Fetch ALL filtered data from backend instead of just current page
+      const params: any = {
+        year: selectedYear,
+        department_id: 3,
+        skip: 0,
+        limit: 10000  // Large limit to get all data
+      };
+
+      // Add global search parameter
+      if (debouncedSearch) {
+        params.search = debouncedSearch;
+      }
+
+      // Add all current filter parameters
+      if (selectedCompanies.length > 0) params.company = selectedCompanies;
+      if (selectedFarms.length > 0) params.farm = selectedFarms;
+      if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+      if (selectedAges.length > 0) params.age = selectedAges;
+      if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+      if (selectedSources.length > 0) params.source = selectedSources;
+      if (selectedStatuses.length > 0) params.status = selectedStatuses;
+      if (selectedHouses.length > 0) params.house = selectedHouses;
+      if (selectedCycles.length > 0) params.cycle = selectedCycles;
+      if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+      if (selectedBatchNos.length > 0) params.batch_nos = selectedBatchNos;
+      if (selectedFumigations.length > 0) params.fumigations = selectedFumigations;
+      if (startDate) params.date_from = startDate;
+      if (endDate) params.date_to = endDate;
+
+      const exportResponse = await apiClient.get('/samples/', { params });
+      const allSamples = exportResponse.data;
+      
+      // Process all samples to flatten units like in unitRows
+      const allRows: any[] = [];
+      allSamples.forEach((sample: any) => {
+        sample.units?.forEach((unit: any) => {
+          if (unit.department_id === 3) {
+            const diseasesList = unit.microbiology_data?.diseases_list || [];
+            const diseases = diseasesList.join(', ') || '-';
+            const fullIndexList = unit.microbiology_data?.index_list || [];
+            const indexList = fullIndexList.join(', ') || '-';
+            
+            allRows.push({
+              sampleCode: sample.sample_code,
+              unitCode: unit.unit_code,
+              dateReceived: sample.date_received,
+              company: sample.company,
+              farm: sample.farm,
+              flock: sample.flock || '-',
+              cycle: sample.cycle || '-',
+              house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
+              age: unit.age,
+              source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
+              sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
+              status: unit.coa_status || sample.status,
+              samplesNumber: unit.samples_number,
+              diseases,
+              batchNo: unit.microbiology_data?.batch_no || '-',
+              fumigation: unit.microbiology_data?.fumigation || '-',
+              indexList,
+              notes: unit.notes || '',
+              visibleSubSamples: fullIndexList.length,
+              visibleTestsCount: diseasesList.length * fullIndexList.length
+            });
+          }
+        });
+      });
+
       const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Flock', 'Cycle', 'House', 'Age', 'Source', 'Sample Type', 'Diseases', 'Batch No', 'Fumigation', 'Index List', 'Status', 'No. Samples', 'No. Sub Samples', 'No. of Tests', 'Notes'];
 
       const csvRows = [
         headers.join(','),
-        ...filteredRows.map(row => [
+        ...allRows.map((row: any) => [
           `"${row.sampleCode}"`,
           `"${row.unitCode}"`,
           `"${formatDate(row.dateReceived)}"`,
@@ -753,7 +839,7 @@ export const MicrobiologySamples = () => {
           `"1"`,
           `"${row.samplesNumber ?? '-'}"`,
           `"${row.samplesNumber && row.samplesNumber > 0 && row.diseases && row.diseases !== '-'
-            ? row.samplesNumber * (row.diseases.split(', ').filter(d => d.trim()).length)
+            ? row.samplesNumber * (row.diseases.split(', ').filter((d: string) => d.trim()).length)
             : 0}"`,
           `"${(row.notes || '-').replace(/"/g, '""')}"`
         ].join(','))
@@ -771,6 +857,7 @@ export const MicrobiologySamples = () => {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      addToast('success', 'Export successful');
     } catch (error) {
       console.error('Export error:', error);
       addToast('error', 'Failed to export data. Please try again.');
@@ -900,7 +987,8 @@ export const MicrobiologySamples = () => {
               <button
                 onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
                 disabled={isExporting || filteredRows.length === 0}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                title="Export"
               >
                 {isExporting ? (
                   <>
@@ -908,14 +996,12 @@ export const MicrobiologySamples = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Exporting...
                   </>
                 ) : (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
-                    <span className="text-sm font-medium">Export</span>
                     <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
@@ -954,12 +1040,12 @@ export const MicrobiologySamples = () => {
 
             <button
               onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1 p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative"
+              title="Filters"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
-              <span className="text-sm font-medium">Filters</span>
               {(selectedCompanies.length + selectedFarms.length + selectedFlocks.length +
                 selectedAges.length + selectedSampleTypes.length + selectedSources.length +
                 selectedStatuses.length + selectedHouses.length + selectedCycles.length +

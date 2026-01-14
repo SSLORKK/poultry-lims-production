@@ -175,6 +175,21 @@ export const AllSamples = () => {
       if (selectedSampleTypes.length > 0) {
         params.sample_type = selectedSampleTypes;
       }
+      if (selectedSources.length > 0) {
+        params.source = selectedSources;
+      }
+      if (selectedStatuses.length > 0) {
+        params.status = selectedStatuses;
+      }
+      if (selectedHouses.length > 0) {
+        params.house = selectedHouses;
+      }
+      if (selectedCycles.length > 0) {
+        params.cycle = selectedCycles;
+      }
+      if (selectedDepartments.length > 0) {
+        params.department_id = selectedDepartments.map(d => d === 'PCR' ? 1 : d === 'Serology' ? 2 : 3);
+      }
 
       console.log('All Samples API Request:', params);
       const response = await apiClient.get('/samples/', { params });
@@ -226,13 +241,18 @@ export const AllSamples = () => {
         if (selectedFlocks.length > 0) params.flock = selectedFlocks;
         if (selectedAges.length > 0) params.age = selectedAges;
         if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+        if (selectedSources.length > 0) params.source = selectedSources;
+        if (selectedStatuses.length > 0) params.status = selectedStatuses;
+        if (selectedHouses.length > 0) params.house = selectedHouses;
+        if (selectedCycles.length > 0) params.cycle = selectedCycles;
+        if (selectedDepartments.length > 0) params.department_id = selectedDepartments.map(d => d === 'PCR' ? 1 : d === 'Serology' ? 2 : 3);
         
         const response = await apiClient.get('/samples/total-count', { params });
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Only auto-navigate to last page on first load if no saved page and no search
-        if (!lastPageLoaded && !localStorage.getItem('allSamples_page') && !debouncedSearch) {
+        // Always navigate to last page on first load (every time screen opens)
+        if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
           setPage(lastPage);
         }
@@ -243,7 +263,7 @@ export const AllSamples = () => {
       }
     };
     fetchTotalCount();
-  }, [selectedYear, debouncedSearch, dateFrom, dateTo, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes]);
+  }, [selectedYear, debouncedSearch, dateFrom, dateTo, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDepartments]);
 
   useEffect(() => {
     localStorage.setItem('allSamples_page', String(page));
@@ -275,7 +295,7 @@ export const AllSamples = () => {
     if (lastPageLoaded) {
       fetchSamples();
     }
-  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, page, debouncedSearch, lastPageLoaded]);
+  }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDepartments, dateFrom, dateTo, page, debouncedSearch, lastPageLoaded]);
 
   // Close export dropdown when clicking outside
   useEffect(() => {
@@ -418,32 +438,9 @@ export const AllSamples = () => {
     : ['PCR', 'Serology', 'Microbiology'];
 
   const filteredRows = useMemo(() => {
-    let filtered = unitRows;
-
-    // Global search is now handled by the backend API
-    // Only apply frontend-only multi-select filters (not sent to backend yet)
-
-    if (selectedSources.length > 0) {
-      filtered = filtered.filter((row) => selectedSources.includes(row.source));
-    }
-    if (selectedStatuses.length > 0) {
-      filtered = filtered.filter((row) => selectedStatuses.includes(row.status));
-    }
-    if (selectedHouses.length > 0) {
-      filtered = filtered.filter((row) => {
-        const houses = row.house.split(', ');
-        return houses.some(h => selectedHouses.includes(h));
-      });
-    }
-    if (selectedCycles.length > 0) {
-      filtered = filtered.filter((row) => selectedCycles.includes(row.cycle));
-    }
-    if (selectedDepartments.length > 0) {
-      filtered = filtered.filter((row) => selectedDepartments.includes(row.department));
-    }
-
-    return filtered;
-  }, [unitRows, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDepartments]);
+    // All filtering now handled by the backend API - no frontend filtering needed
+    return unitRows;
+  }, [unitRows]);
 
   // For backend pagination, we show the data as-is (already paginated by backend)
   // We'll show "Load More" style pagination or simple prev/next buttons
@@ -667,7 +664,8 @@ export const AllSamples = () => {
                 <button
                   onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
                   disabled={isExporting || filteredRows.length === 0}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 whitespace-nowrap flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
+                  className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  title="Export"
                 >
                   {isExporting ? (
                     <>
@@ -675,14 +673,12 @@ export const AllSamples = () => {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                      Exporting...
                     </>
                   ) : (
                     <>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                       </svg>
-                      Export
                       <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
@@ -721,18 +717,24 @@ export const AllSamples = () => {
 
               <button
                 onClick={() => setFilterPanelOpen(!filterPanelOpen)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 whitespace-nowrap flex items-center gap-2 text-sm"
+                className="p-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-1 transition-colors"
+                title="Filters"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                 </svg>
-                Filters
+                <svg className={`w-3 h-3 transition-transform ${filterPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
               <button
                 onClick={clearFilters}
-                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 whitespace-nowrap text-sm"
+                className="p-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                title="Clear All Filters"
               >
-                Clear All
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
           </div>

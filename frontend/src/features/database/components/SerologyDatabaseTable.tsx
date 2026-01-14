@@ -230,33 +230,22 @@ export function SerologyDatabaseTable({
       if (filters.sampleTypes.length) params.sample_type = filters.sampleTypes;
       if (filters.dateFrom) params.date_from = filters.dateFrom;
       if (filters.dateTo) params.date_to = filters.dateTo;
-      if (filters.cycles.length) params.cycle = filters.cycles; // Serology specific
-      if (filters.sources.length) params.source = filters.sources; // Serology specific
+      if (filters.cycles.length) params.cycle = filters.cycles;
+      if (filters.sources.length) params.source = filters.sources;
+      // Add serology-specific backend filtering
+      if (filters.serologyDiseases.length) params.diseases = filters.serologyDiseases;
+      if (filters.serologyKitTypes.length) params.kit_types = filters.serologyKitTypes;
 
       const response = await apiClient.get('/samples/', { params });
       const allSamples = response.data;
       
-      // Extract units
+      // Extract units - all filtering now handled by backend
       let allUnits: Array<Unit & { sample: Sample }> = [];
       allSamples.forEach((sample: Sample) => {
         sample.units.forEach((unit: Unit) => {
           allUnits.push({ ...unit, sample });
         });
       });
-
-      // Apply Serology specific filters in memory
-      if (filters.serologyDiseases.length > 0) {
-        allUnits = allUnits.filter(unit => {
-          const unitDiseases = unit.serology_data?.diseases_list?.map(d => d.disease) || [];
-          return filters.serologyDiseases.some(d => unitDiseases.includes(d));
-        });
-      }
-      if (filters.serologyKitTypes.length > 0) {
-        allUnits = allUnits.filter(unit => {
-          const unitKitTypes = unit.serology_data?.diseases_list?.map(d => d.kit_type) || [];
-          return filters.serologyKitTypes.some(kt => unitKitTypes.includes(kt));
-        });
-      }
 
       updateProgress(30, 'Building Excel file...');
 

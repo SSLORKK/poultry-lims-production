@@ -242,7 +242,9 @@ export function PCRDatabaseTable({
       
       // Prepare params for full export
       const params: any = {
-        department_id: DEPARTMENT_IDS['PCR'],
+        year: new Date().getFullYear(),
+        department_id: DEPARTMENT_IDS.PCR, // department_id 1 = PCR
+        skip: 0,
         limit: 100000,
       };
       
@@ -253,25 +255,19 @@ export function PCRDatabaseTable({
       if (filters.sampleTypes.length) params.sample_type = filters.sampleTypes;
       if (filters.dateFrom) params.date_from = filters.dateFrom;
       if (filters.dateTo) params.date_to = filters.dateTo;
+      // Add PCR-specific backend filtering
+      if (filters.pcrDiseases.length) params.diseases = filters.pcrDiseases;
 
       const response = await apiClient.get('/samples/', { params });
       const allSamples = response.data;
       
-      // Extract units
+      // Extract units - all filtering now handled by backend
       let allUnits: Array<Unit & { sample: Sample }> = [];
       allSamples.forEach((sample: Sample) => {
         sample.units.forEach((unit: Unit) => {
           allUnits.push({ ...unit, sample });
         });
       });
-
-      // Apply PCR specific filters (Diseases) in memory
-      if (filters.pcrDiseases.length > 0) {
-        allUnits = allUnits.filter(unit => {
-          const unitDiseases = unit.pcr_data?.diseases_list?.map(d => d.disease) || [];
-          return filters.pcrDiseases.some(d => unitDiseases.includes(d));
-        });
-      }
 
       const totalRows = allUnits.length;
       updateProgress(15, `Found ${totalRows} records. Fetching COA data...`);
@@ -315,6 +311,7 @@ export function PCRDatabaseTable({
         'Source',
         selectedSampleTypes.length > 0 ? selectedSampleTypes.join(', ') : 'Sample Type',
         ...diseases,
+        'COA'
       ];
       wsData.push(headers);
 
@@ -429,6 +426,9 @@ export function PCRDatabaseTable({
             if (value !== undefined) hasMatchingResult = true;
             row.push(value || '-');
           });
+
+          // Add COA status
+          row.push(unit.coa_status || '-');
 
           // Respect results filter for including the row
           if (filters.resultsFilter !== 'All' && !hasMatchingResult) {

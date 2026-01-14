@@ -3,6 +3,8 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { ProfileDropdown } from './common/ProfileDropdown';
 import { NotificationIcon } from './common/NotificationIcon';
+import { SampleScreenTopBar } from './SampleScreenTopBar';
+import { SampleScreenProvider } from '../contexts/SampleScreenContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 export const MainLayout = () => {
@@ -154,6 +156,7 @@ export const MainLayout = () => {
   );
 
   return (
+    <SampleScreenProvider>
     <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Overlay for mobile when sidebar is open */}
       {sidebarOpen && (
@@ -561,10 +564,10 @@ export const MainLayout = () => {
         }`}
       >
         {/* Top Bar with Hamburger Menu - Fixed on mobile */}
-        <div className={`sticky top-0 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200/50 px-4 lg:px-6 py-3 lg:py-4 flex items-center justify-between z-40 transition-all duration-300 ease-out ${
+        <div className={`sticky top-0 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200/50 px-4 lg:px-6 py-2 lg:py-3 flex items-center justify-between z-40 transition-all duration-300 ease-out ${
           isMobile && !barsVisible ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'
         }`}>
-          <div className="flex items-center min-w-0">
+          <div className="flex items-center min-w-0 flex-shrink-0">
             <button
               onClick={toggleSidebar}
               className="p-2 rounded-xl hover:bg-gray-100 transition-all duration-200 hover:scale-105 flex-shrink-0"
@@ -584,8 +587,8 @@ export const MainLayout = () => {
                 />
               </svg>
             </button>
-            <div className="ml-3 lg:ml-4 min-w-0">
-              <h2 className="text-base lg:text-lg font-semibold text-gray-800 truncate">
+            <div className="ml-2 lg:ml-3 min-w-0">
+              <h2 className="text-sm lg:text-base font-semibold text-gray-800 truncate">
                 {location.pathname === '/dashboard' && 'Dashboard'}
                 {location.pathname === '/reports' && 'Reports'}
                 {location.pathname === '/register-sample' && 'Register Sample'}
@@ -604,7 +607,10 @@ export const MainLayout = () => {
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 lg:space-x-4 flex-shrink-0">
+          {/* Sample Screen Controls - shown on sample pages */}
+          <SampleScreenTopBar />
+
+          <div className="flex items-center space-x-2 lg:space-x-3 flex-shrink-0 ml-2">
             <NotificationIcon count={0} />
             {user && !userLoading && <ProfileDropdown user={user} />}
           </div>
@@ -771,5 +777,6 @@ export const MainLayout = () => {
         }
       `}</style>
     </div>
+    </SampleScreenProvider>
   );
 };

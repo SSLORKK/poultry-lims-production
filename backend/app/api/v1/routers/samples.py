@@ -79,6 +79,10 @@ def get_samples(
     status: Optional[List[str]] = Query(None, description="Filter by status"),
     house: Optional[List[str]] = Query(None, description="Filter by house"),
     cycle: Optional[List[str]] = Query(None, description="Filter by cycle"),
+    diseases: Optional[List[str]] = Query(None, description="Filter by diseases (PCR/Serology specific)"),
+    kit_types: Optional[List[str]] = Query(None, description="Filter by kit types (PCR/Serology specific)"),
+    technicians: Optional[List[str]] = Query(None, description="Filter by technicians (PCR/Serology/Microbiology specific)"),
+    extraction_methods: Optional[List[str]] = Query(None, description="Filter by extraction methods (PCR specific)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -89,7 +93,8 @@ def get_samples(
     sample_service = SampleService(db)
     samples = sample_service.get_all_samples(skip=skip, limit=limit, department_id=department_id, year=year,
                                           search=search, company=company, farm=farm, flock=flock, date_from=date_from, date_to=date_to,
-                                          age=age, sample_type=sample_type, source=source, status=status, house=house, cycle=cycle)
+                                          age=age, sample_type=sample_type, source=source, status=status, house=house, cycle=cycle,
+                                          diseases=diseases, kit_types=kit_types, technicians=technicians, extraction_methods=extraction_methods)
     
     # Get user's database permissions to filter results
     permission_repo = PermissionRepository(db)
@@ -150,6 +155,14 @@ def get_total_count(
     date_to: Optional[str] = Query(None, description="Filter by date to"),
     age: Optional[List[str]] = Query(None, description="Filter by age"),
     sample_type: Optional[List[str]] = Query(None, description="Filter by sample type"),
+    source: Optional[List[str]] = Query(None, description="Filter by source"),
+    status: Optional[List[str]] = Query(None, description="Filter by status"),
+    house: Optional[List[str]] = Query(None, description="Filter by house"),
+    cycle: Optional[List[str]] = Query(None, description="Filter by cycle"),
+    diseases: Optional[List[str]] = Query(None, description="Filter by diseases"),
+    kit_types: Optional[List[str]] = Query(None, description="Filter by kit types"),
+    technicians: Optional[List[str]] = Query(None, description="Filter by technicians"),
+    extraction_methods: Optional[List[str]] = Query(None, description="Filter by extraction methods"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -179,7 +192,11 @@ def get_total_count(
         query = query.filter(Sample.flock.in_(flock))
     
     # Track if we need to join Unit table
-    needs_unit_join = department_id is not None or search is not None
+    needs_unit_join = (department_id is not None or search is not None or 
+                      age is not None or sample_type is not None or source is not None or 
+                      status is not None or house is not None or cycle is not None or
+                      diseases is not None or kit_types is not None or technicians is not None or
+                      extraction_methods is not None)
     
     if needs_unit_join:
         query = query.join(Unit)
@@ -211,6 +228,68 @@ def get_total_count(
                 func.cast(Unit.sample_type, String).ilike(search_term),
             )
         )
+    
+    # Apply unit-level filters
+    if age is not None and len(age) > 0:
+        query = query.filter(Unit.age.in_(age))
+    if sample_type is not None and len(sample_type) > 0:
+        query = query.filter(func.cast(Unit.sample_type, String).in_(sample_type))
+    if source is not None and len(source) > 0:
+        query = query.filter(func.cast(Unit.source, String).in_(source))
+    if status is not None and len(status) > 0:
+        query = query.filter(or_(Sample.status.in_(status), Unit.coa_status.in_(status)))
+    if house is not None and len(house) > 0:
+        query = query.filter(func.cast(Unit.house, String).in_(house))
+    if cycle is not None and len(cycle) > 0:
+        query = query.filter(Sample.cycle.in_(cycle))
+    
+    # Apply department-specific filters (requires JSON operations)
+    if diseases is not None and len(diseases) > 0:
+        # For PCR/Serology: filter by diseases in pcr_data/serology_data diseases_list
+        disease_conditions = []
+        for disease in diseases:
+            disease_conditions.extend([
+                func.json_extract(Unit.pcr_data, '$.diseases_list[*].disease').like(f'%{disease}%'),
+                func.json_extract(Unit.serology_data, '$.diseases_list[*].disease').like(f'%{disease}%'),
+                func.json_extract(Unit.microbiology_data, '$.diseases_list[*]').like(f'%{disease}%')
+            ])
+        if disease_conditions:
+            query = query.filter(or_(*disease_conditions))
+    
+    if kit_types is not None and len(kit_types) > 0:
+        # For PCR/Serology: filter by kit_type in diseases_list or top-level kit_type
+        kit_conditions = []
+        for kit_type in kit_types:
+            kit_conditions.extend([
+                func.json_extract(Unit.pcr_data, '$.diseases_list[*].kit_type').like(f'%{kit_type}%'),
+                func.json_extract(Unit.pcr_data, '$.kit_type').like(f'%{kit_type}%'),
+                func.json_extract(Unit.serology_data, '$.diseases_list[*].kit_type').like(f'%{kit_type}%'),
+                func.json_extract(Unit.serology_data, '$.kit_type').like(f'%{kit_type}%')
+            ])
+        if kit_conditions:
+            query = query.filter(or_(*kit_conditions))
+    
+    if technicians is not None and len(technicians) > 0:
+        # Filter by technician_name in department-specific data
+        tech_conditions = []
+        for tech in technicians:
+            tech_conditions.extend([
+                func.json_extract(Unit.pcr_data, '$.technician_name').like(f'%{tech}%'),
+                func.json_extract(Unit.serology_data, '$.technician_name').like(f'%{tech}%'),
+                func.json_extract(Unit.microbiology_data, '$.technician_name').like(f'%{tech}%')
+            ])
+        if tech_conditions:
+            query = query.filter(or_(*tech_conditions))
+    
+    if extraction_methods is not None and len(extraction_methods) > 0:
+        # Filter by extraction_method in PCR data
+        method_conditions = []
+        for method in extraction_methods:
+            method_conditions.append(
+                func.json_extract(Unit.pcr_data, '$.extraction_method').like(f'%{method}%')
+            )
+        if method_conditions:
+            query = query.filter(or_(*method_conditions))
     
     total = query.scalar() or 0
     return {"total": total}
@@ -254,6 +333,10 @@ def get_filter_options(
     sources = set()
     houses = set()
     departments_set = set()
+    diseases = set()
+    kit_types = set()
+    technicians = set()
+    extraction_methods = set()
     
     for sample in samples:
         if sample.company:
@@ -265,13 +348,13 @@ def get_filter_options(
         if sample.cycle:
             cycles.add(sample.cycle)
         if sample.status:
-            statuses.add(sample.status)
+            statuses.add(sample.status.lower())
         
         for unit in sample.units:
             if department_id is None or unit.department_id == department_id:
                 # Also collect unit coa_status values for status filter
                 if unit.coa_status:
-                    statuses.add(unit.coa_status)
+                    statuses.add(unit.coa_status.lower())
                 if unit.age:
                     ages.add(str(unit.age))
                 if unit.sample_type:
@@ -288,6 +371,41 @@ def get_filter_options(
                             houses.add(h)
                 if unit.department_id:
                     departments_set.add(unit.department_id)
+                
+                # Extract department-specific filter options
+                if unit.pcr_data:
+                    if unit.pcr_data.technician_name:
+                        technicians.add(unit.pcr_data.technician_name)
+                    if unit.pcr_data.extraction_method:
+                        extraction_methods.add(unit.pcr_data.extraction_method)
+                    if unit.pcr_data.kit_type:
+                        kit_types.add(unit.pcr_data.kit_type)
+                    if unit.pcr_data.diseases_list:
+                        for disease_data in unit.pcr_data.diseases_list:
+                            if isinstance(disease_data, dict) and disease_data.get('disease'):
+                                diseases.add(disease_data['disease'])
+                            if isinstance(disease_data, dict) and disease_data.get('kit_type'):
+                                kit_types.add(disease_data['kit_type'])
+                
+                if unit.serology_data:
+                    if unit.serology_data.technician_name:
+                        technicians.add(unit.serology_data.technician_name)
+                    if unit.serology_data.kit_type:
+                        kit_types.add(unit.serology_data.kit_type)
+                    if unit.serology_data.diseases_list:
+                        for disease_data in unit.serology_data.diseases_list:
+                            if isinstance(disease_data, dict) and disease_data.get('disease'):
+                                diseases.add(disease_data['disease'])
+                            if isinstance(disease_data, dict) and disease_data.get('kit_type'):
+                                kit_types.add(disease_data['kit_type'])
+                
+                if unit.microbiology_data:
+                    if unit.microbiology_data.technician_name:
+                        technicians.add(unit.microbiology_data.technician_name)
+                    if unit.microbiology_data.diseases_list:
+                        for disease in unit.microbiology_data.diseases_list:
+                            if isinstance(disease, str):
+                                diseases.add(disease)
     
     # Get department names
     dept_names = []
@@ -305,7 +423,11 @@ def get_filter_options(
         "sample_types": sorted(list(sample_types)),
         "sources": sorted(list(sources)),
         "houses": sorted(list(houses)),
-        "departments": dept_names
+        "departments": dept_names,
+        "diseases": sorted(list(diseases)),
+        "kit_types": sorted(list(kit_types)),
+        "technicians": sorted(list(technicians)),
+        "extraction_methods": sorted(list(extraction_methods))
     }
 
 
