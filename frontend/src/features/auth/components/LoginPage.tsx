@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 export const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<{ title: string; message: string; code: string } | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -15,6 +16,16 @@ export const LoginPage = () => {
     if (expired === 'true') {
       setSessionExpired(true);
       localStorage.removeItem('session_expired');
+    }
+    
+    // Load remembered credentials
+    const remembered = localStorage.getItem('remember_me');
+    if (remembered === 'true') {
+      const savedUsername = localStorage.getItem('saved_username');
+      if (savedUsername) {
+        setUsername(savedUsername);
+        setRememberMe(true);
+      }
     }
   }, []);
 
@@ -100,6 +111,16 @@ export const LoginPage = () => {
 
     try {
       await login(username, password, rememberMe);
+      
+      // Handle remember me functionality
+      if (rememberMe) {
+        localStorage.setItem('remember_me', 'true');
+        localStorage.setItem('saved_username', username);
+      } else {
+        localStorage.removeItem('remember_me');
+        localStorage.removeItem('saved_username');
+      }
+      
       // If successful, login will navigate away
     } catch (err: any) {
       // Get professional error message
@@ -109,15 +130,22 @@ export const LoginPage = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
-      {/* Animated Gradient Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-30"></div>
+      {/* Background Image with Overlay */}
+      <div className="absolute inset-0">
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: 'url(/assets/login-background.jpg)' }}
+        ></div>
+        {/* Dark overlay for better contrast */}
+        <div className="absolute inset-0 bg-gradient-to-br from-black/60 via-purple-900/50 to-indigo-900/60"></div>
+        {/* Animated pattern overlay */}
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDYwIDAgTCAwIDAgMCA2MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-40"></div>
       </div>
 
-      {/* Floating Orbs */}
-      <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
-      <div className="absolute top-40 right-20 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse" style={{ animationDelay: '2s' }}></div>
-      <div className="absolute -bottom-8 left-1/2 w-72 h-72 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse" style={{ animationDelay: '4s' }}></div>
+      {/* Enhanced Floating Liquid Orbs */}
+      <div className="absolute top-10 left-10 w-96 h-96 bg-gradient-to-r from-purple-400/30 to-pink-400/30 rounded-full mix-blend-screen filter blur-3xl opacity-70 animate-float"></div>
+      <div className="absolute top-32 right-16 w-80 h-80 bg-gradient-to-r from-cyan-400/25 to-blue-400/25 rounded-full mix-blend-screen filter blur-3xl opacity-60 animate-float-delayed"></div>
+      <div className="absolute -bottom-10 left-1/3 w-72 h-72 bg-gradient-to-r from-indigo-400/35 to-purple-400/35 rounded-full mix-blend-screen filter blur-3xl opacity-50 animate-float-slow"></div>
 
       {/* Login Card */}
       <div className="relative z-10 w-full max-w-md px-6">
@@ -136,8 +164,11 @@ export const LoginPage = () => {
           </p>
         </div>
 
-        {/* Glassmorphism Login Card */}
-        <div className="backdrop-blur-xl bg-white/10 rounded-2xl shadow-2xl border border-white/20 p-8 transition-all duration-300 hover:shadow-purple-500/20">
+        {/* Enhanced Glassmorphism Login Card */}
+        <div className="backdrop-blur-2xl bg-gradient-to-br from-white/15 via-white/10 to-white/5 rounded-3xl shadow-2xl border border-white/30 p-8 transition-all duration-500 hover:shadow-purple-500/30 hover:border-white/40 hover:bg-white/20 relative overflow-hidden">
+          {/* Liquid background effect */}
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-pink-500/10 rounded-3xl"></div>
+          <div className="relative z-10">
           <h2 className="text-2xl font-bold text-white text-center mb-6">
             Sign In
           </h2>
@@ -232,13 +263,29 @@ export const LoginPage = () => {
                   </svg>
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => handlePasswordChange(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all duration-200 backdrop-blur-sm"
+                  className="w-full pl-10 pr-12 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-purple-300/50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all duration-200 backdrop-blur-sm"
                   placeholder="Enter your password"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-purple-300 hover:text-purple-100 transition-colors duration-200"
+                >
+                  {showPassword ? (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.543 7-1.275 4.057-5.065 7-9.543 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
               </div>
             </div>
 
@@ -287,6 +334,7 @@ export const LoginPage = () => {
               Access is restricted to authorized personnel only
             </p>
           </div>
+          </div>
         </div>
 
         {/* Bottom Footer */}
@@ -305,6 +353,61 @@ export const LoginPage = () => {
         }
         .animate-shake {
           animation: shake 0.5s ease-in-out;
+        }
+        
+        @keyframes float {
+          0%, 100% { 
+            transform: translate(0px, 0px) scale(1);
+            opacity: 0.7;
+          }
+          33% { 
+            transform: translate(30px, -30px) scale(1.1);
+            opacity: 0.9;
+          }
+          66% { 
+            transform: translate(-20px, 20px) scale(0.9);
+            opacity: 0.8;
+          }
+        }
+        
+        @keyframes float-delayed {
+          0%, 100% { 
+            transform: translate(0px, 0px) scale(1);
+            opacity: 0.6;
+          }
+          33% { 
+            transform: translate(-25px, 35px) scale(1.05);
+            opacity: 0.8;
+          }
+          66% { 
+            transform: translate(25px, -15px) scale(0.95);
+            opacity: 0.7;
+          }
+        }
+        
+        @keyframes float-slow {
+          0%, 100% { 
+            transform: translate(0px, 0px) scale(1);
+            opacity: 0.5;
+          }
+          50% { 
+            transform: translate(15px, -25px) scale(1.08);
+            opacity: 0.7;
+          }
+        }
+        
+        .animate-float {
+          animation: float 8s ease-in-out infinite;
+        }
+        
+        .animate-float-delayed {
+          animation: float-delayed 10s ease-in-out infinite;
+          animation-delay: 2s;
+        }
+        
+        .animate-float-slow {
+          animation: float-slow 12s ease-in-out infinite;
+          animation-delay: 4s;
         }
       `}</style>
     </div>

@@ -251,15 +251,28 @@ export const AllSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Always navigate to last page on first load (every time screen opens)
+        // Always navigate to last page on first load - more robust approach
         if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
+          console.log(`AllSamples: Navigating to last page ${lastPage} (total records: ${total})`);
+          
+          // Clear localStorage to prevent interference
+          localStorage.removeItem('allSamples_page');
+          
+          // Set page and mark as loaded in one go
           setPage(lastPage);
+          setLastPageLoaded(true);
+          
+          // Ensure localStorage gets the correct page after state update
+          setTimeout(() => {
+            localStorage.setItem('allSamples_page', String(lastPage));
+          }, 100);
         }
-        setLastPageLoaded(true);
       } catch (err) {
         console.error('Failed to fetch total count:', err);
-        setLastPageLoaded(true);
+        if (!lastPageLoaded) {
+          setLastPageLoaded(true);
+        }
       }
     };
     fetchTotalCount();
@@ -382,6 +395,58 @@ export const AllSamples = () => {
       return numA - numB;
     });
   }, [samples]);
+
+  // Auto-select row when data loads - prioritize returning from edit, then last saved, then last row
+  useEffect(() => {
+    if (unitRows.length > 0 && lastPageLoaded) {
+      let targetRow = null;
+      
+      // Check if we're returning from edit screen
+      const returnUnitId = localStorage.getItem('allSamples_selected_unit_return');
+      if (returnUnitId) {
+        targetRow = unitRows.find(row => row.unitId === parseInt(returnUnitId));
+        localStorage.removeItem('allSamples_selected_unit_return'); // Clear after use
+        console.log(`AllSamples: Restored selection for unit ${returnUnitId} after returning from edit`);
+      }
+      
+      // If not returning or unit not found, try last saved selection
+      if (!targetRow) {
+        const savedUnitId = localStorage.getItem('allSamples_selected_unit');
+        if (savedUnitId) {
+          targetRow = unitRows.find(row => row.unitId === parseInt(savedUnitId));
+        }
+      }
+      
+      // If still no target, select the last row (newest sample)
+      if (!targetRow) {
+        targetRow = unitRows[unitRows.length - 1];
+      }
+      
+      setSelectedRow(targetRow);
+      
+      // Scroll to selected row and center it
+      if (returnUnitId || !selectedRow) {
+        setTimeout(() => {
+          const selectedElement = document.querySelector(`[data-unit-id="${targetRow?.unitId}"]`);
+          if (selectedElement) {
+            selectedElement.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'center',
+              inline: 'nearest'
+            });
+            console.log(`AllSamples: Scrolled to and centered unit ${targetRow?.unitCode}`);
+          }
+        }, 300);
+      }
+    }
+  }, [unitRows, lastPageLoaded, selectedRow]);
+
+  // Persist selected unit to localStorage when changed
+  useEffect(() => {
+    if (selectedRow?.unitId) {
+      localStorage.setItem('allSamples_selected_unit', String(selectedRow.unitId));
+    }
+  }, [selectedRow]);
 
   // Filter options from backend
   const [filterOptions, setFilterOptions] = useState<{
@@ -1438,7 +1503,12 @@ export const AllSamples = () => {
                   {selectedRow?.unitId === row.unitId && (
                     <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
                       <button
-                        onClick={(e) => { e.stopPropagation(); navigate(`/register-sample?edit=${row.sampleId}`); }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          // Save selected unit ID for when we return
+                          localStorage.setItem('allSamples_selected_unit_return', String(row.unitId));
+                          navigate(`/register-sample?edit=${row.sampleId}`); 
+                        }}
                         disabled={!hasWriteAccess}
                         className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all ${
                           hasWriteAccess 

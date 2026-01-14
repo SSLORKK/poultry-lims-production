@@ -314,11 +314,22 @@ export const SerologySamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Always navigate to last page on first load (every time screen opens)
+        // Always navigate to last page on first load - more robust approach
         if (!lastPageLoaded) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
+          console.log(`Serology: Navigating to last page ${lastPage} (total records: ${total})`);
+          
+          // Clear localStorage to prevent interference
+          localStorage.removeItem('serologySamples_page');
+          
+          // Set page and mark as loaded in one go
           setPage(lastPage);
           setLastPageLoaded(true);
+          
+          // Ensure localStorage gets the correct page after state update
+          setTimeout(() => {
+            localStorage.setItem('serologySamples_page', String(lastPage));
+          }, 100);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
@@ -328,7 +339,7 @@ export const SerologySamples = () => {
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear]);
+  }, [selectedYear, lastPageLoaded]);
 
   useEffect(() => {
     localStorage.setItem('serologySamples_page', String(page));
@@ -428,18 +439,44 @@ export const SerologySamples = () => {
     }
   }, [selectedRow]);
 
-  // Auto-select last row when data loads and scroll to it
+  // Auto-select row when data loads - prioritize returning from edit/COA, then last saved, then last row
   useEffect(() => {
     if (unitRows.length > 0 && lastPageLoaded) {
-      // Always select the last row (biggest unit code number) on initial load
-      const lastRow = unitRows[unitRows.length - 1];
-      setSelectedRow(lastRow);
+      let targetRow = null;
       
-      // Scroll to last row after a short delay to ensure DOM is ready
-      if (!initialScrollDone) {
+      // Check if we're returning from edit/COA screen
+      const returnUnitId = localStorage.getItem('serology_selected_unit_return');
+      if (returnUnitId) {
+        targetRow = unitRows.find(row => row.unitId === parseInt(returnUnitId));
+        localStorage.removeItem('serology_selected_unit_return'); // Clear after use
+        console.log(`Serology: Restored selection for unit ${returnUnitId} after returning from edit/COA`);
+      }
+      
+      // If not returning or unit not found, try last saved selection
+      if (!targetRow) {
+        const savedUnitId = localStorage.getItem('serology_selected_unit');
+        if (savedUnitId) {
+          targetRow = unitRows.find(row => row.unitId === parseInt(savedUnitId));
+        }
+      }
+      
+      // If still no target, select the last row (newest sample)
+      if (!targetRow) {
+        targetRow = unitRows[unitRows.length - 1];
+      }
+      
+      setSelectedRow(targetRow);
+      
+      // Always scroll to selected row and center it
+      if (!initialScrollDone || returnUnitId) {
         setTimeout(() => {
           if (selectedRowRef.current) {
-            selectedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            selectedRowRef.current.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'center',
+              inline: 'nearest'
+            });
+            console.log(`Serology: Scrolled to and centered unit ${targetRow?.unitCode}`);
           }
           setInitialScrollDone(true);
         }, 300);
@@ -551,8 +588,11 @@ export const SerologySamples = () => {
 
 
 
-
   const handleEdit = (sampleId: number) => {
+    // Save selected unit ID for when we return
+    if (selectedRow) {
+      localStorage.setItem('serology_selected_unit_return', String(selectedRow.unitId));
+    }
     navigate(`/register-sample?edit=${sampleId}`);
   };
 
