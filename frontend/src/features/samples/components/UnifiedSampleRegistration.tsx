@@ -1787,6 +1787,24 @@ export const UnifiedSampleRegistration = () => {
     );
   }, [allFarms, company, companies]);
 
+  // Clear selected farms that don't belong to currently selected companies
+  useEffect(() => {
+    if (farm.length > 0 && farms.length > 0) {
+      const validFarmNames = farms.map(f => f.name);
+      const filteredFarms = farm.filter(selectedFarm => validFarmNames.includes(selectedFarm));
+      
+      // Only update if there's a difference to avoid infinite loops
+      if (filteredFarms.length !== farm.length) {
+        console.log('Cleaning invalid farm selections:', farm.filter(f => !validFarmNames.includes(f)));
+        setFarm(filteredFarms);
+      }
+    } else if (farm.length > 0 && farms.length === 0) {
+      // Clear all farms if no valid farms for selected company
+      console.log('Clearing all farms - no valid farms for selected company');
+      setFarm([]);
+    }
+  }, [farms, farm]);
+
   // Helper function to format field names in a human-readable way
   const formatFieldName = (fieldName: string): string => {
     const fieldMappings: { [key: string]: string } = {

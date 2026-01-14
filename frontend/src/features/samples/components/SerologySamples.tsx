@@ -569,9 +569,11 @@ export const SerologySamples = () => {
 
 
   const handleEdit = (sampleId: number) => {
-    // Save selected unit ID for when we return
+    // Save selected unit ID AND current page for when we return
     if (selectedRow) {
       localStorage.setItem('serology_selected_unit_return', String(selectedRow.unitId));
+      localStorage.setItem('serology_return_page', String(page));
+      console.log(`Serology: Saving navigation state - unit ${selectedRow.unitId}, page ${page}`);
     }
     navigate(`/register-sample?edit=${sampleId}`);
   };
@@ -1739,10 +1741,21 @@ export const SerologySamples = () => {
                       &rsaquo;
                     </button>
                     <button
-                      onClick={() => setPage((p) => p + 10)}
-                      disabled={page >= Math.ceil(totalCount / 100)}
+                      onClick={() => {
+                        const lastPage = Math.max(1, Math.ceil(totalCount / 100));
+                        console.log(`Serology: Going to last page: ${lastPage} (total: ${totalCount}, current page: ${page})`);
+                        console.log(`Serology: Calculation - Math.ceil(${totalCount} / 100) = ${Math.ceil(totalCount / 100)}`);
+                        
+                        // Ensure we have a valid page number and total count
+                        if (totalCount > 0 && lastPage > 0) {
+                          setPage(lastPage);
+                        } else {
+                          console.warn(`Serology: Invalid last page calculation - totalCount: ${totalCount}, lastPage: ${lastPage}`);
+                        }
+                      }}
+                      disabled={page >= Math.ceil(totalCount / 100) || totalCount === 0}
                       className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                      aria-label="Jump forward"
+                      aria-label="Last page"
                     >
                       &raquo;
                     </button>

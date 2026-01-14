@@ -373,7 +373,7 @@ export const PCRSamples = () => {
     }
   }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate, page, debouncedSearch, lastPageLoaded]);
 
-  // Auto-refresh data every 30 seconds without showing loading state
+  // Auto-refresh data every 10 seconds for better responsiveness + refresh on window focus
   useEffect(() => {
     const autoRefresh = setInterval(async () => {
       try {
@@ -405,10 +405,23 @@ export const PCRSamples = () => {
       } catch (err) {
         console.error('Auto-refresh failed:', err);
       }
-    }, 30000); // 30 seconds
+    }, 10000); // 10 seconds for better responsiveness
 
     return () => clearInterval(autoRefresh);
   }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods]);
+
+  // Refresh data when window regains focus (e.g., returning from COA tab)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (lastPageLoaded) {
+        console.log('PCR: Window focus detected, refreshing data...');
+        fetchSamples();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [lastPageLoaded]);
 
   const unitRows: UnitRow[] = useMemo(() => {
     const rows: UnitRow[] = [];
@@ -850,16 +863,20 @@ export const PCRSamples = () => {
   };
 
   const handleCOAClick = (unitId: number) => {
-    // Save selected unit ID for when we return
+    // Save selected unit ID AND current page for when we return
     localStorage.setItem('pcr_selected_unit_return', String(unitId));
+    localStorage.setItem('pcr_return_page', String(page));
+    console.log(`PCR: Saving navigation state - unit ${unitId}, page ${page}`);
     // Navigate to PCR COA screen
     navigate(`/pcr-coa/${unitId}`);
   };
 
   const handleEdit = (sampleId: number) => {
-    // Save selected unit ID for when we return (find unit by sample ID)
+    // Save selected unit ID AND current page for when we return
     if (selectedRow) {
       localStorage.setItem('pcr_selected_unit_return', String(selectedRow.unitId));
+      localStorage.setItem('pcr_return_page', String(page));
+      console.log(`PCR: Saving navigation state - unit ${selectedRow.unitId}, page ${page}`);
     }
     navigate(`/register-sample?edit=${sampleId}`);
   };
@@ -2154,10 +2171,17 @@ export const PCRSamples = () => {
                   <button
                     onClick={() => {
                       const lastPage = Math.max(1, Math.ceil(_totalCount / 100));
-                      console.log(`Going to last page: ${lastPage} (total: ${_totalCount})`);
-                      setPage(lastPage);
+                      console.log(`PCR: Going to last page: ${lastPage} (total: ${_totalCount}, current page: ${page})`);
+                      console.log(`PCR: Calculation - Math.ceil(${_totalCount} / 100) = ${Math.ceil(_totalCount / 100)}`);
+                      
+                      // Ensure we have a valid page number and total count
+                      if (_totalCount > 0 && lastPage > 0) {
+                        setPage(lastPage);
+                      } else {
+                        console.warn(`PCR: Invalid last page calculation - totalCount: ${_totalCount}, lastPage: ${lastPage}`);
+                      }
                     }}
-                    disabled={page >= Math.ceil(_totalCount / 100)}
+                    disabled={page >= Math.ceil(_totalCount / 100) || _totalCount === 0}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     aria-label="Last page"
                   >

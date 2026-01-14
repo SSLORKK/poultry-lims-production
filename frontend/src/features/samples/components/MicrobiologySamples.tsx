@@ -74,6 +74,7 @@ export const MicrobiologySamples = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [isInitialPageSet, setIsInitialPageSet] = useState(false); // Track if initial page calculation is done
+  const [totalCount, setTotalCount] = useState(0); // Store total count for pagination
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -369,6 +370,7 @@ export const MicrobiologySamples = () => {
         const params: any = { year: selectedYear, department_id: 3 };
         const response = await apiClient.get('/samples/total-count', { params });
         const total = response.data.total || 0;
+        setTotalCount(total); // Store total count for pagination
         
         // FORCE navigation to last page on initial load - production-ready approach
         if (!isInitialPageSet) {
@@ -888,15 +890,19 @@ export const MicrobiologySamples = () => {
 
 
   const handleCOAClick = (unitId: number) => {
-    // Save selected unit ID for when we return
+    // Save selected unit ID AND current page for when we return
     localStorage.setItem('microbiology_selected_unit_return', String(unitId));
+    localStorage.setItem('microbiology_return_page', String(page));
+    console.log(`Microbiology: Saving navigation state - unit ${unitId}, page ${page}`);
     navigate(`/microbiology-coa/${unitId}`);
   };
 
   const handleEdit = (sampleId: number) => {
-    // Save selected unit ID for when we return
+    // Save selected unit ID AND current page for when we return
     if (selectedRow) {
       localStorage.setItem('microbiology_selected_unit_return', String(selectedRow.unitId));
+      localStorage.setItem('microbiology_return_page', String(page));
+      console.log(`Microbiology: Saving navigation state - unit ${selectedRow.unitId}, page ${page}`);
     }
     navigate(`/register-sample?edit=${sampleId}`);
   };
@@ -1951,10 +1957,21 @@ export const MicrobiologySamples = () => {
                     &rsaquo;
                   </button>
                   <button
-                    onClick={() => setPage((p) => p + 10)}
-                    disabled={filteredRows.length < 100}
+                    onClick={() => {
+                      const lastPage = Math.max(1, Math.ceil(totalCount / 100));
+                      console.log(`Microbiology: Going to last page: ${lastPage} (total: ${totalCount}, current page: ${page})`);
+                      console.log(`Microbiology: Calculation - Math.ceil(${totalCount} / 100) = ${Math.ceil(totalCount / 100)}`);
+                      
+                      // Ensure we have a valid page number and total count
+                      if (totalCount > 0 && lastPage > 0) {
+                        setPage(lastPage);
+                      } else {
+                        console.warn(`Microbiology: Invalid last page calculation - totalCount: ${totalCount}, lastPage: ${lastPage}`);
+                      }
+                    }}
+                    disabled={page >= Math.ceil(totalCount / 100) || totalCount === 0}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    aria-label="Jump forward"
+                    aria-label="Last page"
                   >
                     &raquo;
                   </button>

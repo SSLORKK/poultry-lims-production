@@ -575,6 +575,19 @@ export function PCRCOA() {
       await apiClient.patch(`/samples/${unitData.sample.id}`, { status: 'Completed' });
 
       setNotification({ type: 'success', message: 'Certificate of Analysis approved successfully!' });
+      
+      // Refresh local status to prevent stale data
+      setStatus('completed');
+      if (unitData) {
+        setUnitData({
+          ...unitData,
+          coa_status: 'completed',
+          sample: {
+            ...unitData.sample,
+            status: 'Completed'
+          }
+        });
+      }
     } catch (err: any) {
       console.error('Failed to approve COA:', err);
       setError(err.response?.data?.detail || 'Failed to approve COA');

@@ -1031,8 +1031,8 @@ export default function Reports() {
                     {(company.pcr_diseases?.length || company.microbiology_diseases?.length || company.serology_diseases?.length) && (
                       <div className="border-t border-gray-100 pt-4">
                         <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Disease Tests</div>
-                        <div className="space-y-2 max-h-32 overflow-y-auto">
-                          {company.pcr_diseases?.slice(0, 3).map((d, i) => (
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {company.pcr_diseases?.map((d, i) => (
                             <div key={`pcr-${i}`} className="flex items-center justify-between text-xs">
                               <span className="text-gray-700 truncate mr-2">
                                 <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1"></span>
@@ -1041,7 +1041,7 @@ export default function Reports() {
                               <span className="font-semibold text-gray-900 whitespace-nowrap">{d.test_count}</span>
                             </div>
                           ))}
-                          {company.microbiology_diseases?.slice(0, 2).map((d, i) => (
+                          {company.microbiology_diseases?.map((d, i) => (
                             <div key={`mic-${i}`} className="flex items-center justify-between text-xs">
                               <span className="text-gray-700 truncate mr-2">
                                 <span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1"></span>
@@ -1050,7 +1050,7 @@ export default function Reports() {
                               <span className="font-semibold text-gray-900 whitespace-nowrap">{d.test_count}</span>
                             </div>
                           ))}
-                          {company.serology_diseases?.slice(0, 2).map((d, i) => (
+                          {company.serology_diseases?.map((d, i) => (
                             <div key={`ser-${i}`} className="flex items-center justify-between text-xs">
                               <span className="text-gray-700 truncate mr-2">
                                 <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1"></span>
