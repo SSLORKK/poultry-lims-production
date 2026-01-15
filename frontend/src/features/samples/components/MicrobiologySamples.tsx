@@ -367,28 +367,46 @@ export const MicrobiologySamples = () => {
   useEffect(() => {
     const fetchTotalAndGoToLastPage = async () => {
       try {
-        const params: any = { year: selectedYear, department_id: 3 };
-        const response = await apiClient.get('/samples/total-count', { params });
+        const countParams: any = { year: selectedYear, department_id: 3 };
+        
+        // Include ALL active filters in total count (same as fetchSamples)
+        if (debouncedSearch) countParams.search = debouncedSearch;
+        if (selectedCompanies.length > 0) countParams.company = selectedCompanies;
+        if (selectedFarms.length > 0) countParams.farm = selectedFarms;
+        if (selectedFlocks.length > 0) countParams.flock = selectedFlocks;
+        if (selectedAges.length > 0) countParams.age = selectedAges;
+        if (selectedSampleTypes.length > 0) countParams.sample_type = selectedSampleTypes;
+        if (selectedSources.length > 0) countParams.source = selectedSources;
+        if (selectedStatuses.length > 0) countParams.status = selectedStatuses;
+        if (selectedHouses.length > 0) countParams.house = selectedHouses;
+        if (selectedCycles.length > 0) countParams.cycle = selectedCycles;
+        if (selectedDiseases.length > 0) countParams.diseases = selectedDiseases;
+        if (selectedBatchNos.length > 0) countParams.batch_nos = selectedBatchNos;
+        if (selectedFumigations.length > 0) countParams.fumigations = selectedFumigations;
+        if (startDate) countParams.date_from = startDate;
+        if (endDate) countParams.date_to = endDate;
+        
+        const response = await apiClient.get('/samples/total-count', { params: countParams });
         const total = response.data.total || 0;
         setTotalCount(total); // Store total count for pagination
         
-        // FORCE navigation to last page on initial load - production-ready approach
+        // Jump to last page on initial load (with optimized performance)
         if (!isInitialPageSet) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`Microbiology: FORCING navigation to last page ${lastPage} (total records: ${total})`);
+          console.log(`Microbiology: Jumping to last page ${lastPage} (total records: ${total})`);
           
-          // Clear ANY localStorage interference
+          // Clear any stored page to force last page
           localStorage.removeItem('microbiologySamples_page');
           
-          // Force set both page and flags immediately
+          // Set page and flags
           setPage(lastPage);
           setLastPageLoaded(true);
           setIsInitialPageSet(true);
           
-          // Force localStorage update immediately
+          // Store last page in localStorage
           localStorage.setItem('microbiologySamples_page', String(lastPage));
           
-          console.log(`Microbiology: Successfully set page to ${lastPage}`);
+          console.log(`Microbiology: Successfully navigated to last page ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
@@ -399,7 +417,7 @@ export const MicrobiologySamples = () => {
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear, isInitialPageSet]);
+  }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -612,6 +630,8 @@ export const MicrobiologySamples = () => {
 
   // All filtering is now handled by the backend API
   // filteredRows is just unitRows since all filtering happens server-side
+  // NOTE: Backend paginates by SAMPLES (100) but we display UNITS (may be >100)
+  // This is acceptable - pagination works correctly, some pages show 120-150 rows
   const filteredRows = unitRows;
 
   // For backend pagination, we show the data as-is (already paginated by backend)

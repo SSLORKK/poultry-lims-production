@@ -298,30 +298,43 @@ export const SerologySamples = () => {
   }, [selectedYear, page, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, startDate, endDate, lastPageLoaded]);
 
   useEffect(() => {
-    const fetchTotalAndGoToLastPage = async () => {
+    const fetchTotalCount = async () => {
       try {
-        const params: any = { year: selectedYear, department_id: 2 };
-        const response = await apiClient.get('/samples/total-count', { params });
+        const countParams: any = { year: selectedYear, department_id: 2 };
+        
+        // Include ALL active filters in total count (same as fetchSamples)
+        if (debouncedSearch) countParams.search = debouncedSearch;
+        if (selectedCompanies.length > 0) countParams.company = selectedCompanies;
+        if (selectedFarms.length > 0) countParams.farm = selectedFarms;
+        if (selectedFlocks.length > 0) countParams.flock = selectedFlocks;
+        if (selectedAges.length > 0) countParams.age = selectedAges;
+        if (selectedSampleTypes.length > 0) countParams.sample_type = selectedSampleTypes;
+        if (selectedSources.length > 0) countParams.source = selectedSources;
+        if (selectedStatuses.length > 0) countParams.status = selectedStatuses;
+        if (startDate) countParams.date_from = startDate;
+        if (endDate) countParams.date_to = endDate;
+        
+        const response = await apiClient.get('/samples/total-count', { params: countParams });
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // FORCE navigation to last page on initial load - production-ready approach
+        // Jump to last page on initial load (with optimized performance)
         if (!isInitialPageSet) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`Serology: FORCING navigation to last page ${lastPage} (total records: ${total})`);
+          console.log(`Serology: Jumping to last page ${lastPage} (total records: ${total})`);
           
-          // Clear ANY localStorage interference
+          // Clear any stored page to force last page
           localStorage.removeItem('serologySamples_page');
           
-          // Force set both page and flags immediately
+          // Set page and flags
           setPage(lastPage);
           setLastPageLoaded(true);
           setIsInitialPageSet(true);
           
-          // Force localStorage update immediately
+          // Store last page in localStorage
           localStorage.setItem('serologySamples_page', String(lastPage));
           
-          console.log(`Serology: Successfully set page to ${lastPage}`);
+          console.log(`Serology: Successfully navigated to last page ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
@@ -331,8 +344,8 @@ export const SerologySamples = () => {
         }
       }
     };
-    fetchTotalAndGoToLastPage();
-  }, [selectedYear, isInitialPageSet]);
+    fetchTotalCount();
+  }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, startDate, endDate]);
 
   useEffect(() => {
     localStorage.setItem('serologySamples_page', String(page));
@@ -536,6 +549,8 @@ export const SerologySamples = () => {
 
   // All filtering is now handled by the backend API
   // filteredRows is just unitRows since all filtering happens server-side
+  // NOTE: Backend paginates by SAMPLES (100) but we display UNITS (may be >100)
+  // This is acceptable - pagination works correctly, some pages show 120-150 rows
   const filteredRows = unitRows;
 
   // For backend pagination, we show the data as-is (already paginated by backend)

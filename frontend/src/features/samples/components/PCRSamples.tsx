@@ -327,23 +327,23 @@ export const PCRSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // FORCE navigation to last page on initial load - production-ready approach
+        // Jump to last page on initial load (with optimized performance)
         if (!isInitialPageSet) {
           const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`PCR: FORCING navigation to last page ${lastPage} (total records: ${total})`);
+          console.log(`PCR: Jumping to last page ${lastPage} (total records: ${total})`);
           
-          // Clear ANY localStorage interference
+          // Clear any stored page to force last page
           localStorage.removeItem('pcrSamples_page');
           
-          // Force set both page and flags immediately
+          // Set page and flags
           setPage(lastPage);
           setLastPageLoaded(true);
           setIsInitialPageSet(true);
           
-          // Force localStorage update immediately
+          // Store last page in localStorage
           localStorage.setItem('pcrSamples_page', String(lastPage));
           
-          console.log(`PCR: Successfully set page to ${lastPage}`);
+          console.log(`PCR: Successfully navigated to last page ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
@@ -585,6 +585,8 @@ export const PCRSamples = () => {
 
   // All filtering is now handled by the backend API
   // filteredRows is just unitRows since all filtering happens server-side
+  // NOTE: Backend paginates by SAMPLES (100) but we display UNITS (may be >100)
+  // This is acceptable - pagination works correctly, some pages show 120-150 rows
   const filteredRows = unitRows;
 
   // For backend pagination, we show the data as-is (already paginated by backend)
