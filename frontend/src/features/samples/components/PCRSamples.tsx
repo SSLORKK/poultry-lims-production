@@ -317,11 +317,29 @@ export const PCRSamples = () => {
   useEffect(() => {
     const fetchTotalAndGoToLastPage = async () => {
       try {
-        // Build params with all current filters for accurate count
+        // Build params with ALL current filters for accurate count (matching fetchSamples)
         const countParams: any = {
           year: selectedYear,
           department_id: 1
         };
+        
+        // Include ALL active filters in total count (same as fetchSamples)
+        if (debouncedSearch) countParams.search = debouncedSearch;
+        if (selectedCompanies.length > 0) countParams.company = selectedCompanies;
+        if (selectedFarms.length > 0) countParams.farm = selectedFarms;
+        if (selectedFlocks.length > 0) countParams.flock = selectedFlocks;
+        if (selectedAges.length > 0) countParams.age = selectedAges;
+        if (selectedSampleTypes.length > 0) countParams.sample_type = selectedSampleTypes;
+        if (selectedSources.length > 0) countParams.source = selectedSources;
+        if (selectedStatuses.length > 0) countParams.status = selectedStatuses;
+        if (selectedHouses.length > 0) countParams.house = selectedHouses;
+        if (selectedCycles.length > 0) countParams.cycle = selectedCycles;
+        if (selectedDiseases.length > 0) countParams.diseases = selectedDiseases;
+        if (selectedKitTypes.length > 0) countParams.kit_types = selectedKitTypes;
+        if (selectedTechnicians.length > 0) countParams.technicians = selectedTechnicians;
+        if (selectedExtractionMethods.length > 0) countParams.extraction_methods = selectedExtractionMethods;
+        if (startDate) countParams.date_from = startDate;
+        if (endDate) countParams.date_to = endDate;
 
         const response = await apiClient.get('/samples/total-count', { params: countParams });
         const total = response.data.total || 0;
@@ -354,7 +372,7 @@ export const PCRSamples = () => {
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear, isInitialPageSet]);
+  }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate]);
 
   // Save page to localStorage when it changes
   useEffect(() => {

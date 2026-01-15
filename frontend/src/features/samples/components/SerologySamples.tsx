@@ -311,6 +311,10 @@ export const SerologySamples = () => {
         if (selectedSampleTypes.length > 0) countParams.sample_type = selectedSampleTypes;
         if (selectedSources.length > 0) countParams.source = selectedSources;
         if (selectedStatuses.length > 0) countParams.status = selectedStatuses;
+        if (selectedHouses.length > 0) countParams.house = selectedHouses;
+        if (selectedCycles.length > 0) countParams.cycle = selectedCycles;
+        if (selectedDiseases.length > 0) countParams.diseases = selectedDiseases;
+        if (selectedTechnicians.length > 0) countParams.technicians = selectedTechnicians;
         if (startDate) countParams.date_from = startDate;
         if (endDate) countParams.date_to = endDate;
         
@@ -345,7 +349,7 @@ export const SerologySamples = () => {
       }
     };
     fetchTotalCount();
-  }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, startDate, endDate]);
+  }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedTechnicians, startDate, endDate]);
 
   useEffect(() => {
     localStorage.setItem('serologySamples_page', String(page));
