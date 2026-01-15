@@ -7,6 +7,7 @@ import { PCRDatabaseTable } from './PCRDatabaseTable';
 import { MicrobiologyDatabaseTable } from './MicrobiologyDatabaseTable';
 import { SerologyDatabaseTable } from './SerologyDatabaseTable';
 import { Sample, Unit, Department, DEPARTMENT_IDS } from '../types';
+import { PAGE_SIZE, MAX_DISPLAY_LIMIT } from '../../samples/constants';
 
 export default function Database() {
   const { canRead, isLoading: permissionsLoading } = usePermissions();
@@ -68,6 +69,10 @@ export default function Database() {
   const [selectedPCRDiseases, setSelectedPCRDiseases] = useState<string[]>(persistedFilters?.pcrDiseases || []);
   const [selectedPCRResults, setSelectedPCRResults] = useState<string[]>(persistedFilters?.pcrResults || []);
 
+  // Year filter state (BUG #6 fix)
+  const [selectedYear, setSelectedYear] = useState<number>(persistedFilters?.selectedYear || new Date().getFullYear());
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
+
   // Memoize filters object to pass to child components
   const filters = useMemo(() => ({
     resultsFilter,
@@ -86,13 +91,14 @@ export default function Database() {
     microbiologyDiseases: selectedMicrobiologyDiseases,
     microbiologyResults: selectedMicrobiologyResults,
     pcrDiseases: selectedPCRDiseases,
-    pcrResults: selectedPCRResults
+    pcrResults: selectedPCRResults,
+    selectedYear: selectedYear
   }), [
     resultsFilter, selectedDiseases, selectedAges, dateFrom, dateTo,
     selectedCompanies, selectedFarms, selectedFlocks, selectedSampleTypes,
     selectedCycles, selectedSources, selectedSerologyDiseases,
     selectedSerologyKitTypes, selectedMicrobiologyDiseases, selectedMicrobiologyResults,
-    selectedPCRDiseases, selectedPCRResults
+    selectedPCRDiseases, selectedPCRResults, selectedYear
   ]);
 
   // Persist filters to localStorage when they change
@@ -105,8 +111,8 @@ export default function Database() {
   });
   const [totalCount, setTotalCount] = useState(0);
   const [lastPageLoaded, setLastPageLoaded] = useState(false);
-  const [pageSize] = useState(100); // Fixed page size for display pagination
-  const [maxDisplayLimit] = useState(1000); // Show last 1000 samples by default
+  const [pageSize] = useState(PAGE_SIZE); // Fixed page size for display pagination
+  const [maxDisplayLimit] = useState(MAX_DISPLAY_LIMIT); // Show last 1000 samples by default
   const [initialLoading, setInitialLoading] = useState(true);
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     house: true,
@@ -138,12 +144,35 @@ export default function Database() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Fetch available years for year filter (BUG #6 fix)
+  const fetchAvailableYears = async () => {
+    try {
+      const response = await apiClient.get('/samples/available-years');
+      const years = response.data.years || [];
+      setAvailableYears(years);
+      // Auto-select the most recent year with data if current year has no data
+      if (years.length > 0 && !years.includes(selectedYear)) {
+        setSelectedYear(years[0]); // First year is most recent (sorted DESC)
+      }
+    } catch (err) {
+      console.error('Failed to load available years:', err);
+    }
+  };
+
+  // Load available years on component mount
+  useEffect(() => {
+    fetchAvailableYears();
+  }, []);
+
   // Fetch total count and navigate to last page on initial load
   useEffect(() => {
     const fetchTotalAndGoToLastPage = async () => {
       try {
         const response = await apiClient.get('/samples/total-count', { 
-          params: { department_id: DEPARTMENT_IDS[activeTab] } 
+          params: { 
+            department_id: DEPARTMENT_IDS[activeTab],
+            year: selectedYear
+          } 
         });
         const total = response.data.total || 0;
         setTotalCount(total);
@@ -159,7 +188,7 @@ export default function Database() {
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [activeTab]);
+  }, [activeTab, selectedYear]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -174,9 +203,12 @@ export default function Database() {
     ages: string[];
     sample_types: string[];
   }>({
-    queryKey: ['filter-options', activeTab],
+    queryKey: ['filter-options', activeTab, selectedYear],
     queryFn: async () => {
-      const params: any = { department_id: DEPARTMENT_IDS[activeTab] };
+      const params: any = { 
+        department_id: DEPARTMENT_IDS[activeTab],
+        year: selectedYear
+      };
       const response = await apiClient.get('/samples/filter-options', { params });
       return response.data;
     },
@@ -186,7 +218,7 @@ export default function Database() {
   // Fetch filtered data for display
   // No filters = limit 1000 | Any filter = get ALL matching records (paginated)
   const { data: samples = [] } = useQuery<Sample[]>({
-    queryKey: ['samples', activeTab, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, page],
+    queryKey: ['samples', activeTab, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, selectedYear, page],
     queryFn: async () => {
       // Check if any filters are applied
       const hasFilters = selectedCompanies.length > 0 || selectedFarms.length > 0 || 
@@ -201,6 +233,9 @@ export default function Database() {
 
       // Add department filter (always applied)
       params.department_id = DEPARTMENT_IDS[activeTab];
+      
+      // Add year filter (BUG #6 fix)
+      params.year = selectedYear;
 
       // Add other filters if they exist
       if (selectedCompanies.length > 0) {
@@ -537,8 +572,21 @@ export default function Database() {
             ))}
           </div>
 
-          {/* Filter & Columns Buttons - Icon only */}
+          {/* Year selector and Filter & Columns Buttons */}
           <div className="flex items-center gap-2 sm:gap-3 pb-2">
+            {/* Year Selector (BUG #6 fix) */}
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="px-2 sm:px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[80px]"
+              title="Filter by Year"
+            >
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
             <button
               onClick={() => setFilterPanelOpen(!filterPanelOpen)}
               className="flex items-center gap-1 p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative"

@@ -18,6 +18,8 @@ import {
   DropdownItem,
 } from "../../controls/hooks/useControlsData";
 import { DiseaseKitSelector } from "./DiseaseKitSelector";
+import { safeJSONParse, isDraftData } from "../../../utils/validation";
+import { cloneUnitData } from "../../../utils/deepClone";
 
 interface Department {
   id: number;
@@ -68,11 +70,11 @@ interface UnitData {
   age: string;
   source: string[]; // Changed to array for multi-select
   sample_type: string[]; // Changed to array for multi-select
-  samples_number: number;
-  notes: string;
-  pcr_data?: PCRData;
-  serology_data?: SerologyData;
-  microbiology_data?: MicrobiologyData;
+  samples_number: number | null; // Allow null for proper type safety
+  notes: string | null; // Allow null for proper type safety
+  pcr_data?: PCRData | null;
+  serology_data?: SerologyData | null;
+  microbiology_data?: MicrobiologyData | null;
 }
 
 interface UnitFieldsFormProps {
@@ -644,10 +646,24 @@ function PCRFields({
     
     try {
       const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
+      
+      // Check if this is still the latest verification attempt
+      if (!verifyingPIN) {
+        console.warn('PIN verification completed but component is no longer verifying - race condition prevented');
+        return;
+      }
+      
       if (response.data.is_valid) {
+        // Safely check if pcr_data exists before spreading
+        const currentPcrData = unit.pcr_data || {
+          diseases_list: [],
+          kit_type: '',
+          extraction_method: '',
+        };
+        
         updateUnit(globalIndex, {
           pcr_data: {
-            ...unit.pcr_data!,
+            ...currentPcrData,
             technician_name: response.data.name,
             technician_signature_image: response.data.signature_image || null,
           },
@@ -663,16 +679,20 @@ function PCRFields({
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('PIN verification failed:', error);
-      if (error.response?.status === 401) {
+      if (error && typeof error === 'object' && 'response' in error && 
+          error.response && typeof error.response === 'object' && 'status' in error.response && 
+          error.response.status === 401) {
         setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
       } else {
         setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
       }
       setTechnicianPIN('');
+    } finally {
+      // Use finally to ensure state is always reset
+      setVerifyingPIN(false);
     }
-    setVerifyingPIN(false);
   };
 
   return (
@@ -687,7 +707,7 @@ function PCRFields({
             onChange={(e) =>
               updateUnit(globalIndex, {
                 pcr_data: {
-                  ...unit.pcr_data!,
+                  ...(unit.pcr_data || { diseases_list: [], kit_type: '', extraction_method: '' }),
                   extraction_method: e.target.value,
                 },
               })
@@ -716,7 +736,7 @@ function PCRFields({
             onChange={(e) =>
               updateUnit(globalIndex, {
                 pcr_data: {
-                  ...unit.pcr_data!,
+                  ...(unit.pcr_data || { diseases_list: [], kit_type: '', extraction_method: '' }),
                   extraction: e.target.value ? parseInt(e.target.value) : undefined,
                 },
               })
@@ -900,9 +920,11 @@ function SerologyFields({
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('PIN verification failed:', error);
-      if (error.response?.status === 401) {
+      if (error && typeof error === 'object' && 'response' in error && 
+          error.response && typeof error.response === 'object' && 'status' in error.response && 
+          error.response.status === 401) {
         setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
       } else {
         setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
@@ -1049,9 +1071,11 @@ function MicrobiologyFields({
         setNotification({ type: 'error', message: 'Invalid PIN. Please check and try again.' });
         setTechnicianPIN('');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('PIN verification failed:', error);
-      if (error.response?.status === 401) {
+      if (error && typeof error === 'object' && 'response' in error && 
+          error.response && typeof error.response === 'object' && 'status' in error.response && 
+          error.response.status === 401) {
         setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
       } else {
         setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
@@ -1518,19 +1542,35 @@ export const UnifiedSampleRegistration = () => {
     units: { [key: number]: boolean };
   }>({ sampleInfo: false, units: {} });
 
-  // Load persisted draft from localStorage (user-specific)
+  // Safe draft loading function
   const loadDraft = () => {
-    if (isEditMode || isDuplicateMode || !user?.id) return null;
     try {
-      const draftKey = `sample_registration_draft_user_${user.id}`;
-      const draft = localStorage.getItem(draftKey);
-      return draft ? JSON.parse(draft) : null;
-    } catch {
+      const savedDraft = localStorage.getItem('unified_sample_draft');
+      if (!savedDraft) return null;
+      
+      const parseResult = safeJSONParse(savedDraft, isDraftData);
+      if (!parseResult.isValid) {
+        console.error('Draft loading failed:', parseResult.error);
+        // Clear corrupted draft data
+        localStorage.removeItem('unified_sample_draft');
+        return null;
+      }
+      
+      return parseResult.data;
+    } catch (error) {
+      console.error('Unexpected error loading draft:', error);
+      localStorage.removeItem('unified_sample_draft');
       return null;
     }
   };
 
-  const draft = !userLoading ? loadDraft() : null;
+  // Load draft data safely with race condition protection
+  const [draft, setDraft] = useState<any>(null);
+  useEffect(() => {
+    if (!userLoading) {
+      setDraft(loadDraft());
+    }
+  }, [userLoading]);
 
   // Shared sample-level fields
   const [dateReceived, setDateReceived] = useState(draft?.dateReceived || "");
@@ -1544,7 +1584,7 @@ export const UnifiedSampleRegistration = () => {
   const [units, setUnits] = useState<UnitData[]>(draft?.units || []);
   
   // Edit history dialog state
-  const [editHistoryDialog, setEditHistoryDialog] = useState<{ open: boolean; history: any[] }>({
+  const [editHistoryDialog, setEditHistoryDialog] = useState<{ open: boolean; history: Array<{ field_name: string; old_value: string; new_value: string; edited_at: string; edited_by: string }> }>({
     open: false,
     history: []
   });
@@ -1563,22 +1603,26 @@ export const UnifiedSampleRegistration = () => {
   const cycleDropdownRef = useRef<HTMLDivElement>(null);
   const flockDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close sample info dropdowns when clicking outside
+  // Efficiently handle all dropdown clicks with single event listener
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (companyDropdownRef.current && !companyDropdownRef.current.contains(event.target as Node)) {
-        setIsCompanyDropdownOpen(false);
-      }
-      if (farmDropdownRef.current && !farmDropdownRef.current.contains(event.target as Node)) {
-        setIsFarmDropdownOpen(false);
-      }
-      if (cycleDropdownRef.current && !cycleDropdownRef.current.contains(event.target as Node)) {
-        setIsCycleDropdownOpen(false);
-      }
-      if (flockDropdownRef.current && !flockDropdownRef.current.contains(event.target as Node)) {
-        setIsFlockDropdownOpen(false);
-      }
+      const target = event.target as Node;
+      
+      // Define dropdown configurations to avoid repetition
+      const dropdownConfigs = [
+        { ref: companyDropdownRef, setter: setIsCompanyDropdownOpen },
+        { ref: farmDropdownRef, setter: setIsFarmDropdownOpen },
+        { ref: cycleDropdownRef, setter: setIsCycleDropdownOpen },
+        { ref: flockDropdownRef, setter: setIsFlockDropdownOpen }
+      ];
+      
+      dropdownConfigs.forEach(({ ref, setter }) => {
+        if (ref.current && !ref.current.contains(target)) {
+          setter(false);
+        }
+      });
     };
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
@@ -1855,11 +1899,10 @@ export const UnifiedSampleRegistration = () => {
           if (parsed.length === 0) return '-';
           // Check if items have 'disease' property (DiseaseKitItem format)
           if (parsed[0] && typeof parsed[0] === 'object' && 'disease' in parsed[0]) {
-            return parsed.map((d: any) => {
+            return parsed.map((d: { disease: string; kit_type?: string; test_count?: number }) => {
               let text = d.disease;
               if (d.kit_type) text += ` (${d.kit_type})`;
               if (d.test_count && d.test_count > 1) text += ` x${d.test_count}`;
-              if (d.wells_count) text += ` [${d.wells_count} wells]`;
               return text;
             }).join(', ');
           }
@@ -1913,7 +1956,7 @@ export const UnifiedSampleRegistration = () => {
         apiClient.get(`/edit-history/sample/${editSampleId}`),
         // Get unit IDs from existing sample and fetch their history
         Promise.all(
-          (existingSample?.units || []).map((unit: any) =>
+          (existingSample?.units || []).map((unit: { id: number }) =>
             apiClient.get(`/edit-history/unit/${unit.id}`).then(res => res.data).catch(() => [])
           )
         )
@@ -1958,7 +2001,7 @@ export const UnifiedSampleRegistration = () => {
 
       // Transform units from API response to form format
       const transformedUnits: UnitData[] = existingSample.units.map(
-        (unit: any) => {
+        (unit: { id: number; unit_code: string; department_id: number; house: string[]; age: number; source: string | string[]; sample_type: string[]; samples_number: number; notes: string; pcr_data?: any; serology_data?: any; microbiology_data?: any }) => {
           const unitData: UnitData = {
             id: unit.id,
             unit_code: unit.unit_code,
@@ -1967,7 +2010,7 @@ export const UnifiedSampleRegistration = () => {
             age: unit.age?.toString() || "",
             source: Array.isArray(unit.source) ? unit.source : (unit.source ? [unit.source] : []),
             sample_type: unit.sample_type || [],
-            samples_number: unit.samples_number || null as unknown as number,
+            samples_number: unit.samples_number || 0,
             notes: unit.notes || "",
           };
 
@@ -2044,7 +2087,7 @@ export const UnifiedSampleRegistration = () => {
 
       // Transform units from API response to form format (without IDs)
       const transformedUnits: UnitData[] = duplicateSample.units.map(
-        (unit: any) => {
+        (unit: { department_id: number; house: string[]; age: number; source: string | string[]; sample_type: string[]; samples_number: number; pcr_data?: any; serology_data?: any; microbiology_data?: any }) => {
           const unitData: UnitData = {
             // No id - this is a new unit
             department_id: unit.department_id,
@@ -2052,7 +2095,7 @@ export const UnifiedSampleRegistration = () => {
             age: unit.age?.toString() || "",
             source: Array.isArray(unit.source) ? unit.source : (unit.source ? [unit.source] : []),
             sample_type: unit.sample_type || [],
-            samples_number: unit.samples_number || null as unknown as number,
+            samples_number: unit.samples_number || 0,
             notes: "", // Clear notes for new sample
           };
 
@@ -2111,7 +2154,7 @@ export const UnifiedSampleRegistration = () => {
         (unitsByDept[unit.department_id] || 0) + 1;
     });
 
-    const unitPreviews: any[] = [];
+    const unitPreviews: Array<{ department_name: string; department_code: string; codes: string[]; count: number }> = [];
     Object.entries(unitsByDept).forEach(([deptId, count]) => {
       const deptIdNum = parseInt(deptId);
 
@@ -2334,17 +2377,38 @@ export const UnifiedSampleRegistration = () => {
 
   // Update a specific unit
   const updateUnit = (index: number, updates: Partial<UnitData>) => {
-    const newUnits = [...units];
-    newUnits[index] = { ...newUnits[index], ...updates };
-    setUnits(newUnits);
-    // Check completion after update
-    setTimeout(() => checkUnitComplete(newUnits[index], index), 100);
+    setUnits(currentUnits => {
+      // Use functional update to prevent race conditions with stale state
+      const newUnits = [...currentUnits];
+      if (index >= 0 && index < newUnits.length) {
+        newUnits[index] = { ...newUnits[index], ...updates };
+        // Check completion after update using current data
+        setTimeout(() => {
+          if (index < newUnits.length) {
+            checkUnitComplete(newUnits[index], index);
+          }
+        }, 100);
+      }
+      return newUnits;
+    });
   };
 
   // Duplicate a specific unit (department)
   const duplicateUnit = (index: number) => {
     const unitToDuplicate = units[index];
-    const duplicatedUnit = JSON.parse(JSON.stringify(unitToDuplicate)); // Deep clone
+    if (!unitToDuplicate) {
+      console.error('Unit not found at index:', index);
+      return;
+    }
+    
+    let duplicatedUnit: UnitData;
+    try {
+      duplicatedUnit = cloneUnitData(unitToDuplicate);
+    } catch (error) {
+      console.error('Failed to clone unit:', error);
+      setNotification({ type: 'error', message: 'Failed to duplicate unit. Please try again.' });
+      return;
+    }
     
     // Remove id and unit_code for new unit (will be assigned by backend)
     delete duplicatedUnit.id;
@@ -2382,7 +2446,16 @@ export const UnifiedSampleRegistration = () => {
 
   // Create sample mutation
   const createSampleMutation = useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: { 
+      sample_code?: string; 
+      date_received: string; 
+      company: string; 
+      farm: string[]; 
+      cycle: string; 
+      flock: string; 
+      status: string; 
+      units: UnitData[] 
+    }) => {
       const response = await apiClient.post("/samples/", data);
       return response.data;
     },
@@ -2405,22 +2478,34 @@ export const UnifiedSampleRegistration = () => {
         units: {},
       });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       console.error("Sample creation error:", error);
-      console.error("Error response:", error.response?.data);
-      console.error("Error status:", error.response?.status);
-      // Extract error message properly
+      // Extract error message properly with type checking
       let errorMessage = "Unknown error";
-      if (error.response?.data?.detail) {
-        const detail = error.response.data.detail;
-        if (typeof detail === 'string') {
-          errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join(', ');
-        } else if (typeof detail === 'object') {
-          errorMessage = detail.msg || detail.message || JSON.stringify(detail);
+      if (error && typeof error === 'object' && 'response' in error && 
+          error.response && typeof error.response === 'object' && 'data' in error.response &&
+          error.response.data && typeof error.response.data === 'object') {
+        console.error("Error response:", error.response.data);
+        if ('status' in error.response && typeof error.response.status === 'number') {
+          console.error("Error status:", error.response.status);
         }
-      } else if (error.message) {
+        
+        if ('detail' in error.response.data) {
+          const detail = error.response.data.detail;
+          if (typeof detail === 'string') {
+            errorMessage = detail;
+          } else if (Array.isArray(detail)) {
+            errorMessage = detail.map((d: { msg?: string; message?: string }) => 
+              d.msg || d.message || JSON.stringify(d)).join(', ');
+          } else if (typeof detail === 'object' && detail !== null) {
+            errorMessage = (('msg' in detail && typeof detail.msg === 'string') ? detail.msg : '') || 
+                          (('message' in detail && typeof detail.message === 'string') ? detail.message : '') || 
+                          JSON.stringify(detail);
+          }
+        } else if ('message' in error.response.data && typeof error.response.data.message === 'string') {
+          errorMessage = error.response.data.message;
+        }
+      } else if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
         errorMessage = error.message;
       }
       setNotification({ 
@@ -2432,7 +2517,15 @@ export const UnifiedSampleRegistration = () => {
 
   // Update sample mutation
   const updateSampleMutation = useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: { 
+      date_received: string; 
+      company: string; 
+      farm: string[]; 
+      cycle: string; 
+      flock: string; 
+      status: string; 
+      units: UnitData[] 
+    }) => {
       const response = await apiClient.put(`/samples/${editSampleId}`, data);
       return response.data;
     },
@@ -2443,13 +2536,28 @@ export const UnifiedSampleRegistration = () => {
       // Navigate back after update
       navigate(-1);
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       console.error("Sample update error:", error);
-      console.error("Error response:", error.response?.data);
-      console.error("Error status:", error.response?.status);
+      let errorMessage = "Unknown error";
+      if (error && typeof error === 'object' && 'response' in error && 
+          error.response && typeof error.response === 'object' && 'data' in error.response &&
+          error.response.data && typeof error.response.data === 'object') {
+        console.error("Error response:", error.response.data);
+        if ('status' in error.response && typeof error.response.status === 'number') {
+          console.error("Error status:", error.response.status);
+        }
+        
+        if ('detail' in error.response.data && typeof error.response.data.detail === 'string') {
+          errorMessage = error.response.data.detail;
+        } else if ('message' in error.response.data && typeof error.response.data.message === 'string') {
+          errorMessage = error.response.data.message;
+        }
+      } else if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+        errorMessage = error.message;
+      }
       setNotification({ 
         type: 'error', 
-        message: `Failed to update sample: ${error.response?.data?.detail || error.message || "Unknown error"}` 
+        message: `Failed to update sample: ${errorMessage}` 
       });
     },
   });
@@ -2550,30 +2658,30 @@ export const UnifiedSampleRegistration = () => {
       return;
     }
 
-    // Transform units data for API
+    // Transform units data for API with proper null handling
     const transformedUnits = units.map((unit) => ({
       id: unit.id,
       unit_code: unit.unit_code,
       department_id: unit.department_id,
-      house: unit.house || null,
-      age: unit.age || null,  // Keep as string
-      source: unit.source || null,
-      sample_type: unit.sample_type || null,
-      samples_number: unit.samples_number || null,
-      notes: unit.notes || null,
+      house: Array.isArray(unit.house) ? unit.house : [],
+      age: typeof unit.age === 'string' ? unit.age : "",
+      source: Array.isArray(unit.source) ? unit.source : [],
+      sample_type: Array.isArray(unit.sample_type) ? unit.sample_type : [],
+      samples_number: typeof unit.samples_number === 'number' ? unit.samples_number : 0,
+      notes: typeof unit.notes === 'string' ? unit.notes : "",
       pcr_data: unit.pcr_data || null,
       serology_data: unit.serology_data || null,
       microbiology_data: unit.microbiology_data || null,
     }));
 
     const sampleData = {
-      date_received: dateReceived,
-      company,
-      farm: farm.join(', '), // Convert array to comma-separated string for backend
-      cycle: cycle || null,
-      flock: flock || null,
-      status,
-      units: transformedUnits,
+      date_received: dateReceived as string,
+      company: company as string,
+      farm: farm, // Keep as array for proper typing
+      cycle: (cycle || "") as string,  // Convert null to empty string
+      flock: (flock || "") as string,  // Convert null to empty string
+      status: status as string,
+      units: transformedUnits as UnitData[],
     };
 
     // DEBUG: Log API call decision and data being sent
@@ -3610,7 +3718,7 @@ export const UnifiedSampleRegistration = () => {
                                       Notes
                                     </label>
                                     <textarea
-                                      value={unit.notes}
+                                      value={unit.notes || ''}
                                       onChange={(e) =>
                                         updateUnit(globalIndex, {
                                           notes: e.target.value,

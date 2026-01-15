@@ -1,7 +1,7 @@
 import React from 'react';
 
 interface MobileCardProps {
-  row: any;
+  row: Record<string, any>;
   isSelected: boolean;
   onSelect: () => void;
   onEdit?: () => void;

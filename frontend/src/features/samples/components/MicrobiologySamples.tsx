@@ -6,6 +6,7 @@ import { usePermissions } from '../../../hooks/usePermissions';
 import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import { ApiErrorDisplay } from '../../../components/common/ApiErrorDisplay';
 import * as XLSX from 'xlsx-js-style';
+import { EXPORT_LIMIT, DEPARTMENT_IDS, PAGE_SIZE } from '../constants';
 
 interface UnitRow {
   sampleId: number;
@@ -164,9 +165,9 @@ export const MicrobiologySamples = () => {
       // Build filter params for backend
       const params: any = {
         year: selectedYear,
-        department_id: 3, // department_id 3 = Microbiology
-        skip: (page - 1) * 100,
-        limit: 100
+        department_id: DEPARTMENT_IDS.Microbiology, // department_id 3 = Microbiology
+        skip: (page - 1) * PAGE_SIZE,
+        limit: PAGE_SIZE
       };
 
       // Add global search parameter
@@ -276,7 +277,7 @@ export const MicrobiologySamples = () => {
       const microbiologyUnitIds: number[] = [];
       samples.forEach((sample) => {
         sample.units?.forEach((unit: any) => {
-          if (unit.department_id === 3) {
+          if (unit.department_id === DEPARTMENT_IDS.Microbiology) {
             microbiologyUnitIds.push(unit.id);
           }
         });
@@ -367,7 +368,7 @@ export const MicrobiologySamples = () => {
   useEffect(() => {
     const fetchTotalAndGoToLastPage = async () => {
       try {
-        const countParams: any = { year: selectedYear, department_id: 3 };
+        const countParams: any = { year: selectedYear, department_id: DEPARTMENT_IDS.Microbiology };
         
         // Include ALL active filters in total count (same as fetchSamples)
         if (debouncedSearch) countParams.search = debouncedSearch;
@@ -392,7 +393,7 @@ export const MicrobiologySamples = () => {
         
         // Jump to last page on initial load (with optimized performance)
         if (!isInitialPageSet) {
-          const lastPage = Math.max(1, Math.ceil(total / 100));
+          const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
           console.log(`Microbiology: Jumping to last page ${lastPage} (total records: ${total})`);
           
           // Clear any stored page to force last page
@@ -436,9 +437,9 @@ export const MicrobiologySamples = () => {
       try {
         const params: any = {
           year: selectedYear,
-          department_id: 3,
-          skip: (page - 1) * 100,
-          limit: 100
+          department_id: DEPARTMENT_IDS.Microbiology,
+          skip: (page - 1) * PAGE_SIZE,
+          limit: PAGE_SIZE
         };
         if (debouncedSearch) params.search = debouncedSearch;
         if (selectedCompanies.length > 0) params.company = selectedCompanies;
@@ -470,7 +471,7 @@ export const MicrobiologySamples = () => {
     const rows: UnitRow[] = [];
     samples.forEach((sample) => {
       sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 3) {
+        if (unit.department_id === DEPARTMENT_IDS.Microbiology) {
           const diseasesList = unit.microbiology_data?.diseases_list || [];
           const diseases = diseasesList.join(', ') || '-';
           const fullIndexList = unit.microbiology_data?.index_list || [];
@@ -600,7 +601,7 @@ export const MicrobiologySamples = () => {
     const fetchFilterOptions = async () => {
       try {
         const response = await apiClient.get('/samples/filter-options', {
-          params: { year: selectedYear, department_id: 3 }
+          params: { year: selectedYear, department_id: DEPARTMENT_IDS.Microbiology }
         });
         setFilterOptions(response.data);
       } catch (err) {
@@ -670,9 +671,9 @@ export const MicrobiologySamples = () => {
       // Fetch ALL filtered data from backend instead of just current page
       const params: any = {
         year: selectedYear,
-        department_id: 3,
+        department_id: DEPARTMENT_IDS.Microbiology,
         skip: 0,
-        limit: 10000  // Large limit to get all data
+        limit: EXPORT_LIMIT
       };
 
       // Add global search parameter
@@ -703,7 +704,7 @@ export const MicrobiologySamples = () => {
       const allRows: any[] = [];
       allSamples.forEach((sample: any) => {
         sample.units?.forEach((unit: any) => {
-          if (unit.department_id === 3) {
+          if (unit.department_id === DEPARTMENT_IDS.Microbiology) {
             const diseasesList = unit.microbiology_data?.diseases_list || [];
             const diseases = diseasesList.join(', ') || '-';
             const fullIndexList = unit.microbiology_data?.index_list || [];
@@ -791,9 +792,9 @@ export const MicrobiologySamples = () => {
       // Fetch ALL filtered data from backend instead of just current page
       const params: any = {
         year: selectedYear,
-        department_id: 3,
+        department_id: DEPARTMENT_IDS.Microbiology,
         skip: 0,
-        limit: 10000  // Large limit to get all data
+        limit: EXPORT_LIMIT
       };
 
       // Add global search parameter
@@ -824,7 +825,7 @@ export const MicrobiologySamples = () => {
       const allRows: any[] = [];
       allSamples.forEach((sample: any) => {
         sample.units?.forEach((unit: any) => {
-          if (unit.department_id === 3) {
+          if (unit.department_id === DEPARTMENT_IDS.Microbiology) {
             const diseasesList = unit.microbiology_data?.diseases_list || [];
             const diseases = diseasesList.join(', ') || '-';
             const fullIndexList = unit.microbiology_data?.index_list || [];

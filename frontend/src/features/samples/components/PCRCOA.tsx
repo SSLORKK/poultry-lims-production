@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { PRINT_CLEANUP_TIMEOUT, DIALOG_CLOSE_DELAY } from '../constants';
 import { apiClient } from '../../../services/apiClient';
+import { QueryApiClient } from '../../../services/queryClient';
 import { useCurrentUser } from '../../../hooks/useCurrentUser';
 
 interface UnitData {
@@ -422,9 +424,11 @@ export function PCRCOA() {
           setLabManagerPIN('');
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to verify PIN:', err);
-      if (err.response?.status === 401) {
+      if (err && typeof err === 'object' && 'response' in err && 
+          err.response && typeof err.response === 'object' && 'status' in err.response && 
+          err.response.status === 401) {
         setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
       } else {
         setNotification({ type: 'error', message: 'PIN verification failed. Please check your connection and try again.' });
@@ -457,52 +461,61 @@ export function PCRCOA() {
       setSaving(true);
       setError(null);
 
+      // Use QueryApiClient without auto-redirect to allow component-level error handling
+      const saveApiClient = QueryApiClient.getInstance(false);
+
       // Save sets status to 'need_approval' - Approve changes to 'completed'
       const saveStatus = 'need_approval';
 
+      const basePayload = {
+        test_results: testResults,
+        sample_types: sampleTypes,
+        house_values: houseValues,
+        hidden_diseases: Array.from(hiddenDiseases),
+        date_tested: dateTested || null,
+        tested_by: testedBy || null,
+        reviewed_by: reviewedBy || null,
+        lab_supervisor: labSupervisor || null,
+        lab_manager: labManager || null,
+        notes: notes || null,
+        status: saveStatus,
+      };
+
       if (coaData?.id) {
         // Update existing COA - payload without unit_id
-        const updatePayload = {
-          test_results: testResults,
-          sample_types: sampleTypes,
-          house_values: houseValues,
-          hidden_diseases: Array.from(hiddenDiseases),
-          date_tested: dateTested || null,
-          tested_by: testedBy || null,
-          reviewed_by: reviewedBy || null,
-          lab_supervisor: labSupervisor || null,
-          lab_manager: labManager || null,
-          notes: notes || null,
-          status: saveStatus,
-        };
-        await apiClient.put(`/pcr-coa/${unitId}/`, updatePayload);
+        await saveApiClient.put(`/pcr-coa/${unitId}/`, basePayload);
       } else {
         // Create new COA - payload with unit_id
         const createPayload = {
           unit_id: parseInt(unitId!),
-          test_results: testResults,
-          sample_types: sampleTypes,
-          house_values: houseValues,
-          hidden_diseases: Array.from(hiddenDiseases),
-          date_tested: dateTested || null,
-          tested_by: testedBy || null,
-          reviewed_by: reviewedBy || null,
-          lab_supervisor: labSupervisor || null,
-          lab_manager: labManager || null,
-          notes: notes || null,
-          status: saveStatus,
+          ...basePayload,
         };
-        await apiClient.post('/pcr-coa/', createPayload);
+        await saveApiClient.post('/pcr-coa/', createPayload);
       }
 
       // Save updates coa_status to 'need_approval' - 'completed' is set by Approve button
-      await apiClient.patch(`/units/${unitId}`, { coa_status: 'need_approval' });
+      await saveApiClient.patch(`/units/${unitId}`, { coa_status: 'need_approval' });
 
       setNotification({ type: 'success', message: 'Certificate of Analysis saved successfully!' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to save COA:', err);
-      setError(err.response?.data?.detail || 'Failed to save COA');
-      setNotification({ type: 'error', message: 'Failed to save Certificate of Analysis. Please check your entries and try again.' });
+      
+      // Handle authentication errors specifically to prevent login redirect
+      if (err && typeof err === 'object' && 'response' in err && 
+          err.response && typeof err.response === 'object' && 'status' in err.response && 
+          err.response.status === 401) {
+        setError('Session expired. Please refresh the page and try again.');
+        setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
+      } else {
+        const errorMessage = (err && typeof err === 'object' && 'response' in err && 
+                             err.response && typeof err.response === 'object' && 'data' in err.response &&
+                             err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data &&
+                             typeof err.response.data.detail === 'string') 
+                             ? err.response.data.detail 
+                             : 'Failed to save COA';
+        setError(errorMessage);
+        setNotification({ type: 'error', message: 'Failed to save Certificate of Analysis. Please check your entries and try again.' });
+      }
     } finally {
       setSaving(false);
     }
@@ -529,6 +542,9 @@ export function PCRCOA() {
     try {
       setSaving(true);
       setError(null);
+
+      // Use QueryApiClient without auto-redirect for consistent error handling
+      const approveApiClient = QueryApiClient.getInstance(false);
 
       // Check if sample was previously postponed and save to edit history
       const postponedMatch = notes?.match(/Postponed Reason:\s*(.+)/);
@@ -563,17 +579,25 @@ export function PCRCOA() {
       };
 
       if (coaData?.id) {
-        await apiClient.put(`/pcr-coa/${unitId}/`, approvePayload);
+        await approveApiClient.put(`/pcr-coa/${unitId}/`, approvePayload);
       } else {
-        await apiClient.post('/pcr-coa/', { ...approvePayload, unit_id: parseInt(unitId!) });
+        await approveApiClient.post('/pcr-coa/', { ...approvePayload, unit_id: parseInt(unitId!) });
       }
 
       // Update unit coa_status to 'completed'
-      await apiClient.patch(`/units/${unitId}`, { coa_status: 'completed' });
+      await approveApiClient.patch(`/units/${unitId}`, { coa_status: 'completed' });
 
       // Update parent sample status to 'Completed'
-      await apiClient.patch(`/samples/${unitData.sample.id}`, { status: 'Completed' });
+      await approveApiClient.patch(`/samples/${unitData.sample.id}`, { status: 'Completed' });
 
+      // Refresh COA data to get the newly assigned report_no from backend
+      try {
+        const refreshedCoa = await approveApiClient.get(`/pcr-coa/${unitId}/`);
+        setCoaData(refreshedCoa.data);
+      } catch (refreshErr) {
+        console.error('Failed to refresh COA data:', refreshErr);
+      }
+      
       setNotification({ type: 'success', message: 'Certificate of Analysis approved successfully!' });
       
       // Refresh local status to prevent stale data
@@ -588,10 +612,25 @@ export function PCRCOA() {
           }
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to approve COA:', err);
-      setError(err.response?.data?.detail || 'Failed to approve COA');
-      setNotification({ type: 'error', message: 'Failed to approve Certificate of Analysis. Please try again.' });
+      
+      // Handle authentication errors specifically to prevent login redirect
+      if (err && typeof err === 'object' && 'response' in err && 
+          err.response && typeof err.response === 'object' && 'status' in err.response && 
+          err.response.status === 401) {
+        setError('Session expired. Please refresh the page and try again.');
+        setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
+      } else {
+        const errorMessage = (err && typeof err === 'object' && 'response' in err && 
+                             err.response && typeof err.response === 'object' && 'data' in err.response &&
+                             err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data &&
+                             typeof err.response.data.detail === 'string') 
+                             ? err.response.data.detail 
+                             : 'Failed to approve COA';
+        setError(errorMessage);
+        setNotification({ type: 'error', message: 'Failed to approve Certificate of Analysis. Please try again.' });
+      }
     } finally {
       setSaving(false);
     }
@@ -633,10 +672,25 @@ export function PCRCOA() {
       setShowPostponedModal(false);
       setPostponedReason('');
       setNotification({ type: 'success', message: 'Certificate of Analysis postponed successfully!' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to postpone COA:', err);
-      setError(err.response?.data?.detail || 'Failed to postpone COA');
-      setNotification({ type: 'error', message: 'Failed to postpone Certificate of Analysis. Please try again.' });
+      
+      // Handle authentication errors specifically to prevent login redirect
+      if (err && typeof err === 'object' && 'response' in err && 
+          err.response && typeof err.response === 'object' && 'status' in err.response && 
+          err.response.status === 401) {
+        setError('Session expired. Please refresh the page and try again.');
+        setNotification({ type: 'error', message: 'Session expired. Please refresh the page and try again.' });
+      } else {
+        const errorMessage = (err && typeof err === 'object' && 'response' in err && 
+                             err.response && typeof err.response === 'object' && 'data' in err.response &&
+                             err.response.data && typeof err.response.data === 'object' && 'detail' in err.response.data &&
+                             typeof err.response.data.detail === 'string') 
+                             ? err.response.data.detail 
+                             : 'Failed to postpone COA';
+        setError(errorMessage);
+        setNotification({ type: 'error', message: 'Failed to postpone Certificate of Analysis. Please try again.' });
+      }
     } finally {
       setSaving(false);
     }
@@ -720,14 +774,15 @@ export function PCRCOA() {
     }).join('');
 
     // Generate disease rows for test results (filter out hidden diseases)
+    // CRITICAL: Preserve original index before filtering to correctly map test results
     const tableRows = diseases
-      .filter((diseaseItem, diseaseIndex) => {
-        const diseaseKey = getDiseaseKey(diseaseItem.disease, diseaseIndex);
+      .map((diseaseItem, originalIndex) => ({ diseaseItem, originalIndex })) // Preserve original index
+      .filter(({ diseaseItem, originalIndex }) => {
+        const diseaseKey = getDiseaseKey(diseaseItem.disease, originalIndex);
         return !hiddenDiseases.has(diseaseKey);
       })
-      .map((diseaseItem, diseaseIndex) => {
-        // Find original index for this disease to get correct test results
-        const originalIndex = diseases.findIndex((d, i) => d.disease === diseaseItem.disease && i === diseaseIndex);
+      .map(({ diseaseItem, originalIndex }) => {
+        // Use preserved original index to get correct test results
         const pools = getPools(diseaseItem.disease, originalIndex);
         const pool = pools[0] || { values: {}, pos_control: '', neg_control: 'Confirmed' };
         const sampleTypeCells = pdfSampleTypes.map((_st, colIdx) => {
@@ -1063,8 +1118,8 @@ export function PCRCOA() {
           // Clean up after print dialog closes
           setTimeout(() => {
             document.body.removeChild(printFrame);
-          }, 1000);
-        }, 100);
+          }, PRINT_CLEANUP_TIMEOUT);
+        }, DIALOG_CLOSE_DELAY);
       };
     }
   };

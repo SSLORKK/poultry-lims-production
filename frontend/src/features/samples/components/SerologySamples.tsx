@@ -8,6 +8,7 @@ import { ApiErrorDisplay } from '../../../components/common/ApiErrorDisplay';
 import { SamplesHeaderBar } from './shared/SamplesHeaderBar';
 import { SelectedRowActionBar } from './shared/SelectedRowActionBar';
 import * as XLSX from 'xlsx-js-style';
+import { EXPORT_LIMIT, DEPARTMENT_IDS, PAGE_SIZE } from '../constants';
 
 interface UnitRow {
   sampleId: number;
@@ -123,7 +124,7 @@ export const SerologySamples = () => {
   // Edit history tracking
   const [editedSampleIds, setEditedSampleIds] = useState<Set<number>>(new Set());
   const [editedUnitIds, setEditedUnitIds] = useState<Set<number>>(new Set());
-  const [editHistoryDialog, setEditHistoryDialog] = useState<{ open: boolean; code: string; history: any[] }>({
+  const [editHistoryDialog, setEditHistoryDialog] = useState<{ open: boolean; code: string; history: Array<{ field_name: string; old_value: string; new_value: string; edited_at: string; edited_by: string }> }>({
     open: false,
     code: '',
     history: []
@@ -159,11 +160,11 @@ export const SerologySamples = () => {
       setLoading(true);
 
       // Build filter params for backend
-      const params: any = {
+      const params: Record<string, any> = {
         year: selectedYear,
-        department_id: 2, // department_id 2 = Serology
-        skip: (page - 1) * 100,
-        limit: 100
+        department_id: DEPARTMENT_IDS.Serology, // department_id 2 = Serology
+        skip: (page - 1) * PAGE_SIZE,
+        limit: PAGE_SIZE
       };
 
       // Add global search parameter
@@ -300,7 +301,7 @@ export const SerologySamples = () => {
   useEffect(() => {
     const fetchTotalCount = async () => {
       try {
-        const countParams: any = { year: selectedYear, department_id: 2 };
+        const countParams: Record<string, any> = { year: selectedYear, department_id: DEPARTMENT_IDS.Serology };
         
         // Include ALL active filters in total count (same as fetchSamples)
         if (debouncedSearch) countParams.search = debouncedSearch;
@@ -322,23 +323,16 @@ export const SerologySamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Jump to last page on initial load (with optimized performance)
+        // Always go to last page when filters change or on initial load
+        const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        console.log(`Serology: Setting last page ${lastPage} (total records: ${total})`);
+        
+        // Always set to last page for better UX (showing newest records first)
+        setPage(lastPage);
+        setLastPageLoaded(true);
+        
         if (!isInitialPageSet) {
-          const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`Serology: Jumping to last page ${lastPage} (total records: ${total})`);
-          
-          // Clear any stored page to force last page
-          localStorage.removeItem('serologySamples_page');
-          
-          // Set page and flags
-          setPage(lastPage);
-          setLastPageLoaded(true);
           setIsInitialPageSet(true);
-          
-          // Store last page in localStorage
-          localStorage.setItem('serologySamples_page', String(lastPage));
-          
-          console.log(`Serology: Successfully navigated to last page ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
@@ -359,11 +353,11 @@ export const SerologySamples = () => {
   useEffect(() => {
     const autoRefresh = setInterval(async () => {
       try {
-        const params: any = {
+        const params: Record<string, any> = {
           year: selectedYear,
-          department_id: 2,
-          skip: (page - 1) * 100,
-          limit: 100
+          department_id: DEPARTMENT_IDS.Serology,
+          skip: (page - 1) * PAGE_SIZE,
+          limit: PAGE_SIZE
         };
         if (debouncedSearch) params.search = debouncedSearch;
         if (selectedCompanies.length > 0) params.company = selectedCompanies;
@@ -394,7 +388,7 @@ export const SerologySamples = () => {
     const rows: UnitRow[] = [];
     samples.forEach((sample) => {
       sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 2) {
+        if (unit.department_id === DEPARTMENT_IDS.Serology) {
           const diseases = unit.serology_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
           const diseasesWithWells = unit.serology_data?.diseases_list?.map((d: any) => ({
             disease: d.disease,
@@ -524,7 +518,7 @@ export const SerologySamples = () => {
     const fetchFilterOptions = async () => {
       try {
         const response = await apiClient.get('/samples/filter-options', {
-          params: { year: selectedYear, department_id: 2 }
+          params: { year: selectedYear, department_id: DEPARTMENT_IDS.Serology }
         });
         setFilterOptions(response.data);
       } catch (err) {
@@ -663,8 +657,84 @@ export const SerologySamples = () => {
     setExportDropdownOpen(false);
 
     try {
-      // Export current filtered data (same as filteredRows)
-      const exportData = filteredRows.map((row: any) => ({
+      // Fetch ALL filtered data for export (not just current page)
+      const params: Record<string, any> = {
+        year: selectedYear,
+        department_id: DEPARTMENT_IDS.Serology,
+        skip: 0,
+        limit: EXPORT_LIMIT
+      };
+
+      // Add all current filter parameters
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (selectedCompanies.length > 0) params.company = selectedCompanies;
+      if (selectedFarms.length > 0) params.farm = selectedFarms;
+      if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+      if (selectedAges.length > 0) params.age = selectedAges;
+      if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+      if (selectedSources.length > 0) params.source = selectedSources;
+      if (selectedStatuses.length > 0) params.status = selectedStatuses;
+      if (selectedHouses.length > 0) params.house = selectedHouses;
+      if (selectedCycles.length > 0) params.cycle = selectedCycles;
+      if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+      if (selectedTechnicians.length > 0) params.technicians = selectedTechnicians;
+      if (startDate) params.date_from = startDate;
+      if (endDate) params.date_to = endDate;
+
+      const exportResponse = await apiClient.get('/samples/', { params });
+      const allSamples = exportResponse.data;
+
+      // Process all filtered data for export
+      const exportRows: any[] = [];
+      allSamples.forEach((sample: any) => {
+        sample.units?.forEach((unit: any) => {
+          if (unit.department_id === DEPARTMENT_IDS.Serology) {
+            const diseases = unit.serology_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
+            const diseasesWithWells = unit.serology_data?.diseases_list?.map((d: any) => ({
+              disease: d.disease,
+              wells: d.wells_count || null
+            })) || [];
+
+            // Combine sample notes (status changes) and unit notes
+            const combinedNotes = [sample.notes, unit.notes].filter(Boolean).join('\n');
+            
+            // Calculate tests count from serology_data
+            const testsCount = unit.serology_data?.tests_count || null;
+
+            exportRows.push({
+              sampleCode: sample.sample_code,
+              unitCode: unit.unit_code,
+              dateReceived: sample.date_received,
+              company: sample.company,
+              farm: sample.farm,
+              flock: sample.flock || '-',
+              cycle: sample.cycle || '-',
+              house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
+              age: unit.age,
+              source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
+              technician: unit.serology_data?.technician_name || unit.technician_name || '-',
+              sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
+              diseases,
+              diseasesWithWells,
+              numberOfWells: unit.serology_data?.number_of_wells || null,
+              samplesNumber: unit.samples_number,
+              testsCount,
+              status: sample.status,
+              notes: combinedNotes
+            });
+          }
+        });
+      });
+
+      // Sort by unit code numerically
+      exportRows.sort((a, b) => {
+        const numA = parseInt(a.unitCode.replace(/\D/g, '')) || 0;
+        const numB = parseInt(b.unitCode.replace(/\D/g, '')) || 0;
+        return numA - numB;
+      });
+
+      // Prepare data for export
+      const exportData = exportRows.map((row: any) => ({
         'Sample Code': row.sampleCode,
         'Unit Code': row.unitCode,
         'Date Received': formatDate(row.dateReceived),
@@ -678,8 +748,8 @@ export const SerologySamples = () => {
         'Technician': row.technician,
         'Sample Type': row.sampleType,
         'Diseases': row.diseases,
-        'Wells per Disease': row.diseasesWithWells.map((d: any) => `${d.disease}: ${d.wells ?? '-'}`).join(', '),
-        'Total Wells': row.diseasesWithWells.reduce((sum: number, d: any) => sum + (d.wells || 0), 0) || row.numberOfWells || '-',
+        'Wells per Disease': row.diseasesWithWells.map((d: { disease: string; wells: number | null }) => `${d.disease}: ${d.wells ?? '-'}`).join(', '),
+        'Total Wells': row.diseasesWithWells.reduce((sum: number, d: { disease: string; wells: number | null }) => sum + (d.wells || 0), 0) || row.numberOfWells || '-',
         'Samples Number': row.samplesNumber ?? '-',
         'Tests Count': row.testsCount ?? '-',
         'Status': row.status,
@@ -706,11 +776,87 @@ export const SerologySamples = () => {
     setExportDropdownOpen(false);
 
     try {
+      // Fetch ALL filtered data for CSV export (not just current page)
+      const params: Record<string, any> = {
+        year: selectedYear,
+        department_id: DEPARTMENT_IDS.Serology,
+        skip: 0,
+        limit: EXPORT_LIMIT
+      };
+
+      // Add all current filter parameters
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (selectedCompanies.length > 0) params.company = selectedCompanies;
+      if (selectedFarms.length > 0) params.farm = selectedFarms;
+      if (selectedFlocks.length > 0) params.flock = selectedFlocks;
+      if (selectedAges.length > 0) params.age = selectedAges;
+      if (selectedSampleTypes.length > 0) params.sample_type = selectedSampleTypes;
+      if (selectedSources.length > 0) params.source = selectedSources;
+      if (selectedStatuses.length > 0) params.status = selectedStatuses;
+      if (selectedHouses.length > 0) params.house = selectedHouses;
+      if (selectedCycles.length > 0) params.cycle = selectedCycles;
+      if (selectedDiseases.length > 0) params.diseases = selectedDiseases;
+      if (selectedTechnicians.length > 0) params.technicians = selectedTechnicians;
+      if (startDate) params.date_from = startDate;
+      if (endDate) params.date_to = endDate;
+
+      const exportResponse = await apiClient.get('/samples/', { params });
+      const allSamples = exportResponse.data;
+
+      // Process all filtered data for CSV export
+      const exportRows: any[] = [];
+      allSamples.forEach((sample: any) => {
+        sample.units?.forEach((unit: any) => {
+          if (unit.department_id === DEPARTMENT_IDS.Serology) {
+            const diseases = unit.serology_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
+            const diseasesWithWells = unit.serology_data?.diseases_list?.map((d: any) => ({
+              disease: d.disease,
+              wells: d.wells_count || null
+            })) || [];
+
+            // Combine sample notes (status changes) and unit notes
+            const combinedNotes = [sample.notes, unit.notes].filter(Boolean).join('\n');
+            
+            // Calculate tests count from serology_data
+            const testsCount = unit.serology_data?.tests_count || null;
+
+            exportRows.push({
+              sampleCode: sample.sample_code,
+              unitCode: unit.unit_code,
+              dateReceived: sample.date_received,
+              company: sample.company,
+              farm: sample.farm,
+              flock: sample.flock || '-',
+              cycle: sample.cycle || '-',
+              house: Array.isArray(unit.house) ? unit.house.join(', ') : unit.house || '-',
+              age: unit.age,
+              source: Array.isArray(unit.source) ? unit.source.join(', ') : unit.source || '-',
+              technician: unit.serology_data?.technician_name || unit.technician_name || '-',
+              sampleType: Array.isArray(unit.sample_type) ? unit.sample_type.join(', ') : unit.sample_type || '-',
+              diseases,
+              diseasesWithWells,
+              numberOfWells: unit.serology_data?.number_of_wells || null,
+              samplesNumber: unit.samples_number,
+              testsCount,
+              status: sample.status,
+              notes: combinedNotes
+            });
+          }
+        });
+      });
+
+      // Sort by unit code numerically
+      exportRows.sort((a, b) => {
+        const numA = parseInt(a.unitCode.replace(/\D/g, '')) || 0;
+        const numB = parseInt(b.unitCode.replace(/\D/g, '')) || 0;
+        return numA - numB;
+      });
+
       const headers = ['Sample Code', 'Unit Code', 'Date Received', 'Company', 'Farm', 'Flock', 'Cycle', 'House', 'Age', 'Source', 'Technician', 'Sample Type', 'Diseases', 'Wells per Disease', 'Total Wells', 'Samples Number', 'Tests Count', 'Status', 'Notes'];
 
       const csvRows = [
         headers.join(','),
-        ...filteredRows.map(row => [
+        ...exportRows.map(row => [
           `"${row.sampleCode}"`,
           `"${row.unitCode}"`,
           `"${formatDate(row.dateReceived)}"`,
@@ -724,8 +870,8 @@ export const SerologySamples = () => {
           `"${row.technician}"`,
           `"${row.sampleType}"`,
           `"${row.diseases}"`,
-          `"${row.diseasesWithWells.map(d => `${d.disease}: ${d.wells ?? '-'}`).join(', ')}"`,
-          `"${row.diseasesWithWells.reduce((sum, d) => sum + (d.wells || 0), 0) || row.numberOfWells || '-'}"`,
+          `"${row.diseasesWithWells.map((d: { disease: string; wells: number | null }) => `${d.disease}: ${d.wells ?? '-'}`).join(', ')}"`,
+          `"${row.diseasesWithWells.reduce((sum: number, d: { disease: string; wells: number | null }) => sum + (d.wells || 0), 0) || row.numberOfWells || '-'}"`,
           `"${row.samplesNumber ?? '-'}"`,
           `"${row.testsCount ?? '-'}"`,
           `"${row.status}"`,

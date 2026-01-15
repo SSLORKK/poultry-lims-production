@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { TOTAL_COUNT_LIMITS } from '../constants';
 import { useQuery } from '@tanstack/react-query';
 import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import { apiClient } from '../../../services/apiClient';
-import axios from 'axios';
+import { QueryApiClient } from '../../../services/queryClient';
 
 interface UnitData {
   id: number;
@@ -83,10 +84,6 @@ export function MicrobiologyCOA() {
   const [testResults, setTestResults] = useState<{ [disease: string]: { [sampleType: string]: string } }>({});
   const [testPortions, setTestPortions] = useState<{ [disease: string]: { [sampleType: string]: string } }>({});
   const [testMethods, setTestMethods] = useState<{ [disease: string]: string }>({});
-  const [testReportNumbers, setTestReportNumbers] = useState<{ [disease: string]: string }>({});
-  // Note: testReportNumbers state is kept for backward compatibility with saved COA data
-  // PDF generation uses getDiseaseReportNumber() function directly for accurate codes
-  void testReportNumbers; // Suppress unused variable warning
   const [isolateTypes, setIsolateTypes] = useState<{ [disease: string]: { [sampleType: string]: string } }>({});
   const [testRanges, setTestRanges] = useState<{ [disease: string]: { [sampleType: string]: string } }>({});
   const [dateTested, setDateTested] = useState<string>('');
@@ -189,21 +186,14 @@ export function MicrobiologyCOA() {
   const { data: cultureIsolationTypes = [] } = useQuery<any[]>({
     queryKey: ['culture-isolation-types'],
     queryFn: async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Not authenticated');
+      try {
+        const queryApiClient = QueryApiClient.getInstance();
+        const response = await queryApiClient.get('/controls/culture-isolation-types');
+        return response.data;
+      } catch (error) {
+        console.error('Failed to fetch culture isolation types:', error);
+        throw error;
       }
-
-      const queryApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const response = await queryApiClient.get('/controls/culture-isolation-types');
-      return response.data;
     },
     retry: (failureCount, error: any) => {
       // Don't retry on authentication errors
@@ -218,21 +208,14 @@ export function MicrobiologyCOA() {
   const { data: astDisks = [] } = useQuery<any[]>({
     queryKey: ['ast-disks'],
     queryFn: async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Not authenticated');
+      try {
+        const queryApiClient = QueryApiClient.getInstance();
+        const response = await queryApiClient.get('/controls/ast-disks');
+        return response.data;
+      } catch (error) {
+        console.error('Failed to fetch AST disks:', error);
+        throw error;
       }
-
-      const queryApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const response = await queryApiClient.get('/controls/ast-disks');
-      return response.data;
     },
     retry: (failureCount, error: any) => {
       if (error?.response?.status === 401) {
@@ -261,21 +244,14 @@ export function MicrobiologyCOA() {
   const { data: pathogenicFungiMoldTypes = [] } = useQuery<any[]>({
     queryKey: ['pathogenic-fungi-mold'],
     queryFn: async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Not authenticated');
+      try {
+        const queryApiClient = QueryApiClient.getInstance();
+        const response = await queryApiClient.get('/controls/pathogenic-fungi-mold');
+        return response.data;
+      } catch (error) {
+        console.error('Failed to fetch pathogenic fungi mold types:', error);
+        throw error;
       }
-
-      const queryApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const response = await queryApiClient.get('/controls/pathogenic-fungi-mold');
-      return response.data;
     },
     retry: (failureCount, error: any) => {
       // Don't retry on authentication errors
@@ -290,21 +266,14 @@ export function MicrobiologyCOA() {
   const { data: cultureScreenedPathogens = [] } = useQuery<any[]>({
     queryKey: ['culture-screened-pathogens'],
     queryFn: async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Not authenticated');
+      try {
+        const queryApiClient = QueryApiClient.getInstance();
+        const response = await queryApiClient.get('/controls/culture-screened-pathogens');
+        return response.data;
+      } catch (error) {
+        console.error('Failed to fetch culture screened pathogens:', error);
+        throw error;
       }
-
-      const queryApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const response = await queryApiClient.get('/controls/culture-screened-pathogens');
-      return response.data;
     },
     retry: (failureCount, error: any) => {
       // Don't retry on authentication errors
@@ -403,7 +372,6 @@ export function MicrobiologyCOA() {
     setTestResults(results);
     setTestPortions(portions);
     setTestMethods(methods);
-    setTestReportNumbers(reportNumbers);
     setIsolateTypes(isolateTypesData);
     setTestRanges(rangesData);
   }, []);
@@ -469,14 +437,8 @@ export function MicrobiologyCOA() {
         return;
       }
 
-      // Create custom axios instance for data fetching
-      const fetchApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      // Use secure QueryApiClient singleton for data fetching
+      const fetchApiClient = QueryApiClient.getInstance();
 
       // Fetch unit data
       const unitResponse = await fetchApiClient.get(`/units/${unitId}`);
@@ -561,7 +523,6 @@ export function MicrobiologyCOA() {
               generatedReportNumbers[disease] = unitCode;
             }
           });
-          setTestReportNumbers(generatedReportNumbers);
           
           setIsolateTypes(coa.isolate_types || {});
           setTestRanges(coa.test_ranges || {});
@@ -833,25 +794,11 @@ export function MicrobiologyCOA() {
       setSaving(true);
       setError(null);
 
-      // Check if user is authenticated before proceeding
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('You are not authenticated. Please log in again.');
-        setSaving(false);
-        return;
-      }
-
       // Save sets status to 'need_approval' - Approve changes to 'completed'
       const saveStatus = 'need_approval';
 
-      // Create a custom apiClient instance for this operation
-      const saveApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      // Use secure QueryApiClient singleton without auto-redirect for component-level error handling
+      const saveApiClient = QueryApiClient.getInstance(false);
 
       // Convert hidden indexes Sets to arrays for JSON serialization
       const hiddenIndexesForSave: { [disease: string]: string[] } = {};
@@ -965,13 +912,6 @@ export function MicrobiologyCOA() {
       setSaving(true);
       setError(null);
 
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('You are not authenticated. Please log in again.');
-        setSaving(false);
-        return;
-      }
-
       // Check if sample was previously postponed and save to edit history
       const postponedMatch = notes?.match(/Postponed Reason:\s*(.+)/);
       if (postponedMatch && coaData?.status === 'postponed') {
@@ -990,13 +930,8 @@ export function MicrobiologyCOA() {
         }
       }
 
-      const saveApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      // Use QueryApiClient without auto-redirect for component-level error handling
+      const saveApiClient = QueryApiClient.getInstance(false);
 
       // Convert hidden indexes Sets to arrays for JSON serialization
       const hiddenIndexesForSave: { [disease: string]: string[] } = {};
@@ -1044,6 +979,14 @@ export function MicrobiologyCOA() {
       // Update parent sample status
       await saveApiClient.patch(`/samples/${unitData.sample.id}`, { status: 'completed' });
 
+      // Refresh COA data to get the newly assigned report_no from backend
+      try {
+        const refreshedCoa = await saveApiClient.get(`/microbiology-coa/${unitId}/`);
+        setCoaData(refreshedCoa.data);
+      } catch (refreshErr) {
+        console.error('Failed to refresh COA data:', refreshErr);
+      }
+
       setNotification({ type: 'success', message: 'Certificate of Analysis approved successfully!' });
     } catch (err: any) {
       console.error('Failed to approve COA:', err);
@@ -1068,20 +1011,8 @@ export function MicrobiologyCOA() {
       setSaving(true);
       setError(null);
 
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('You are not authenticated. Please log in again.');
-        setSaving(false);
-        return;
-      }
-
-      const saveApiClient = axios.create({
-        baseURL: '/api/v1',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      // Use QueryApiClient without auto-redirect for component-level error handling
+      const saveApiClient = QueryApiClient.getInstance(false);
 
       const postponePayload = {
         test_results: testResults,
@@ -1251,7 +1182,7 @@ export function MicrobiologyCOA() {
       if (diseaseType === 'totalcount') {
         const num = parseNumericValue(value);
         if (num !== null) {
-          const limit = isFeedSample ? 100000 : 1000; // 10^5 for FEED, 10^3 for others
+          const limit = isFeedSample ? TOTAL_COUNT_LIMITS.FEED_SAMPLE : TOTAL_COUNT_LIMITS.OTHER_SAMPLE;
           if (num >= limit) {
             return 'background-color: #f8d7da !important; color: #721c24; -webkit-print-color-adjust: exact; print-color-adjust: exact;';
           } else {

@@ -6,6 +6,7 @@ import { usePermissions } from '../../../hooks/usePermissions';
 import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import { ApiErrorDisplay } from '../../../components/common/ApiErrorDisplay';
 import * as XLSX from 'xlsx-js-style';
+import { EXPORT_LIMIT, DEPARTMENT_IDS, AUTO_REFRESH_INTERVAL, PAGE_SIZE } from '../constants';
 
 interface UnitRow {
   sampleId: number;
@@ -63,7 +64,7 @@ export const PCRSamples = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1); // Will be set to last page on initial load
   const [isInitialPageSet, setIsInitialPageSet] = useState(false); // Track if initial page calculation is done
-  const [_totalCount, setTotalCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [lastPageLoaded, setLastPageLoaded] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
@@ -142,14 +143,13 @@ export const PCRSamples = () => {
   const fetchSamples = async () => {
     try {
       setLoading(true);
-      const startTime = Date.now();
 
       // Build filter params for backend with pagination
-      const params: any = {
+      const params: Record<string, any> = {
         year: selectedYear,
-        department_id: 1,  // department_id 1 = PCR
-        skip: (page - 1) * 100,
-        limit: 100
+        department_id: DEPARTMENT_IDS.PCR,  // department_id 1 = PCR
+        skip: (page - 1) * PAGE_SIZE,
+        limit: PAGE_SIZE
       };
 
       // Add global search parameter - searches across all pages!
@@ -207,12 +207,6 @@ export const PCRSamples = () => {
       const response = await apiClient.get('/samples/', { params });
       setSamples(response.data);
       setError(null);
-
-      // Ensure minimum loading time of 300ms to prevent flash
-      const elapsed = Date.now() - startTime;
-      if (elapsed < 300) {
-        await new Promise(resolve => setTimeout(resolve, 300 - elapsed));
-      }
     } catch (err: any) {
       console.error('Failed to load samples:', err);
       const errorData = err.response?.data;
@@ -318,9 +312,9 @@ export const PCRSamples = () => {
     const fetchTotalAndGoToLastPage = async () => {
       try {
         // Build params with ALL current filters for accurate count (matching fetchSamples)
-        const countParams: any = {
+        const countParams: Record<string, any> = {
           year: selectedYear,
-          department_id: 1
+          department_id: DEPARTMENT_IDS.PCR
         };
         
         // Include ALL active filters in total count (same as fetchSamples)
@@ -345,23 +339,16 @@ export const PCRSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Jump to last page on initial load (with optimized performance)
+        // Always go to last page when filters change or on initial load
+        const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        console.log(`PCR: Setting last page ${lastPage} (total records: ${total})`);
+        
+        // Always set to last page for better UX (showing newest records first)
+        setPage(lastPage);
+        setLastPageLoaded(true);
+        
         if (!isInitialPageSet) {
-          const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`PCR: Jumping to last page ${lastPage} (total records: ${total})`);
-          
-          // Clear any stored page to force last page
-          localStorage.removeItem('pcrSamples_page');
-          
-          // Set page and flags
-          setPage(lastPage);
-          setLastPageLoaded(true);
           setIsInitialPageSet(true);
-          
-          // Store last page in localStorage
-          localStorage.setItem('pcrSamples_page', String(lastPage));
-          
-          console.log(`PCR: Successfully navigated to last page ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
@@ -395,11 +382,11 @@ export const PCRSamples = () => {
   useEffect(() => {
     const autoRefresh = setInterval(async () => {
       try {
-        const params: any = {
+        const params: Record<string, any> = {
           year: selectedYear,
-          department_id: 1,
-          skip: (page - 1) * 100,
-          limit: 100
+          department_id: DEPARTMENT_IDS.PCR,
+          skip: (page - 1) * PAGE_SIZE,
+          limit: PAGE_SIZE
         };
         if (debouncedSearch) params.search = debouncedSearch;
         if (selectedCompanies.length > 0) params.company = selectedCompanies;
@@ -423,7 +410,7 @@ export const PCRSamples = () => {
       } catch (err) {
         console.error('Auto-refresh failed:', err);
       }
-    }, 10000); // 10 seconds for better responsiveness
+    }, AUTO_REFRESH_INTERVAL); // 10 seconds for better responsiveness
 
     return () => clearInterval(autoRefresh);
   }, [selectedYear, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate, page, debouncedSearch, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods]);
@@ -445,7 +432,7 @@ export const PCRSamples = () => {
     const rows: UnitRow[] = [];
     samples.forEach((sample) => {
       sample.units?.forEach((unit: any) => {
-        if (unit.department_id === 1) {
+        if (unit.department_id === DEPARTMENT_IDS.PCR) {
           const diseases = unit.pcr_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
           // Get kit types from diseases_list (each disease has its own kit_type)
           const kitTypesFromDiseases = unit.pcr_data?.diseases_list
@@ -572,7 +559,7 @@ export const PCRSamples = () => {
     const fetchFilterOptions = async () => {
       try {
         const response = await apiClient.get('/samples/filter-options', {
-          params: { year: selectedYear, department_id: 1 }
+          params: { year: selectedYear, department_id: DEPARTMENT_IDS.PCR }
         });
         setFilterOptions(response.data);
       } catch (err) {
@@ -641,11 +628,11 @@ export const PCRSamples = () => {
 
     try {
       // Fetch ALL filtered data for export (not just current page)
-      const params: any = {
+      const params: Record<string, any> = {
         year: selectedYear,
-        department_id: 1,
+        department_id: DEPARTMENT_IDS.PCR,
         skip: 0,
-        limit: 10000  // Get all data for export
+        limit: EXPORT_LIMIT
       };
 
       // Add all current filter parameters
@@ -759,11 +746,11 @@ export const PCRSamples = () => {
 
     try {
       // Fetch ALL filtered data for CSV export (not just current page)
-      const params: any = {
+      const params: Record<string, any> = {
         year: selectedYear,
-        department_id: 1,
+        department_id: DEPARTMENT_IDS.PCR,
         skip: 0,
-        limit: 10000  // Get all data for export
+        limit: EXPORT_LIMIT
       };
 
       // Add all current filter parameters
@@ -1096,15 +1083,6 @@ export const PCRSamples = () => {
           </div>
         </div>
       </div>
-
-      {error && (
-          <ApiErrorDisplay 
-            error={{ message: error }} 
-            onRetry={() => fetchSamples()}
-            compact={true}
-            className="mb-4"
-          />
-      )}
 
       {/* Active Filter Chips */}
       {(selectedCompanies.length > 0 || selectedFarms.length > 0 || selectedFlocks.length > 0 ||
@@ -2131,8 +2109,8 @@ export const PCRSamples = () => {
           {filteredRows.length > 0 && (
             <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
               <div className="text-sm text-gray-600">
-                Showing <span className="font-semibold text-gray-800">{filteredRows.length}</span> of <span className="font-semibold text-gray-800">{_totalCount}</span> records
-                {_totalCount > 100 && <span className="text-gray-500 ml-2">(Page {page} of {Math.ceil(_totalCount / 100)})</span>}
+                Showing <span className="font-semibold text-gray-800">{filteredRows.length}</span> of <span className="font-semibold text-gray-800">{totalCount}</span> records
+                {totalCount > PAGE_SIZE && <span className="text-gray-500 ml-2">(Page {page} of {Math.ceil(totalCount / PAGE_SIZE)})</span>}
               </div>
 
               <div className="flex items-center gap-4">
@@ -2156,9 +2134,8 @@ export const PCRSamples = () => {
 
                   {/* Show numbered page buttons - dynamically based on data */}
                   {(() => {
-                    // Calculate total pages needed (100 items per page)
-                    const itemsPerPage = 100;
-                    const totalPages = Math.max(1, Math.ceil(_totalCount / itemsPerPage));
+                    // Calculate total pages needed using PAGE_SIZE constant
+                    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
                     // Show pages from 1 to current page (and next if data suggests more)
                     const pagesToShow = [];
                     const startPage = Math.max(1, page - 2);
@@ -2182,7 +2159,7 @@ export const PCRSamples = () => {
 
                   <button
                     onClick={() => setPage((p) => p + 1)}
-                    disabled={page >= Math.ceil(_totalCount / 100)}
+                    disabled={page >= Math.ceil(totalCount / PAGE_SIZE)}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     aria-label="Next page"
                   >
@@ -2190,18 +2167,18 @@ export const PCRSamples = () => {
                   </button>
                   <button
                     onClick={() => {
-                      const lastPage = Math.max(1, Math.ceil(_totalCount / 100));
-                      console.log(`PCR: Going to last page: ${lastPage} (total: ${_totalCount}, current page: ${page})`);
-                      console.log(`PCR: Calculation - Math.ceil(${_totalCount} / 100) = ${Math.ceil(_totalCount / 100)}`);
+                      const lastPage = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+                      console.log(`PCR: Going to last page: ${lastPage} (total: ${totalCount}, current page: ${page})`);
+                      console.log(`PCR: Calculation - Math.ceil(${totalCount} / ${PAGE_SIZE}) = ${Math.ceil(totalCount / PAGE_SIZE)}`);
                       
                       // Ensure we have a valid page number and total count
-                      if (_totalCount > 0 && lastPage > 0) {
+                      if (totalCount > 0 && lastPage > 0) {
                         setPage(lastPage);
                       } else {
-                        console.warn(`PCR: Invalid last page calculation - totalCount: ${_totalCount}, lastPage: ${lastPage}`);
+                        console.warn(`PCR: Invalid last page calculation - totalCount: ${totalCount}, lastPage: ${lastPage}`);
                       }
                     }}
-                    disabled={page >= Math.ceil(_totalCount / 100) || _totalCount === 0}
+                    disabled={page >= Math.ceil(totalCount / PAGE_SIZE) || totalCount === 0}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     aria-label="Last page"
                   >
