@@ -647,12 +647,6 @@ function PCRFields({
     try {
       const response = await apiClient.post('/controls/signatures/verify-pin', { pin });
       
-      // Check if this is still the latest verification attempt
-      if (!verifyingPIN) {
-        console.warn('PIN verification completed but component is no longer verifying - race condition prevented');
-        return;
-      }
-      
       if (response.data.is_valid) {
         // Safely check if pcr_data exists before spreading
         const currentPcrData = unit.pcr_data || {
@@ -930,8 +924,10 @@ function SerologyFields({
         setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
       }
       setTechnicianPIN('');
+    } finally {
+      // Use finally to ensure state is always reset
+      setVerifyingPIN(false);
     }
-    setVerifyingPIN(false);
   };
 
   return (
@@ -1081,8 +1077,10 @@ function MicrobiologyFields({
         setNotification({ type: 'error', message: 'PIN verification failed. Please try again.' });
       }
       setTechnicianPIN('');
+    } finally {
+      // Use finally to ensure state is always reset
+      setVerifyingPIN(false);
     }
-    setVerifyingPIN(false);
   };
 
   // Close dropdown when clicking outside
@@ -1542,46 +1540,69 @@ export const UnifiedSampleRegistration = () => {
     units: { [key: number]: boolean };
   }>({ sampleInfo: false, units: {} });
 
-  // Safe draft loading function
+  // Safe draft loading function (user-specific)
   const loadDraft = () => {
+    if (!user?.id) return null;
+    
     try {
-      const savedDraft = localStorage.getItem('unified_sample_draft');
+      const draftKey = `sample_registration_draft_user_${user.id}`;
+      const savedDraft = localStorage.getItem(draftKey);
       if (!savedDraft) return null;
       
       const parseResult = safeJSONParse(savedDraft, isDraftData);
       if (!parseResult.isValid) {
         console.error('Draft loading failed:', parseResult.error);
         // Clear corrupted draft data
-        localStorage.removeItem('unified_sample_draft');
+        localStorage.removeItem(draftKey);
         return null;
       }
       
       return parseResult.data;
     } catch (error) {
       console.error('Unexpected error loading draft:', error);
-      localStorage.removeItem('unified_sample_draft');
+      if (user?.id) {
+        localStorage.removeItem(`sample_registration_draft_user_${user.id}`);
+      }
       return null;
     }
   };
 
   // Load draft data safely with race condition protection
   const [draft, setDraft] = useState<any>(null);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  
   useEffect(() => {
-    if (!userLoading) {
-      setDraft(loadDraft());
+    if (!userLoading && user?.id && !draftLoaded) {
+      const loadedDraft = loadDraft();
+      setDraft(loadedDraft);
+      setDraftLoaded(true);
     }
-  }, [userLoading]);
+  }, [userLoading, user?.id, draftLoaded]);
 
   // Shared sample-level fields
-  const [dateReceived, setDateReceived] = useState(draft?.dateReceived || "");
-  const [company, setCompany] = useState(draft?.company || "");
-  const [farm, setFarm] = useState<string[]>(draft?.farm || []);
-  const [cycle, setCycle] = useState(draft?.cycle || "");
-  const [flock, setFlock] = useState(draft?.flock || "");
-  const [status, setStatus] = useState(draft?.status || "In Progress");
+  const [dateReceived, setDateReceived] = useState("");
+  const [company, setCompany] = useState("");
+  const [farm, setFarm] = useState<string[]>([]);
+  const [cycle, setCycle] = useState("");
+  const [flock, setFlock] = useState("");
+  const [status, setStatus] = useState("In Progress");
 
   // Units array - each unit has its own fields
-  const [units, setUnits] = useState<UnitData[]>(draft?.units || []);
+  const [units, setUnits] = useState<UnitData[]>([]);
+
+  // Restore draft data when loaded (only in create mode, not edit mode)
+  useEffect(() => {
+    if (draft && draftLoaded && !isEditMode && !isDuplicateMode) {
+      console.log('Restoring draft data:', draft);
+      if (draft.dateReceived) setDateReceived(draft.dateReceived);
+      if (draft.company) setCompany(draft.company);
+      if (draft.farm) setFarm(draft.farm);
+      if (draft.cycle) setCycle(draft.cycle);
+      if (draft.flock) setFlock(draft.flock);
+      if (draft.status) setStatus(draft.status);
+      if (draft.units && draft.units.length > 0) setUnits(draft.units);
+    }
+  }, [draft, draftLoaded, isEditMode, isDuplicateMode]);
   
   // Edit history dialog state
   const [editHistoryDialog, setEditHistoryDialog] = useState<{ open: boolean; history: Array<{ field_name: string; old_value: string; new_value: string; edited_at: string; edited_by: string }> }>({
@@ -1994,7 +2015,7 @@ export const UnifiedSampleRegistration = () => {
       // Set sample-level fields
       setDateReceived(existingSample.date_received || "");
       setCompany(existingSample.company || "");
-      setFarm(Array.isArray(existingSample.farm) ? existingSample.farm : (existingSample.farm ? [existingSample.farm] : []));
+      setFarm(Array.isArray(existingSample.farm) ? existingSample.farm : (existingSample.farm ? existingSample.farm.split(', ') : []));
       setCycle(existingSample.cycle || "");
       setFlock(existingSample.flock || "");
       setStatus(existingSample.status || "");
@@ -2080,7 +2101,7 @@ export const UnifiedSampleRegistration = () => {
       // Set sample-level fields (use today's date for new sample)
       setDateReceived(new Date().toISOString().split('T')[0]);
       setCompany(duplicateSample.company || "");
-      setFarm(Array.isArray(duplicateSample.farm) ? duplicateSample.farm : (duplicateSample.farm ? [duplicateSample.farm] : []));
+      setFarm(Array.isArray(duplicateSample.farm) ? duplicateSample.farm : (duplicateSample.farm ? duplicateSample.farm.split(', ') : []));
       setCycle(duplicateSample.cycle || "");
       setFlock(duplicateSample.flock || "");
       setStatus("In Progress"); // New sample starts as In Progress
@@ -2450,7 +2471,7 @@ export const UnifiedSampleRegistration = () => {
       sample_code?: string; 
       date_received: string; 
       company: string; 
-      farm: string[]; 
+      farm: string;  // Backend expects string (converted from array)
       cycle: string; 
       flock: string; 
       status: string; 
@@ -2520,7 +2541,7 @@ export const UnifiedSampleRegistration = () => {
     mutationFn: async (data: { 
       date_received: string; 
       company: string; 
-      farm: string[]; 
+      farm: string;  // Backend expects string (converted from array)
       cycle: string; 
       flock: string; 
       status: string; 
@@ -2658,26 +2679,56 @@ export const UnifiedSampleRegistration = () => {
       return;
     }
 
-    // Transform units data for API with proper null handling
-    const transformedUnits = units.map((unit) => ({
-      id: unit.id,
-      unit_code: unit.unit_code,
-      department_id: unit.department_id,
-      house: Array.isArray(unit.house) ? unit.house : [],
-      age: typeof unit.age === 'string' ? unit.age : "",
-      source: Array.isArray(unit.source) ? unit.source : [],
-      sample_type: Array.isArray(unit.sample_type) ? unit.sample_type : [],
-      samples_number: typeof unit.samples_number === 'number' ? unit.samples_number : 0,
-      notes: typeof unit.notes === 'string' ? unit.notes : "",
-      pcr_data: unit.pcr_data || null,
-      serology_data: unit.serology_data || null,
-      microbiology_data: unit.microbiology_data || null,
-    }));
+    // Transform units data for API with proper null handling and type safety
+    const transformedUnits = units.map((unit) => {
+      // Transform PCR data with proper string types for all required fields
+      const transformedPcrData = unit.pcr_data ? {
+        diseases_list: unit.pcr_data.diseases_list || [],
+        kit_type: String(unit.pcr_data.kit_type || ''),
+        technician_name: String(unit.pcr_data.technician_name || ''),
+        extraction_method: String(unit.pcr_data.extraction_method || ''),
+        extraction: typeof unit.pcr_data.extraction === 'number' ? unit.pcr_data.extraction : 0,
+        detection: typeof unit.pcr_data.detection === 'number' ? unit.pcr_data.detection : undefined,
+      } : null;
+
+      // Transform Serology data with proper string types
+      const transformedSerologyData = unit.serology_data ? {
+        diseases_list: unit.serology_data.diseases_list || [],
+        kit_type: String(unit.serology_data.kit_type || ''),
+        number_of_wells: typeof unit.serology_data.number_of_wells === 'number' ? unit.serology_data.number_of_wells : undefined,
+        tests_count: typeof unit.serology_data.tests_count === 'number' ? unit.serology_data.tests_count : undefined,
+        technician_name: String(unit.serology_data.technician_name || ''),
+      } : null;
+
+      // Transform Microbiology data with proper string types
+      const transformedMicrobiologyData = unit.microbiology_data ? {
+        diseases_list: unit.microbiology_data.diseases_list || [],
+        batch_no: unit.microbiology_data.batch_no ? String(unit.microbiology_data.batch_no) : undefined,
+        fumigation: unit.microbiology_data.fumigation ? String(unit.microbiology_data.fumigation) : undefined,
+        index_list: unit.microbiology_data.index_list || [],
+        technician_name: unit.microbiology_data.technician_name ? String(unit.microbiology_data.technician_name) : undefined,
+      } : null;
+
+      return {
+        id: unit.id,
+        unit_code: unit.unit_code,
+        department_id: unit.department_id,
+        house: Array.isArray(unit.house) ? unit.house : [],
+        age: typeof unit.age === 'string' ? unit.age : "",
+        source: Array.isArray(unit.source) ? unit.source : [],
+        sample_type: Array.isArray(unit.sample_type) ? unit.sample_type : [],
+        samples_number: typeof unit.samples_number === 'number' ? unit.samples_number : 0,
+        notes: typeof unit.notes === 'string' ? unit.notes : "",
+        pcr_data: transformedPcrData,
+        serology_data: transformedSerologyData,
+        microbiology_data: transformedMicrobiologyData,
+      };
+    });
 
     const sampleData = {
       date_received: dateReceived as string,
       company: company as string,
-      farm: farm, // Keep as array for proper typing
+      farm: Array.isArray(farm) ? farm.join(', ') : (farm || ''),  // Convert array to comma-separated string for backend
       cycle: (cycle || "") as string,  // Convert null to empty string
       flock: (flock || "") as string,  // Convert null to empty string
       status: status as string,
