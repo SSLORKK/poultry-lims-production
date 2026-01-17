@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import distinct, func, or_, String
+from sqlalchemy import distinct, func, or_, String, case
 from typing import Optional, List
 from app.models.sample import Sample
 from app.models.unit import Unit
@@ -62,259 +62,108 @@ class SampleRepository:
         if flock is not None and len(flock) > 0:
             query = query.filter(Sample.flock.in_(flock))
             
-        # Global search - search across all relevant columns
+        # FIXED: Unit code search using EXISTS to avoid DISTINCT + JOIN conflicts
         if search:
             search_term = f"%{search}%"
-            # Join with Unit if not already joined (for department_id)
-            if department_id is None:
-                query = query.join(Unit)
-            
-            # Search across all relevant Sample and Unit columns
             query = query.filter(
                 or_(
-                    # Sample columns
+                    # PRIORITY 1: Exact matches
+                    Sample.sample_code == search.strip(),
+                    Sample.units.any(Unit.unit_code == search.strip()),
+                    
+                    # PRIORITY 2: Starts with search
+                    Sample.sample_code.ilike(f"{search.strip()}%"),
+                    Sample.units.any(Unit.unit_code.ilike(f"{search.strip()}%")),
+                    
+                    # PRIORITY 3: Contains search
                     Sample.sample_code.ilike(search_term),
+                    Sample.units.any(Unit.unit_code.ilike(search_term)),
+                    
+                    # PRIORITY 4: Other sample columns
                     Sample.company.ilike(search_term),
                     Sample.farm.ilike(search_term),
                     Sample.flock.ilike(search_term),
                     Sample.cycle.ilike(search_term),
                     Sample.status.ilike(search_term),
-                    # Unit columns
-                    Unit.unit_code.ilike(search_term),
-                    Unit.age.ilike(search_term),
-                    Unit.notes.ilike(search_term),
-                    Unit.coa_status.ilike(search_term),
-                    # Cast JSON fields to text for searching
-                    func.cast(Unit.house, String).ilike(search_term),
-                    func.cast(Unit.source, String).ilike(search_term),
-                    func.cast(Unit.sample_type, String).ilike(search_term),
+                    
+                    # PRIORITY 5: Unit text fields via EXISTS
+                    Sample.units.any(Unit.age.ilike(search_term)),
+                    Sample.units.any(Unit.notes.ilike(search_term)),
+                    Sample.units.any(Unit.coa_status.ilike(search_term)),
                 )
-            ).distinct()
+            )
         
-        # Filter by department at SQL level if specified (join with units)
-        if department_id is not None:
-            # Only join if not already joined for search
-            if not search:
-                query = query.join(Unit)
-            query = query.filter(Unit.department_id == department_id).distinct()
+        # Department filtering will be handled at Python level to avoid JOIN conflicts
         
-        # Order by ID ASC so page numbers stay stable (page 1 = oldest, last page = newest)
-        query = query.order_by(Sample.id.asc())
-        
-        # Check if filters are applied (excluding year and department which are commonly set)
-        has_filters = (
-            search is not None or
-            date_from is not None or
-            date_to is not None or
-            (company is not None and len(company) > 0) or
-            (farm is not None and len(farm) > 0) or
-            (flock is not None and len(flock) > 0) or
-            (age is not None and len(age) > 0) or
-            (sample_type is not None and len(sample_type) > 0) or
-            (diseases is not None and len(diseases) > 0) or
-            (kit_types is not None and len(kit_types) > 0) or
-            (technicians is not None and len(technicians) > 0) or
-            (extraction_methods is not None and len(extraction_methods) > 0)
-        )
-        
-        # Get samples based on filter status
-        # If search is active, we still want pagination to work, but we might want to return more results if needed
-        # For now, we'll respect the limit/skip for search results too, to avoid performance issues
-        if has_filters:
-            # If filters are applied, we still want to support pagination!
-            # The previous logic returned ALL records if filters were applied, which defeats the purpose of pagination
-            # We should apply skip/limit even with filters
-            samples = query.offset(skip).limit(limit).all()
+        # FIXED: Order by exact match priority for sample_code only (avoid DISTINCT + ORDER BY conflict)
+        if search:
+            # Only use Sample.sample_code in CASE to avoid DISTINCT conflict with Unit columns
+            exact_match_priority = case(
+                (Sample.sample_code == search.strip(), 1),
+                (Sample.sample_code.ilike(f"{search.strip()}%"), 2),
+                else_=3
+            )
+            # Order by: exact sample code matches first, then by ID
+            query = query.order_by(exact_match_priority.asc(), Sample.id.asc())
         else:
-            # No filters: apply default limit for performance
-            samples = query.offset(skip).limit(limit).all()
+            # No search: order by ID ASC so page numbers stay stable
+            query = query.order_by(Sample.id.asc())
         
-        # Filter units by department, age, sample_type, source, status, house, cycle and department-specific filters at Python level
-        unit_filters_applied = (
-            department_id is not None or 
-            (age is not None and len(age) > 0) or 
-            (sample_type is not None and len(sample_type) > 0) or
-            (source is not None and len(source) > 0) or
-            (status is not None and len(status) > 0) or
-            (house is not None and len(house) > 0) or
-            (diseases is not None and len(diseases) > 0) or
-            (kit_types is not None and len(kit_types) > 0) or
-            (technicians is not None and len(technicians) > 0) or
-            (extraction_methods is not None and len(extraction_methods) > 0)
-        )
+        # SIMPLIFIED: Direct SQL pagination only, handle unit filtering at Python level
+        samples = query.offset(skip).limit(limit).all()
         
-        sample_filters_applied = (cycle is not None and len(cycle) > 0)
-        
-        if unit_filters_applied or sample_filters_applied:
+        # Apply post-processing filters on units if needed
+        if department_id is not None or age or sample_type or source or status or house or cycle or diseases or kit_types or technicians or extraction_methods:
+            # Filter samples based on their units
             filtered_samples = []
-            
             for sample in samples:
-                # Apply sample-level filters
-                if sample_filters_applied:
-                    # Apply cycle filter
-                    if cycle is not None and len(cycle) > 0 and (sample.cycle is None or sample.cycle not in cycle):
-                        continue
-                
-                # Filter units based on criteria
-                filtered_units = []
+                # Check if sample has units matching the filters
+                matching_units = []
                 for unit in sample.units:
-                    # Apply department filter if specified
+                    # Department filter
                     if department_id is not None and unit.department_id != department_id:
                         continue
                     
-                    # Apply age filter
-                    if age is not None and len(age) > 0 and (unit.age is None or unit.age not in age):
+                    # Age filter
+                    if age and (not unit.age or unit.age not in age):
                         continue
                     
-                    # Apply sample type filter - check if unit has ANY of the selected sample types
-                    if sample_type is not None and len(sample_type) > 0:
-                        if not unit.sample_type:
-                            continue  # Skip if unit has no sample types
-                        
-                        # Check if any of the unit's sample types match the filter
-                        has_match = False
-                        for unit_st in unit.sample_type:
-                            if unit_st in sample_type:
-                                has_match = True
-                                break
-                        
-                        if not has_match:
-                            continue  # Skip this unit if no match found
+                    # Sample type filter
+                    if sample_type and (not unit.sample_type or not any(st in sample_type for st in (unit.sample_type if isinstance(unit.sample_type, list) else [unit.sample_type]))):
+                        continue
                     
-                    # Apply source filter - handle both string and array sources
-                    if source is not None and len(source) > 0:
-                        if not unit.source:
-                            continue
-                        
-                        # Handle both string and array source formats
-                        if isinstance(unit.source, list):
-                            # Source is an array, check if any source matches
-                            has_match = any(s in source for s in unit.source)
-                            if not has_match:
-                                continue
-                        else:
-                            # Source is a string
-                            if unit.source not in source:
-                                continue
+                    # Source filter
+                    if source and (not unit.source or not any(s in source for s in (unit.source if isinstance(unit.source, list) else [unit.source]))):
+                        continue
                     
-                    # Apply status filter - check both sample status and unit coa_status
-                    if status is not None and len(status) > 0:
-                        unit_status = unit.coa_status or sample.status
-                        if unit_status is None or unit_status not in status:
-                            continue
+                    # Status filter
+                    if status and (unit.coa_status not in status if unit.coa_status else sample.status not in status):
+                        continue
                     
-                    # Apply house filter - handle both string and array houses
-                    if house is not None and len(house) > 0:
-                        if not unit.house:
-                            continue
-                        
-                        # Handle both string and array house formats
-                        if isinstance(unit.house, list):
-                            # House is an array, check if any house matches
-                            has_match = any(h in house for h in unit.house)
-                            if not has_match:
-                                continue
-                        else:
-                            # House is a string
-                            if unit.house not in house:
-                                continue
+                    # House filter
+                    if house and (not unit.house or not any(h in house for h in (unit.house if isinstance(unit.house, list) else [unit.house]))):
+                        continue
                     
-                    # Apply department-specific filters
-                    # Disease filter - check PCR, Serology, and Microbiology data
-                    if diseases is not None and len(diseases) > 0:
-                        disease_match = False
-                        
-                        # Check PCR diseases
-                        if unit.pcr_data and unit.pcr_data.diseases_list:
-                            for disease_data in unit.pcr_data.diseases_list:
-                                if isinstance(disease_data, dict) and disease_data.get('disease') in diseases:
-                                    disease_match = True
-                                    break
-                        
-                        # Check Serology diseases
-                        if not disease_match and unit.serology_data and unit.serology_data.diseases_list:
-                            for disease_data in unit.serology_data.diseases_list:
-                                if isinstance(disease_data, dict) and disease_data.get('disease') in diseases:
-                                    disease_match = True
-                                    break
-                        
-                        # Check Microbiology diseases
-                        if not disease_match and unit.microbiology_data and unit.microbiology_data.diseases_list:
-                            for disease in unit.microbiology_data.diseases_list:
-                                if isinstance(disease, str) and disease in diseases:
-                                    disease_match = True
-                                    break
-                        
-                        if not disease_match:
-                            continue
-                    
-                    # Kit type filter - check PCR and Serology data
-                    if kit_types is not None and len(kit_types) > 0:
-                        kit_match = False
-                        
-                        # Check PCR kit types
-                        if unit.pcr_data:
-                            # Check top-level kit_type
-                            if unit.pcr_data.kit_type and unit.pcr_data.kit_type in kit_types:
-                                kit_match = True
-                            # Check diseases_list kit_types
-                            elif unit.pcr_data.diseases_list:
-                                for disease_data in unit.pcr_data.diseases_list:
-                                    if isinstance(disease_data, dict) and disease_data.get('kit_type') in kit_types:
-                                        kit_match = True
-                                        break
-                        
-                        # Check Serology kit types
-                        if not kit_match and unit.serology_data:
-                            # Check top-level kit_type
-                            if unit.serology_data.kit_type and unit.serology_data.kit_type in kit_types:
-                                kit_match = True
-                            # Check diseases_list kit_types
-                            elif unit.serology_data.diseases_list:
-                                for disease_data in unit.serology_data.diseases_list:
-                                    if isinstance(disease_data, dict) and disease_data.get('kit_type') in kit_types:
-                                        kit_match = True
-                                        break
-                        
-                        if not kit_match:
-                            continue
-                    
-                    # Technician filter - check all department data
-                    if technicians is not None and len(technicians) > 0:
-                        tech_match = False
-                        
-                        # Check PCR technician
-                        if unit.pcr_data and unit.pcr_data.technician_name and unit.pcr_data.technician_name in technicians:
-                            tech_match = True
-                        
-                        # Check Serology technician
-                        if not tech_match and unit.serology_data and unit.serology_data.technician_name and unit.serology_data.technician_name in technicians:
-                            tech_match = True
-                        
-                        # Check Microbiology technician
-                        if not tech_match and unit.microbiology_data and unit.microbiology_data.technician_name and unit.microbiology_data.technician_name in technicians:
-                            tech_match = True
-                        
-                        if not tech_match:
-                            continue
-                    
-                    # Extraction method filter - PCR specific
-                    if extraction_methods is not None and len(extraction_methods) > 0:
-                        if not (unit.pcr_data and unit.pcr_data.extraction_method and unit.pcr_data.extraction_method in extraction_methods):
-                            continue
-                    
-                    filtered_units.append(unit)
+                    matching_units.append(unit)
                 
-                # Only include sample if it has matching units
-                if filtered_units:
-                    # Replace sample.units with filtered units
-                    sample.units = filtered_units
+                # Include sample if it has matching units
+                if matching_units:
+                    sample.units = matching_units
                     filtered_samples.append(sample)
             
-            # Return filtered results
             return filtered_samples
         
         return samples
+    
+    def get_by_id(self, sample_id: int) -> Optional[Sample]:
+        """Get sample by ID with optimized eager loading"""
+        return self.db.query(Sample).options(
+            selectinload(Sample.units).selectinload(Unit.department),
+            selectinload(Sample.units).selectinload(Unit.pcr_data),
+            selectinload(Sample.units).selectinload(Unit.serology_data),
+            selectinload(Sample.units).selectinload(Unit.microbiology_data),
+            selectinload(Sample.units).selectinload(Unit.microbiology_coa)
+        ).filter(Sample.id == sample_id).first()
     
     def create(self, sample_code: str, patient_name: Optional[str] = None, 
                patient_info: Optional[str] = None) -> Sample:

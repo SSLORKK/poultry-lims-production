@@ -252,23 +252,31 @@ export const AllSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // FORCE navigation to last page on initial load - production-ready approach
+        // FIXED: Only go to last page on INITIAL load (no search/filters active)
+        // When user searches or applies filters, stay on page 1 to show results from beginning
         if (!isInitialPageSet) {
-          const lastPage = Math.max(1, Math.ceil(total / 100));
-          console.log(`AllSamples: FORCING navigation to last page ${lastPage} (total records: ${total})`);
+          const hasActiveSearch = debouncedSearch && debouncedSearch.trim().length > 0;
+          const hasActiveFilters = selectedCompanies.length > 0 || selectedFarms.length > 0 || 
+            selectedFlocks.length > 0 || selectedAges.length > 0 || selectedSampleTypes.length > 0 ||
+            selectedSources.length > 0 || selectedStatuses.length > 0 || selectedHouses.length > 0 ||
+            selectedCycles.length > 0 || selectedDepartments.length > 0 || dateFrom || dateTo;
           
-          // Clear ANY localStorage interference
-          localStorage.removeItem('allSamples_page');
+          if (!hasActiveSearch && !hasActiveFilters) {
+            // No search/filters: go to last page to show newest records
+            const lastPage = Math.max(1, Math.ceil(total / 100));
+            console.log(`AllSamples: Initial load - going to last page ${lastPage}`);
+            
+            // Clear ANY localStorage interference
+            localStorage.removeItem('allSamples_page');
+            
+            // Set page and flags
+            setPage(lastPage);
+            localStorage.setItem('allSamples_page', String(lastPage));
+          }
+          // If search/filters are active, page stays at 1 (set by debounce/filter effects)
           
-          // Force set both page and flags immediately
-          setPage(lastPage);
           setLastPageLoaded(true);
           setIsInitialPageSet(true);
-          
-          // Force localStorage update immediately
-          localStorage.setItem('allSamples_page', String(lastPage));
-          
-          console.log(`AllSamples: Successfully set page to ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);

@@ -339,12 +339,22 @@ export const PCRSamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // Always go to last page when filters change or on initial load
-        const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-        console.log(`PCR: Setting last page ${lastPage} (total records: ${total})`);
+        // FIXED: Only go to last page on INITIAL load (no search/filters active)
+        // When user searches or applies filters, stay on page 1 to show results from beginning
+        const hasActiveSearch = debouncedSearch && debouncedSearch.trim().length > 0;
+        const hasActiveFilters = selectedCompanies.length > 0 || selectedFarms.length > 0 || 
+          selectedFlocks.length > 0 || selectedAges.length > 0 || selectedSampleTypes.length > 0 ||
+          selectedSources.length > 0 || selectedStatuses.length > 0 || selectedHouses.length > 0 ||
+          selectedCycles.length > 0 || selectedDiseases.length > 0 || selectedKitTypes.length > 0 ||
+          selectedTechnicians.length > 0 || selectedExtractionMethods.length > 0 || startDate || endDate;
         
-        // Always set to last page for better UX (showing newest records first)
-        setPage(lastPage);
+        if (!hasActiveSearch && !hasActiveFilters && !isInitialPageSet) {
+          // No search/filters: go to last page to show newest records
+          const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+          console.log(`PCR: Initial load - going to last page ${lastPage}`);
+          setPage(lastPage);
+        }
+        // If search/filters are active, page stays at 1 (set by debounce/filter effects)
         setLastPageLoaded(true);
         
         if (!isInitialPageSet) {

@@ -203,41 +203,46 @@ def get_total_count(
             if cycle is not None and len(cycle) > 0:
                 query = query.filter(Sample.cycle.in_(cycle))
             
-            # Only join Unit table if needed
-            needs_unit_join = (
-                department_id is not None or search is not None or 
-                age is not None or sample_type is not None or source is not None or 
-                status is not None or house is not None
-            )
-            
-            if needs_unit_join:
-                query = query.join(Unit)
+            # Only apply department filter if no other unit filters present
+            if department_id is not None and not (age or sample_type or source or status or house):
+                # Use EXISTS subquery instead of JOIN
+                query = query.filter(
+                    Sample.units.any(Unit.department_id == department_id)
+                )
                 
-                if department_id is not None:
-                    query = query.filter(Unit.department_id == department_id)
-                
-                # OPTIMIZATION 3: Simplified search (no JSON casting for performance)
+                # FIXED: Unit code search using EXISTS to match sample_repository.py
                 if search is not None and search.strip():
                     search_term = f"%{search}%"
                     query = query.filter(
                         or_(
+                            # PRIORITY 1: Exact matches
+                            Sample.sample_code == search.strip(),
+                            Sample.units.any(Unit.unit_code == search.strip()),
+                            
+                            # PRIORITY 2: Starts with search
+                            Sample.sample_code.ilike(f"{search.strip()}%"),
+                            Sample.units.any(Unit.unit_code.ilike(f"{search.strip()}%")),
+                            
+                            # PRIORITY 3: Contains search
                             Sample.sample_code.ilike(search_term),
+                            Sample.units.any(Unit.unit_code.ilike(search_term)),
+                            
+                            # PRIORITY 4: Other sample columns
                             Sample.company.ilike(search_term),
                             Sample.farm.ilike(search_term),
                             Sample.flock.ilike(search_term),
                             Sample.cycle.ilike(search_term),
                             Sample.status.ilike(search_term),
-                            Unit.unit_code.ilike(search_term),
-                            Unit.age.ilike(search_term),
-                            Unit.notes.ilike(search_term),
-                            Unit.coa_status.ilike(search_term)
+                            
+                            # PRIORITY 5: Unit text fields via EXISTS
+                            Sample.units.any(Unit.age.ilike(search_term)),
+                            Sample.units.any(Unit.notes.ilike(search_term)),
+                            Sample.units.any(Unit.coa_status.ilike(search_term)),
                         )
                     )
                 
-                if age is not None and len(age) > 0:
-                    query = query.filter(Unit.age.in_(age))
-                if status is not None and len(status) > 0:
-                    query = query.filter(or_(Sample.status.in_(status), Unit.coa_status.in_(status)))
+                # REMOVED: Unit column filters to avoid DISTINCT + JOIN conflicts
+                # These will be handled at application level
             
             # OPTIMIZATION 4: Set query timeout to 10 seconds
             total = query.scalar() or 0
@@ -258,9 +263,20 @@ def get_total_count(
                 technicians=technicians, extraction_methods=extraction_methods
             )
             
-            # Return approximate count for complex filters
+            # FIXED: Get more accurate count for complex filters
             if len(test_samples) > 0:
-                total = 999  # Signal that there are results, let frontend handle pagination
+                # Get larger sample to estimate total count more accurately
+                larger_test = sample_service.get_all_samples(
+                    skip=0, limit=500, department_id=department_id, year=year,
+                    search=search, company=company, farm=farm, flock=flock,
+                    date_from=date_from, date_to=date_to, age=age,
+                    sample_type=sample_type, source=source, status=status,
+                    house=house, cycle=cycle, diseases=diseases, kit_types=kit_types,
+                    technicians=technicians, extraction_methods=extraction_methods
+                )
+                # Use actual count from larger sample, cap at 500 for performance
+                total = len(larger_test)
+                print(f"Complex filters: Found {total} matching records")
             else:
                 total = 0
         

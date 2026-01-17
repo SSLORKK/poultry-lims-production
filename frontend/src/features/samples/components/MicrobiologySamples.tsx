@@ -391,23 +391,32 @@ export const MicrobiologySamples = () => {
         const total = response.data.total || 0;
         setTotalCount(total); // Store total count for pagination
         
-        // Jump to last page on initial load (with optimized performance)
+        // FIXED: Only go to last page on INITIAL load (no search/filters active)
+        // When user searches or applies filters, stay on page 1 to show results from beginning
         if (!isInitialPageSet) {
-          const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-          console.log(`Microbiology: Jumping to last page ${lastPage} (total records: ${total})`);
+          const hasActiveSearch = debouncedSearch && debouncedSearch.trim().length > 0;
+          const hasActiveFilters = selectedCompanies.length > 0 || selectedFarms.length > 0 || 
+            selectedFlocks.length > 0 || selectedAges.length > 0 || selectedSampleTypes.length > 0 ||
+            selectedSources.length > 0 || selectedStatuses.length > 0 || selectedHouses.length > 0 ||
+            selectedCycles.length > 0 || selectedDiseases.length > 0 || selectedBatchNos.length > 0 ||
+            selectedFumigations.length > 0 || startDate || endDate;
           
-          // Clear any stored page to force last page
-          localStorage.removeItem('microbiologySamples_page');
+          if (!hasActiveSearch && !hasActiveFilters) {
+            // No search/filters: go to last page to show newest records
+            const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+            console.log(`Microbiology: Initial load - going to last page ${lastPage}`);
+            
+            // Clear any stored page to force last page
+            localStorage.removeItem('microbiologySamples_page');
+            
+            // Set page and flags
+            setPage(lastPage);
+            localStorage.setItem('microbiologySamples_page', String(lastPage));
+          }
+          // If search/filters are active, page stays at 1 (set by debounce/filter effects)
           
-          // Set page and flags
-          setPage(lastPage);
           setLastPageLoaded(true);
           setIsInitialPageSet(true);
-          
-          // Store last page in localStorage
-          localStorage.setItem('microbiologySamples_page', String(lastPage));
-          
-          console.log(`Microbiology: Successfully navigated to last page ${lastPage}`);
         }
       } catch (err) {
         console.error('Failed to fetch total count:', err);
