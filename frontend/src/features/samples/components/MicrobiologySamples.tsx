@@ -73,8 +73,29 @@ export const MicrobiologySamples = () => {
   }, [selectedRow]);
 
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
+  // Check if returning from edit - restore saved page
+  // Check if returning from edit - restore saved page
+  const [page, _setPage] = useState(() => {
+    const returnPage = localStorage.getItem('microbiology_return_page');
+    if (returnPage) {
+      return parseInt(returnPage);
+    }
+    return 1;
+  });
+
+  const setPage = (value: number | ((prev: number) => number)) => {
+    // @ts-ignore
+    _setPage((prev) => {
+      const newValue = typeof value === 'function' ? value(prev) : value;
+      return newValue;
+    });
+  };
+
+  const [isReturningFromEdit] = useState(() => {
+    return !!localStorage.getItem('microbiology_return_page');
+  });
   const [isInitialPageSet, setIsInitialPageSet] = useState(false); // Track if initial page calculation is done
+  const [lastPageLoaded, setLastPageLoaded] = useState(false);
   const [totalCount, setTotalCount] = useState(0); // Store total count for pagination
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
@@ -141,6 +162,21 @@ export const MicrobiologySamples = () => {
       endDate
     };
     localStorage.setItem('microbiology_filters', JSON.stringify(filters));
+  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate]);
+
+  // Reset page to 1 when any filter changes (prevents showing empty results when on a high page number)
+  const isFirstFilterRender = useRef(true);
+  useEffect(() => {
+    // Skip reset on initial mount
+    if (isFirstFilterRender.current) {
+      isFirstFilterRender.current = false;
+      return;
+    }
+    // Skip if returning from edit
+    if (isReturningFromEdit) return;
+    
+    setPage(1);
+    localStorage.removeItem('microbiologySamples_page');
   }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate]);
 
   const fetchAvailableYears = async () => {
@@ -340,32 +376,35 @@ export const MicrobiologySamples = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const prevSearch = useRef(globalSearch);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(globalSearch);
-      setPage(1);
-      localStorage.removeItem('microbiologySamples_page');
-    }, 300);
-    return () => clearTimeout(timer);
+    // Only trigger search and page reset if the search term actually changed
+    if (prevSearch.current !== globalSearch) {
+      const timer = setTimeout(() => {
+        setDebouncedSearch(globalSearch);
+        setPage(1);
+        localStorage.removeItem('microbiologySamples_page');
+      }, 300);
+      
+      prevSearch.current = globalSearch;
+      return () => clearTimeout(timer);
+    }
   }, [globalSearch]);
 
-  // Reset page to 1 when any filter changes
+  // Reset page to 1 when any filter changes (skip on first mount)
   useEffect(() => {
-    setPage(1);
-    localStorage.removeItem('microbiologySamples_page');
+    if (isInitialPageSet) {
+      setPage(1);
+      localStorage.removeItem('microbiologySamples_page');
+    }
   }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate]);
 
-  const addToast = (type: 'success' | 'error', message: string) => {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, type, message }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
-  };
-
-  // Track if we've navigated to last page on initial load
-  const [lastPageLoaded, setLastPageLoaded] = useState(false);
+  const clearReturnPageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch total count and navigate to last page on initial load
   useEffect(() => {
+    let mounted = true;
     const fetchTotalAndGoToLastPage = async () => {
       try {
         const countParams: any = { year: selectedYear, department_id: DEPARTMENT_IDS.Microbiology };
@@ -386,53 +425,70 @@ export const MicrobiologySamples = () => {
         if (selectedFumigations.length > 0) countParams.fumigations = selectedFumigations;
         if (startDate) countParams.date_from = startDate;
         if (endDate) countParams.date_to = endDate;
-        
+
         const response = await apiClient.get('/samples/total-count', { params: countParams });
+        
+        if (!mounted) return;
+
         const total = response.data.total || 0;
-        setTotalCount(total); // Store total count for pagination
+        setTotalCount(total);
         
         // FIXED: Only go to last page on INITIAL load (no search/filters active)
         // When user searches or applies filters, stay on page 1 to show results from beginning
-        if (!isInitialPageSet) {
-          const hasActiveSearch = debouncedSearch && debouncedSearch.trim().length > 0;
-          const hasActiveFilters = selectedCompanies.length > 0 || selectedFarms.length > 0 || 
-            selectedFlocks.length > 0 || selectedAges.length > 0 || selectedSampleTypes.length > 0 ||
-            selectedSources.length > 0 || selectedStatuses.length > 0 || selectedHouses.length > 0 ||
-            selectedCycles.length > 0 || selectedDiseases.length > 0 || selectedBatchNos.length > 0 ||
-            selectedFumigations.length > 0 || startDate || endDate;
-          
-          if (!hasActiveSearch && !hasActiveFilters) {
-            // No search/filters: go to last page to show newest records
-            const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-            console.log(`Microbiology: Initial load - going to last page ${lastPage}`);
-            
-            // Clear any stored page to force last page
-            localStorage.removeItem('microbiologySamples_page');
-            
-            // Set page and flags
-            setPage(lastPage);
-            localStorage.setItem('microbiologySamples_page', String(lastPage));
+        const hasActiveSearch = debouncedSearch && debouncedSearch.trim().length > 0;
+        const hasActiveFilters = selectedCompanies.length > 0 || selectedFarms.length > 0 || 
+          selectedFlocks.length > 0 || selectedAges.length > 0 || selectedSampleTypes.length > 0 ||
+          selectedSources.length > 0 || selectedStatuses.length > 0 || selectedHouses.length > 0 ||
+          selectedCycles.length > 0 || selectedDiseases.length > 0 || selectedBatchNos.length > 0 ||
+          selectedFumigations.length > 0 || startDate || endDate;
+        
+        if (!hasActiveSearch && !hasActiveFilters && !isInitialPageSet && !isReturningFromEdit) {
+          // No search/filters and NOT returning from edit: go to last page to show newest records
+          const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+          setPage(lastPage);
+        }
+        
+        // Clear return page flag after using it - delay to handle Strict Mode
+        const timeoutId = setTimeout(() => {
+          if (mounted) {
+            localStorage.removeItem('microbiology_return_page');
           }
-          // If search/filters are active, page stays at 1 (set by debounce/filter effects)
-          
-          setLastPageLoaded(true);
-          setIsInitialPageSet(true);
+        }, 1000);
+        clearReturnPageTimeoutRef.current = timeoutId;
+        
+        setLastPageLoaded(true);
+        if (!isInitialPageSet) {
+            setIsInitialPageSet(true);
         }
       } catch (err) {
+        if (!mounted) return;
         console.error('Failed to fetch total count:', err);
         if (!isInitialPageSet) {
-          setLastPageLoaded(true);
-          setIsInitialPageSet(true);
+            setLastPageLoaded(true);
+            setIsInitialPageSet(true);
         }
       }
     };
     fetchTotalAndGoToLastPage();
+    
+    return () => {
+      mounted = false;
+      if (clearReturnPageTimeoutRef.current) {
+        clearTimeout(clearReturnPageTimeoutRef.current);
+      }
+    };
   }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedBatchNos, selectedFumigations, startDate, endDate]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
     localStorage.setItem('microbiologySamples_page', String(page));
   }, [page]);
+
+  const addToast = (type: 'success' | 'error', message: string) => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  };
 
   useEffect(() => {
     if (lastPageLoaded) {
@@ -550,10 +606,28 @@ export const MicrobiologySamples = () => {
       
       // Check if we're returning from edit/COA screen
       const returnUnitId = localStorage.getItem('microbiology_selected_unit_return');
+      const returnPage = localStorage.getItem('microbiology_return_page');
+      const returnScroll = localStorage.getItem('microbiology_return_scroll');
+      
       if (returnUnitId) {
         targetRow = unitRows.find(row => row.unitId === parseInt(returnUnitId));
-        localStorage.removeItem('microbiology_selected_unit_return'); // Clear after use
-        console.log(`Microbiology: Restored selection for unit ${returnUnitId} after returning from edit/COA`);
+        
+        // Restore page if different from current
+        if (returnPage && parseInt(returnPage) !== page) {
+          setPage(parseInt(returnPage));
+        }
+        
+        // Restore scroll position after a short delay to ensure DOM is ready
+        if (returnScroll) {
+          setTimeout(() => {
+            window.scrollTo(0, parseInt(returnScroll));
+          }, 500);
+        }
+        
+        // Clear storage after use
+        localStorage.removeItem('microbiology_selected_unit_return');
+        localStorage.removeItem('microbiology_return_page'); 
+        localStorage.removeItem('microbiology_return_scroll');
       }
       
       // If not returning or unit not found, try last saved selection
@@ -920,19 +994,21 @@ export const MicrobiologySamples = () => {
 
 
   const handleCOAClick = (unitId: number) => {
-    // Save selected unit ID AND current page for when we return
+    // Save selected unit ID, current page, and scroll position for when we return
     localStorage.setItem('microbiology_selected_unit_return', String(unitId));
     localStorage.setItem('microbiology_return_page', String(page));
-    console.log(`Microbiology: Saving navigation state - unit ${unitId}, page ${page}`);
+    localStorage.setItem('microbiology_return_scroll', String(window.scrollY));
     navigate(`/microbiology-coa/${unitId}`);
   };
 
-  const handleEdit = (sampleId: number) => {
-    // Save selected unit ID AND current page for when we return
-    if (selectedRow) {
-      localStorage.setItem('microbiology_selected_unit_return', String(selectedRow.unitId));
+  const handleEdit = (sampleId: number, unitId?: number) => {
+    // Save selected unit ID, current page, and scroll position for when we return
+    const targetUnitId = unitId || selectedRow?.unitId;
+    
+    if (targetUnitId) {
+      localStorage.setItem('microbiology_selected_unit_return', String(targetUnitId));
       localStorage.setItem('microbiology_return_page', String(page));
-      console.log(`Microbiology: Saving navigation state - unit ${selectedRow.unitId}, page ${page}`);
+      localStorage.setItem('microbiology_return_scroll', String(window.scrollY));
     }
     navigate(`/register-sample?edit=${sampleId}`);
   };
@@ -1989,15 +2065,7 @@ export const MicrobiologySamples = () => {
                   <button
                     onClick={() => {
                       const lastPage = Math.max(1, Math.ceil(totalCount / 100));
-                      console.log(`Microbiology: Going to last page: ${lastPage} (total: ${totalCount}, current page: ${page})`);
-                      console.log(`Microbiology: Calculation - Math.ceil(${totalCount} / 100) = ${Math.ceil(totalCount / 100)}`);
-                      
-                      // Ensure we have a valid page number and total count
-                      if (totalCount > 0 && lastPage > 0) {
-                        setPage(lastPage);
-                      } else {
-                        console.warn(`Microbiology: Invalid last page calculation - totalCount: ${totalCount}, lastPage: ${lastPage}`);
-                      }
+                      setPage(lastPage);
                     }}
                     disabled={page >= Math.ceil(totalCount / 100) || totalCount === 0}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"

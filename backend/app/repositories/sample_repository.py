@@ -93,7 +93,56 @@ class SampleRepository:
                 )
             )
         
-        # Department filtering will be handled at Python level to avoid JOIN conflicts
+        # FIXED: Apply unit-level filters BEFORE pagination using EXISTS subqueries
+        # This ensures filtering works across ALL pages, not just current page
+        
+        # Department filter - MUST be applied at SQL level for correct pagination
+        if department_id is not None:
+            query = query.filter(Sample.units.any(Unit.department_id == department_id))
+        
+        # Age filter at SQL level
+        if age and len(age) > 0:
+            query = query.filter(Sample.units.any(Unit.age.in_(age)))
+        
+        # Sample type filter at SQL level (handles both string and array)
+        if sample_type and len(sample_type) > 0:
+            from sqlalchemy import cast
+            from sqlalchemy.dialects.postgresql import ARRAY
+            # Use OR for each sample type to handle array fields
+            sample_type_conditions = []
+            for st in sample_type:
+                sample_type_conditions.append(Unit.sample_type.contains([st]))
+                sample_type_conditions.append(Unit.sample_type == st)
+            query = query.filter(Sample.units.any(or_(*sample_type_conditions)))
+        
+        # Source filter at SQL level
+        if source and len(source) > 0:
+            source_conditions = []
+            for s in source:
+                source_conditions.append(Unit.source.contains([s]))
+                source_conditions.append(Unit.source == s)
+            query = query.filter(Sample.units.any(or_(*source_conditions)))
+        
+        # House filter at SQL level
+        if house and len(house) > 0:
+            house_conditions = []
+            for h in house:
+                house_conditions.append(Unit.house.contains([h]))
+                house_conditions.append(Unit.house == h)
+            query = query.filter(Sample.units.any(or_(*house_conditions)))
+        
+        # Status filter - check both sample status and unit coa_status
+        if status and len(status) > 0:
+            query = query.filter(
+                or_(
+                    Sample.status.in_(status),
+                    Sample.units.any(Unit.coa_status.in_(status))
+                )
+            )
+        
+        # Cycle filter at sample level
+        if cycle and len(cycle) > 0:
+            query = query.filter(Sample.cycle.in_(cycle))
         
         # FIXED: Order by exact match priority for sample_code only (avoid DISTINCT + ORDER BY conflict)
         if search:
@@ -109,49 +158,14 @@ class SampleRepository:
             # No search: order by ID ASC so page numbers stay stable
             query = query.order_by(Sample.id.asc())
         
-        # SIMPLIFIED: Direct SQL pagination only, handle unit filtering at Python level
+        # Apply pagination AFTER all filters
         samples = query.offset(skip).limit(limit).all()
         
-        # Apply post-processing filters on units if needed
-        if department_id is not None or age or sample_type or source or status or house or cycle or diseases or kit_types or technicians or extraction_methods:
-            # Filter samples based on their units
-            filtered_samples = []
+        # Post-processing: filter which units to return (not which samples)
+        # This only affects the units shown, not which samples are included
+        if department_id is not None:
             for sample in samples:
-                # Check if sample has units matching the filters
-                matching_units = []
-                for unit in sample.units:
-                    # Department filter
-                    if department_id is not None and unit.department_id != department_id:
-                        continue
-                    
-                    # Age filter
-                    if age and (not unit.age or unit.age not in age):
-                        continue
-                    
-                    # Sample type filter
-                    if sample_type and (not unit.sample_type or not any(st in sample_type for st in (unit.sample_type if isinstance(unit.sample_type, list) else [unit.sample_type]))):
-                        continue
-                    
-                    # Source filter
-                    if source and (not unit.source or not any(s in source for s in (unit.source if isinstance(unit.source, list) else [unit.source]))):
-                        continue
-                    
-                    # Status filter
-                    if status and (unit.coa_status not in status if unit.coa_status else sample.status not in status):
-                        continue
-                    
-                    # House filter
-                    if house and (not unit.house or not any(h in house for h in (unit.house if isinstance(unit.house, list) else [unit.house]))):
-                        continue
-                    
-                    matching_units.append(unit)
-                
-                # Include sample if it has matching units
-                if matching_units:
-                    sample.units = matching_units
-                    filtered_samples.append(sample)
-            
-            return filtered_samples
+                sample.units = [u for u in sample.units if u.department_id == department_id]
         
         return samples
     
@@ -203,3 +217,232 @@ class SampleRepository:
         """Get all distinct years that have samples"""
         years = self.db.query(distinct(Sample.year)).order_by(Sample.year.desc()).all()
         return [year[0] for year in years]
+    
+    def get_serology_samples(self, skip: int = 0, limit: int = 100, year: Optional[int] = None,
+                             search: Optional[str] = None, company: Optional[List[str]] = None,
+                             farm: Optional[List[str]] = None, flock: Optional[List[str]] = None,
+                             date_from: Optional[str] = None, date_to: Optional[str] = None,
+                             age: Optional[List[str]] = None, sample_type: Optional[List[str]] = None,
+                             source: Optional[List[str]] = None, status: Optional[List[str]] = None,
+                             house: Optional[List[str]] = None, cycle: Optional[List[str]] = None,
+                             diseases: Optional[List[str]] = None, technicians: Optional[List[str]] = None) -> List[Sample]:
+        """Get Serology samples with department-specific optimized SQL query"""
+        from app.models.serology_data import SerologyData
+        
+        # Serology department ID = 2
+        SEROLOGY_DEPT_ID = 2
+        
+        query = self.db.query(Sample).options(
+            selectinload(Sample.units).selectinload(Unit.department),
+            selectinload(Sample.units).selectinload(Unit.serology_data)
+        )
+        
+        # MUST have Serology units
+        query = query.filter(Sample.units.any(Unit.department_id == SEROLOGY_DEPT_ID))
+        
+        # Year filter
+        if year is not None:
+            query = query.filter(Sample.year == year)
+        
+        # Date range filter
+        if date_from is not None:
+            query = query.filter(Sample.date_received >= date_from)
+        if date_to is not None:
+            query = query.filter(Sample.date_received <= date_to)
+        
+        # Sample-level filters
+        if company and len(company) > 0:
+            query = query.filter(Sample.company.in_(company))
+        if farm and len(farm) > 0:
+            query = query.filter(Sample.farm.in_(farm))
+        if flock and len(flock) > 0:
+            query = query.filter(Sample.flock.in_(flock))
+        if cycle and len(cycle) > 0:
+            query = query.filter(Sample.cycle.in_(cycle))
+        
+        # Unit-level filters using EXISTS (Serology department only)
+        if age and len(age) > 0:
+            query = query.filter(Sample.units.any(
+                (Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.age.in_(age))
+            ))
+        
+        if sample_type and len(sample_type) > 0:
+            st_conditions = []
+            for st in sample_type:
+                st_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.sample_type.contains([st])))
+                st_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.sample_type == st))
+            query = query.filter(Sample.units.any(or_(*st_conditions)))
+        
+        if source and len(source) > 0:
+            src_conditions = []
+            for s in source:
+                src_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.source.contains([s])))
+                src_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.source == s))
+            query = query.filter(Sample.units.any(or_(*src_conditions)))
+        
+        if house and len(house) > 0:
+            h_conditions = []
+            for h in house:
+                h_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.house.contains([h])))
+                h_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.house == h))
+            query = query.filter(Sample.units.any(or_(*h_conditions)))
+        
+        # Status filter
+        if status and len(status) > 0:
+            query = query.filter(
+                or_(
+                    Sample.status.in_(status),
+                    Sample.units.any((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.coa_status.in_(status)))
+                )
+            )
+        
+        # Serology-specific: diseases filter (from serology_data.diseases_list JSON)
+        if diseases and len(diseases) > 0:
+            for disease in diseases:
+                query = query.filter(
+                    Sample.units.any(
+                        (Unit.department_id == SEROLOGY_DEPT_ID) & 
+                        (Unit.serology_data.has(SerologyData.diseases_list.contains([{"disease": disease}])))
+                    )
+                )
+        
+        # Serology-specific: technicians filter (from serology_data.technician_name)
+        if technicians and len(technicians) > 0:
+            query = query.filter(
+                Sample.units.any(
+                    (Unit.department_id == SEROLOGY_DEPT_ID) & 
+                    (Unit.serology_data.has(SerologyData.technician_name.in_(technicians)))
+                )
+            )
+        
+        # Search filter
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Sample.sample_code == search.strip(),
+                    Sample.units.any((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.unit_code == search.strip())),
+                    Sample.sample_code.ilike(f"{search.strip()}%"),
+                    Sample.units.any((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.unit_code.ilike(f"{search.strip()}%"))),
+                    Sample.sample_code.ilike(search_term),
+                    Sample.units.any((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.unit_code.ilike(search_term))),
+                    Sample.company.ilike(search_term),
+                    Sample.farm.ilike(search_term),
+                    Sample.flock.ilike(search_term),
+                    Sample.cycle.ilike(search_term),
+                )
+            )
+        
+        # Order and paginate
+        query = query.order_by(Sample.id.asc())
+        samples = query.offset(skip).limit(limit).all()
+        
+        # Post-process: keep only Serology units
+        for sample in samples:
+            sample.units = [u for u in sample.units if u.department_id == SEROLOGY_DEPT_ID]
+        
+        return samples
+    
+    def count_serology_samples(self, year: Optional[int] = None, search: Optional[str] = None,
+                               company: Optional[List[str]] = None, farm: Optional[List[str]] = None,
+                               flock: Optional[List[str]] = None, date_from: Optional[str] = None,
+                               date_to: Optional[str] = None, age: Optional[List[str]] = None,
+                               sample_type: Optional[List[str]] = None, source: Optional[List[str]] = None,
+                               status: Optional[List[str]] = None, house: Optional[List[str]] = None,
+                               cycle: Optional[List[str]] = None, diseases: Optional[List[str]] = None,
+                               technicians: Optional[List[str]] = None) -> int:
+        """Count Serology samples with same filters as get_serology_samples"""
+        from app.models.serology_data import SerologyData
+        
+        SEROLOGY_DEPT_ID = 2
+        
+        query = self.db.query(func.count(distinct(Sample.id)))
+        
+        # MUST have Serology units
+        query = query.filter(Sample.units.any(Unit.department_id == SEROLOGY_DEPT_ID))
+        
+        # Apply same filters as get_serology_samples
+        if year is not None:
+            query = query.filter(Sample.year == year)
+        if date_from is not None:
+            query = query.filter(Sample.date_received >= date_from)
+        if date_to is not None:
+            query = query.filter(Sample.date_received <= date_to)
+        if company and len(company) > 0:
+            query = query.filter(Sample.company.in_(company))
+        if farm and len(farm) > 0:
+            query = query.filter(Sample.farm.in_(farm))
+        if flock and len(flock) > 0:
+            query = query.filter(Sample.flock.in_(flock))
+        if cycle and len(cycle) > 0:
+            query = query.filter(Sample.cycle.in_(cycle))
+        
+        if age and len(age) > 0:
+            query = query.filter(Sample.units.any(
+                (Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.age.in_(age))
+            ))
+        
+        if sample_type and len(sample_type) > 0:
+            st_conditions = []
+            for st in sample_type:
+                st_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.sample_type.contains([st])))
+                st_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.sample_type == st))
+            query = query.filter(Sample.units.any(or_(*st_conditions)))
+        
+        if source and len(source) > 0:
+            src_conditions = []
+            for s in source:
+                src_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.source.contains([s])))
+                src_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.source == s))
+            query = query.filter(Sample.units.any(or_(*src_conditions)))
+        
+        if house and len(house) > 0:
+            h_conditions = []
+            for h in house:
+                h_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.house.contains([h])))
+                h_conditions.append((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.house == h))
+            query = query.filter(Sample.units.any(or_(*h_conditions)))
+        
+        if status and len(status) > 0:
+            query = query.filter(
+                or_(
+                    Sample.status.in_(status),
+                    Sample.units.any((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.coa_status.in_(status)))
+                )
+            )
+        
+        if diseases and len(diseases) > 0:
+            for disease in diseases:
+                query = query.filter(
+                    Sample.units.any(
+                        (Unit.department_id == SEROLOGY_DEPT_ID) & 
+                        (Unit.serology_data.has(SerologyData.diseases_list.contains([{"disease": disease}])))
+                    )
+                )
+        
+        if technicians and len(technicians) > 0:
+            query = query.filter(
+                Sample.units.any(
+                    (Unit.department_id == SEROLOGY_DEPT_ID) & 
+                    (Unit.serology_data.has(SerologyData.technician_name.in_(technicians)))
+                )
+            )
+        
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Sample.sample_code == search.strip(),
+                    Sample.units.any((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.unit_code == search.strip())),
+                    Sample.sample_code.ilike(f"{search.strip()}%"),
+                    Sample.units.any((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.unit_code.ilike(f"{search.strip()}%"))),
+                    Sample.sample_code.ilike(search_term),
+                    Sample.units.any((Unit.department_id == SEROLOGY_DEPT_ID) & (Unit.unit_code.ilike(search_term))),
+                    Sample.company.ilike(search_term),
+                    Sample.farm.ilike(search_term),
+                    Sample.flock.ilike(search_term),
+                    Sample.cycle.ilike(search_term),
+                )
+            )
+        
+        return query.scalar() or 0

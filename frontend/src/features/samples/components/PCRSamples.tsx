@@ -62,7 +62,26 @@ export const PCRSamples = () => {
   const [selectedRow, setSelectedRow] = useState<UnitRow | null>(null);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1); // Will be set to last page on initial load
+  // Check if returning from edit - restore saved page
+  const [page, _setPage] = useState(() => {
+    const returnPage = localStorage.getItem('pcr_return_page');
+    if (returnPage) {
+      return parseInt(returnPage);
+    }
+    return 1;
+  });
+
+  const setPage = (value: number | ((prev: number) => number)) => {
+    // @ts-ignore
+    _setPage((prev) => {
+      const newValue = typeof value === 'function' ? value(prev) : value;
+      return newValue;
+    });
+  };
+
+  const [isReturningFromEdit] = useState(() => {
+    return !!localStorage.getItem('pcr_return_page');
+  });
   const [isInitialPageSet, setIsInitialPageSet] = useState(false); // Track if initial page calculation is done
   const [totalCount, setTotalCount] = useState(0);
   const [lastPageLoaded, setLastPageLoaded] = useState(false);
@@ -129,6 +148,21 @@ export const PCRSamples = () => {
       endDate
     };
     localStorage.setItem('pcr_filters', JSON.stringify(filters));
+  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate]);
+
+  // Reset page to 1 when any filter changes (prevents showing empty results when on a high page number)
+  const isFirstFilterRender = useRef(true);
+  useEffect(() => {
+    // Skip reset on initial mount
+    if (isFirstFilterRender.current) {
+      isFirstFilterRender.current = false;
+      return;
+    }
+    // Skip if returning from edit
+    if (isReturningFromEdit) return;
+    
+    setPage(1);
+    localStorage.removeItem('pcrSamples_page');
   }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate]);
 
   const fetchAvailableYears = async () => {
@@ -292,23 +326,36 @@ export const PCRSamples = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const prevSearch = useRef(globalSearch);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(globalSearch);
-      setPage(1);
-      localStorage.removeItem('pcrSamples_page');
-    }, 300);
-    return () => clearTimeout(timer);
+    // Only trigger search and page reset if the search term actually changed
+    if (prevSearch.current !== globalSearch) {
+      const timer = setTimeout(() => {
+        setDebouncedSearch(globalSearch);
+        setPage(1);
+        localStorage.removeItem('pcrSamples_page');
+      }, 300);
+      
+      prevSearch.current = globalSearch;
+      return () => clearTimeout(timer);
+    }
   }, [globalSearch]);
 
-  // Reset page to 1 when any filter changes
   useEffect(() => {
-    setPage(1);
-    localStorage.removeItem('pcrSamples_page');
-  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate]);
+    // Skip page reset if returning from edit or on initial mount
+    if (isReturningFromEdit || !isInitialPageSet) {
+      setDebouncedSearch(globalSearch);
+      return;
+    }
+    // No need to reset page here, handled by prevSearch useEffect
+  }, [globalSearch, isReturningFromEdit, isInitialPageSet]);
+
+  const clearReturnPageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch total count and navigate to last page on initial load
   useEffect(() => {
+    let mounted = true;
     const fetchTotalAndGoToLastPage = async () => {
       try {
         // Build params with ALL current filters for accurate count (matching fetchSamples)
@@ -336,6 +383,9 @@ export const PCRSamples = () => {
         if (endDate) countParams.date_to = endDate;
 
         const response = await apiClient.get('/samples/total-count', { params: countParams });
+        
+        if (!mounted) return;
+
         const total = response.data.total || 0;
         setTotalCount(total);
         
@@ -348,20 +398,26 @@ export const PCRSamples = () => {
           selectedCycles.length > 0 || selectedDiseases.length > 0 || selectedKitTypes.length > 0 ||
           selectedTechnicians.length > 0 || selectedExtractionMethods.length > 0 || startDate || endDate;
         
-        if (!hasActiveSearch && !hasActiveFilters && !isInitialPageSet) {
-          // No search/filters: go to last page to show newest records
+        if (!hasActiveSearch && !hasActiveFilters && !isInitialPageSet && !isReturningFromEdit) {
+          // No search/filters and NOT returning from edit: go to last page to show newest records
           const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-          console.log(`PCR: Initial load - going to last page ${lastPage}`);
           setPage(lastPage);
         }
-        // If search/filters are active, page stays at 1 (set by debounce/filter effects)
+        // Clear return page flag after using it - delay to handle Strict Mode
+        const timeoutId = setTimeout(() => {
+          if (mounted) {
+            localStorage.removeItem('pcr_return_page');
+          }
+        }, 1000);
+        clearReturnPageTimeoutRef.current = timeoutId;
+
         setLastPageLoaded(true);
         
         if (!isInitialPageSet) {
           setIsInitialPageSet(true);
         }
       } catch (err) {
-        console.error('Failed to fetch total count:', err);
+        if (!mounted) return;
         if (!isInitialPageSet) {
           setLastPageLoaded(true);
           setIsInitialPageSet(true);
@@ -369,7 +425,14 @@ export const PCRSamples = () => {
       }
     };
     fetchTotalAndGoToLastPage();
-  }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedKitTypes, selectedTechnicians, selectedExtractionMethods, startDate, endDate]);
+
+    return () => {
+      mounted = false;
+      if (clearReturnPageTimeoutRef.current) {
+        clearTimeout(clearReturnPageTimeoutRef.current);
+      }
+    };
+  }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, startDate, endDate]);
 
   // Save page to localStorage when it changes
   useEffect(() => {
@@ -429,7 +492,6 @@ export const PCRSamples = () => {
   useEffect(() => {
     const handleFocus = () => {
       if (lastPageLoaded) {
-        console.log('PCR: Window focus detected, refreshing data...');
         fetchSamples();
       }
     };
@@ -507,10 +569,28 @@ export const PCRSamples = () => {
       
       // Check if we're returning from edit/COA screen
       const returnUnitId = localStorage.getItem('pcr_selected_unit_return');
+      const returnPage = localStorage.getItem('pcr_return_page');
+      const returnScroll = localStorage.getItem('pcr_return_scroll');
+      
       if (returnUnitId) {
         targetRow = unitRows.find(row => row.unitId === parseInt(returnUnitId));
-        localStorage.removeItem('pcr_selected_unit_return'); // Clear after use
-        console.log(`PCR: Restored selection for unit ${returnUnitId} after returning from edit/COA`);
+        
+        // Restore page if different from current
+        if (returnPage && parseInt(returnPage) !== page) {
+          setPage(parseInt(returnPage));
+        }
+        
+        // Restore scroll position after a short delay to ensure DOM is ready
+        if (returnScroll) {
+          setTimeout(() => {
+            window.scrollTo(0, parseInt(returnScroll));
+          }, 1000);
+        }
+        
+        // Clear storage after use
+        localStorage.removeItem('pcr_selected_unit_return');
+        localStorage.removeItem('pcr_return_page'); 
+        localStorage.removeItem('pcr_return_scroll');
       }
       
       // If not returning or unit not found, try last saved selection
@@ -674,7 +754,8 @@ export const PCRSamples = () => {
             const diseases = unit.pcr_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
             const kitTypesFromDiseases = unit.pcr_data?.diseases_list
               ?.map((d: any) => d.kit_type)
-              .filter((kt: string) => kt && kt.trim() !== '') || [];
+              .filter((kt: string) => kt && kt.trim() !== '')
+              || [];
             const uniqueKitTypes = [...new Set(kitTypesFromDiseases)];
             const kitType = uniqueKitTypes.length > 0 
               ? uniqueKitTypes.join(', ') 
@@ -792,7 +873,8 @@ export const PCRSamples = () => {
             const diseases = unit.pcr_data?.diseases_list?.map((d: any) => d.disease).join(', ') || '-';
             const kitTypesFromDiseases = unit.pcr_data?.diseases_list
               ?.map((d: any) => d.kit_type)
-              .filter((kt: string) => kt && kt.trim() !== '') || [];
+              .filter((kt: string) => kt && kt.trim() !== '')
+              || [];
             const uniqueKitTypes = [...new Set(kitTypesFromDiseases)];
             const kitType = uniqueKitTypes.length > 0 
               ? uniqueKitTypes.join(', ') 
@@ -880,20 +962,22 @@ export const PCRSamples = () => {
   };
 
   const handleCOAClick = (unitId: number) => {
-    // Save selected unit ID AND current page for when we return
+    // Save selected unit ID, current page, and scroll position for when we return
     localStorage.setItem('pcr_selected_unit_return', String(unitId));
     localStorage.setItem('pcr_return_page', String(page));
-    console.log(`PCR: Saving navigation state - unit ${unitId}, page ${page}`);
+    localStorage.setItem('pcr_return_scroll', String(window.scrollY));
     // Navigate to PCR COA screen
     navigate(`/pcr-coa/${unitId}`);
   };
 
-  const handleEdit = (sampleId: number) => {
-    // Save selected unit ID AND current page for when we return
-    if (selectedRow) {
-      localStorage.setItem('pcr_selected_unit_return', String(selectedRow.unitId));
+  const handleEdit = (sampleId: number, unitId?: number) => {
+    // Save selected unit ID, current page, and scroll position for when we return
+    const targetUnitId = unitId || selectedRow?.unitId;
+    
+    if (targetUnitId) {
+      localStorage.setItem('pcr_selected_unit_return', String(targetUnitId));
       localStorage.setItem('pcr_return_page', String(page));
-      console.log(`PCR: Saving navigation state - unit ${selectedRow.unitId}, page ${page}`);
+      localStorage.setItem('pcr_return_scroll', String(window.scrollY));
     }
     navigate(`/register-sample?edit=${sampleId}`);
   };
@@ -973,7 +1057,7 @@ export const PCRSamples = () => {
               />
               {loading && (
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  <svg className="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
@@ -1006,7 +1090,7 @@ export const PCRSamples = () => {
               >
                 {isExporting ? (
                   <>
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
@@ -1014,10 +1098,10 @@ export const PCRSamples = () => {
                 ) : (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                     </svg>
                     <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"></path>
                     </svg>
                   </>
                 )}
@@ -1031,7 +1115,7 @@ export const PCRSamples = () => {
                       className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm"
                     >
                       <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                       </svg>
                       <span className="font-medium">Export to Excel</span>
                     </button>
@@ -1040,7 +1124,7 @@ export const PCRSamples = () => {
                       className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm"
                     >
                       <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
                       </svg>
                       <span className="font-medium">Export to CSV</span>
                     </button>
@@ -1052,12 +1136,13 @@ export const PCRSamples = () => {
               )}
             </div>
 
+            {/* Filter Toggle Button */}
             <button
               onClick={() => setFilterPanelOpen(!filterPanelOpen)}
               className="flex items-center gap-1 p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative"
               title="Filters"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
               {(selectedCompanies.length + selectedFarms.length + selectedFlocks.length +
@@ -1065,15 +1150,15 @@ export const PCRSamples = () => {
                 selectedStatuses.length + selectedHouses.length + selectedCycles.length +
                 selectedDiseases.length + selectedKitTypes.length + selectedTechnicians.length +
                 selectedExtractionMethods.length + (startDate ? 1 : 0) + (endDate ? 1 : 0)) > 0 && (
-                  <span className="px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 rounded-full">
-                    {selectedCompanies.length + selectedFarms.length + selectedFlocks.length +
-                      selectedAges.length + selectedSampleTypes.length + selectedSources.length +
-                      selectedStatuses.length + selectedHouses.length + selectedCycles.length +
-                      selectedDiseases.length + selectedKitTypes.length + selectedTechnicians.length +
-                      selectedExtractionMethods.length + (startDate ? 1 : 0) + (endDate ? 1 : 0)}
-                  </span>
-                )}
-              <svg className={`w-4 h-4 transition-transform ${filterPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                  {selectedCompanies.length + selectedFarms.length + selectedFlocks.length +
+                    selectedAges.length + selectedSampleTypes.length + selectedSources.length +
+                    selectedStatuses.length + selectedHouses.length + selectedCycles.length +
+                    selectedDiseases.length + selectedKitTypes.length + selectedTechnicians.length +
+                    selectedExtractionMethods.length + (startDate ? 1 : 0) + (endDate ? 1 : 0)}
+                </span>
+              )}
+              <svg className={`w-3 h-3 transition-transform ${filterPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
@@ -1860,8 +1945,8 @@ export const PCRSamples = () => {
         <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl flex items-center justify-between shadow-sm animate-fade-in">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
               </svg>
             </div>
             <div>
@@ -1871,7 +1956,7 @@ export const PCRSamples = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => hasWriteAccess && handleEdit(selectedRow.sampleId)}
+              onClick={() => hasWriteAccess && handleEdit(selectedRow.sampleId, selectedRow.unitId)}
               disabled={!hasWriteAccess}
               className={`group px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-all duration-200 transform hover:scale-105 hover:shadow-md active:scale-95 ${hasWriteAccess ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
               title={!hasWriteAccess ? 'No write permission' : 'Edit sample'}
@@ -2178,15 +2263,7 @@ export const PCRSamples = () => {
                   <button
                     onClick={() => {
                       const lastPage = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-                      console.log(`PCR: Going to last page: ${lastPage} (total: ${totalCount}, current page: ${page})`);
-                      console.log(`PCR: Calculation - Math.ceil(${totalCount} / ${PAGE_SIZE}) = ${Math.ceil(totalCount / PAGE_SIZE)}`);
-                      
-                      // Ensure we have a valid page number and total count
-                      if (totalCount > 0 && lastPage > 0) {
-                        setPage(lastPage);
-                      } else {
-                        console.warn(`PCR: Invalid last page calculation - totalCount: ${totalCount}, lastPage: ${lastPage}`);
-                      }
+                      setPage(lastPage);
                     }}
                     disabled={page >= Math.ceil(totalCount / PAGE_SIZE) || totalCount === 0}
                     className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"

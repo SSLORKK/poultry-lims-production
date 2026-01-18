@@ -78,6 +78,8 @@ class PCRDiseaseCount(BaseModel):
 class MicrobiologyDiseaseCount(BaseModel):
     disease_name: str
     test_count: int
+    positive_count: int
+    negative_count: int
     sample_count: int = 0
     sub_sample_count: int = 0
 
@@ -249,7 +251,7 @@ def get_comprehensive_reports(
             'above_limit': 0,
             'locations': []
         }),
-        'mic_diseases': defaultdict(lambda: {'count': 0, 'sample_ids': set(), 'sub_sample_count': 0}),  # Track microbiology diseases per company
+        'mic_diseases': defaultdict(lambda: {'count': 0, 'positive_count': 0, 'negative_count': 0, 'sample_ids': set(), 'sub_sample_count': 0}),  # Track microbiology diseases per company
         'serology_diseases': defaultdict(lambda: {
             'kit_type': '',
             'count': 0,
@@ -263,6 +265,15 @@ def get_comprehensive_reports(
         'positive_count': 0,
         'negative_count': 0,
         'wells_count': 0
+    })
+    
+    # Microbiology disease tracking with positive/negative counts
+    microbiology_disease_data = defaultdict(lambda: {
+        'test_count': 0,
+        'positive_count': 0,
+        'negative_count': 0,
+        'sample_ids': set(),
+        'sub_sample_count': 0
     })
     
     total_positive = 0
@@ -449,6 +460,9 @@ def get_comprehensive_reports(
             hidden_indexes = unit.microbiology_coa.hidden_indexes if unit.microbiology_coa else {}
             
             if diseases_list:
+                # Get test results for positive/negative counting
+                test_results = unit.microbiology_coa.test_results if unit.microbiology_coa else {}
+                
                 # Calculate tests = sum of visible indexes per disease (excluding hidden indexes)
                 unit_test_count = 0
                 for disease in diseases_list:
@@ -460,13 +474,44 @@ def get_comprehensive_reports(
                         visible_count = max(0, visible_count)
                         unit_test_count += visible_count
                         
+                        # ENHANCED: Count positive/negative results for microbiology
+                        disease_positive = 0
+                        disease_negative = 0
+                        
+                        # Parse test results for this disease
+                        if test_results and disease in test_results:
+                            disease_results = test_results[disease]
+                            if isinstance(disease_results, dict):
+                                for index, result in disease_results.items():
+                                    # Skip hidden indexes
+                                    if disease_hidden and index in disease_hidden:
+                                        continue
+                                    
+                                    if result:
+                                        result_lower = result.lower().strip()
+                                        # LOGIC: negative + within_limit = negative_count
+                                        if result_lower in ['negative', 'neg', 'within limit', 'within_limit', '-']:
+                                            disease_negative += 1
+                                        # LOGIC: positive + over_limit = positive_count  
+                                        elif result_lower in ['positive', 'pos', 'over limit', 'over_limit', '+']:
+                                            disease_positive += 1
+                        
                         # Group by disease (no kit type for micro)
                         disease_kit_key = f"{disease}|||"
                         # For microbiology: each disease = visible indexes count
                         disease_kit_data[disease_kit_key]['test_count'] += visible_count
                         
+                        # Track microbiology disease data with positive/negative counts
+                        microbiology_disease_data[disease]['test_count'] += visible_count
+                        microbiology_disease_data[disease]['positive_count'] += disease_positive
+                        microbiology_disease_data[disease]['negative_count'] += disease_negative
+                        microbiology_disease_data[disease]['sample_ids'].add(unit.sample.id)
+                        microbiology_disease_data[disease]['sub_sample_count'] += 1
+                        
                         # Track per-company microbiology disease counts
                         company_data[company]['mic_diseases'][disease]['count'] += visible_count
+                        company_data[company]['mic_diseases'][disease]['positive_count'] += disease_positive
+                        company_data[company]['mic_diseases'][disease]['negative_count'] += disease_negative
                         company_data[company]['mic_diseases'][disease]['sample_ids'].add(sample_id)
                         # Track sub-samples for microbiology (samples_number)
                         company_data[company]['mic_diseases'][disease]['sub_sample_count'] += unit.samples_number or 0
@@ -618,17 +663,19 @@ def get_comprehensive_reports(
             ]
             serology_diseases.sort(key=lambda x: x.test_count, reverse=True)
         
-        # Prepare Microbiology diseases per company
+        # Prepare Microbiology diseases per company (use global microbiology_disease_data)
         microbiology_diseases = None
-        if data['mic_diseases']:
+        if microbiology_disease_data:
             microbiology_diseases = [
                 MicrobiologyDiseaseCount(
                     disease_name=disease,
-                    test_count=disease_data['count'],
+                    test_count=disease_data['test_count'],
+                    positive_count=disease_data['positive_count'],
+                    negative_count=disease_data['negative_count'],
                     sample_count=len(disease_data.get('sample_ids', set())),
                     sub_sample_count=disease_data.get('sub_sample_count', 0)
                 )
-                for disease, disease_data in data['mic_diseases'].items()
+                for disease, disease_data in microbiology_disease_data.items()
             ]
             microbiology_diseases.sort(key=lambda x: x.test_count, reverse=True)
         
@@ -813,8 +860,8 @@ def export_reports_excel(
                     disease.sample_count,
                     disease.sub_sample_count,
                     disease.test_count,
-                    "",
-                    ""
+                    disease.positive_count,
+                    disease.negative_count
                 ])
         
         # Serology Diseases

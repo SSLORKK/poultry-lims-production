@@ -18,6 +18,15 @@ interface MicrobiologySampleType {
   percentage: number;
 }
 
+interface MicrobiologyDiseaseCount {
+  disease_name: string;
+  test_count: number;
+  positive_count: number;
+  negative_count: number;
+  sample_count: number;
+  sub_sample_count: number;
+}
+
 interface SerologyDiseaseCount {
   disease_name: string;
   kit_type: string;
@@ -1106,6 +1115,8 @@ export default function Reports() {
                           tests: d.test_count,
                           samples: d.sample_count || 0,
                           subSamples: d.sub_sample_count || 0,
+                          positive: d.positive_count,
+                          negative: d.negative_count,
                           deptColor: 'purple'
                         });
                       });

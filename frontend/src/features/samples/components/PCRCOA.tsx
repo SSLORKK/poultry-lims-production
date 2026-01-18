@@ -490,7 +490,19 @@ export function PCRCOA() {
           unit_id: parseInt(unitId!),
           ...basePayload,
         };
-        await saveApiClient.post('/pcr-coa/', createPayload);
+        try {
+          await saveApiClient.post('/pcr-coa/', createPayload);
+        } catch (createErr: any) {
+          // If COA already exists, fetch it and retry with PUT
+          if (createErr?.response?.status === 400 && 
+              createErr?.response?.data?.detail?.includes('already exists')) {
+            const existingCoa = await saveApiClient.get(`/pcr-coa/${unitId}/`);
+            setCoaData(existingCoa.data);
+            await saveApiClient.put(`/pcr-coa/${unitId}/`, basePayload);
+          } else {
+            throw createErr;
+          }
+        }
       }
 
       // Save updates coa_status to 'need_approval' - 'completed' is set by Approve button

@@ -97,6 +97,22 @@ export const SerologySamples = () => {
     };
     localStorage.setItem('serology_filters', JSON.stringify(filters));
   }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedTechnicians, startDate, endDate]);
+
+  // Reset page to 1 when any filter changes (prevents showing empty results when on a high page number)
+  const isFirstFilterRender = useRef(true);
+  useEffect(() => {
+    // Skip reset on initial mount
+    if (isFirstFilterRender.current) {
+      isFirstFilterRender.current = false;
+      return;
+    }
+    // Skip if returning from edit
+    if (isReturningFromEdit) return;
+    
+    setPage(1);
+    localStorage.removeItem('serologySamples_page');
+  }, [selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedTechnicians, startDate, endDate]);
+
   const [noteDialog, setNoteDialog] = useState<{ open: boolean; note: string }>({
     open: false,
     note: '',
@@ -116,7 +132,15 @@ export const SerologySamples = () => {
   const [selectedRow, setSelectedRow] = useState<UnitRow | null>(null);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
+  // Check if returning from edit - restore saved page
+  const [page, setPage] = useState(() => {
+    const returnPage = localStorage.getItem('serology_return_page');
+    return returnPage ? parseInt(returnPage) : 1;
+  });
+
+  const [isReturningFromEdit] = useState(() => {
+    return !!localStorage.getItem('serology_return_page');
+  });
   const [isInitialPageSet, setIsInitialPageSet] = useState(false); // Track if initial page calculation is done
   const [totalCount, setTotalCount] = useState(0);
   const [toasts, setToasts] = useState<Array<{ id: number; type: 'success' | 'error'; message: string }>>([]);
@@ -162,7 +186,6 @@ export const SerologySamples = () => {
       // Build filter params for backend
       const params: Record<string, any> = {
         year: selectedYear,
-        department_id: DEPARTMENT_IDS.Serology, // department_id 2 = Serology
         skip: (page - 1) * PAGE_SIZE,
         limit: PAGE_SIZE
       };
@@ -213,7 +236,8 @@ export const SerologySamples = () => {
         params.date_to = endDate;
       }
 
-      const response = await apiClient.get('/samples/', { params });
+      // Use Serology-specific endpoint with optimized SQL
+      const response = await apiClient.get('/samples/serology', { params });
       setSamples(response.data);
       setError(null);
     } catch (err: any) {
@@ -259,6 +283,57 @@ export const SerologySamples = () => {
     fetchEditedEntities();
   }, [samples]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target as Node)) {
+        setExportDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter options from backend
+  const [filterOptions, setFilterOptions] = useState<{
+    companies: string[];
+    farms: string[];
+    flocks: string[];
+    cycles: string[];
+    statuses: string[];
+    ages: string[];
+    sample_types: string[];
+    sources: string[];
+    houses: string[];
+    diseases: string[];
+    technicians: string[];
+  }>({
+    companies: [],
+    farms: [],
+    flocks: [],
+    cycles: [],
+    statuses: [],
+    ages: [],
+    sample_types: [],
+    sources: [],
+    houses: [],
+    diseases: [],
+    technicians: [],
+  });
+
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        const response = await apiClient.get('/samples/filter-options', {
+          params: { year: selectedYear, department_id: DEPARTMENT_IDS.Serology }
+        });
+        setFilterOptions(response.data);
+      } catch (err) {
+        console.error('Failed to fetch filter options:', err);
+      }
+    };
+    fetchFilterOptions();
+  }, [selectedYear]);
+
   // Function to show combined edit history for sample and all its units across all departments
   const showEditHistory = async (sampleId: number, _unitId: number, sampleCode: string) => {
     try {
@@ -276,12 +351,19 @@ export const SerologySamples = () => {
     }
   };
 
+  const prevSearch = useRef(globalSearch);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(globalSearch);
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
+    // Only trigger search and page reset if the search term actually changed
+    if (prevSearch.current !== globalSearch) {
+      const timer = setTimeout(() => {
+        setDebouncedSearch(globalSearch);
+        setPage(1);
+      }, 300);
+      
+      prevSearch.current = globalSearch;
+      return () => clearTimeout(timer);
+    }
   }, [globalSearch]);
 
   const addToast = (type: 'success' | 'error', message: string) => {
@@ -296,12 +378,16 @@ export const SerologySamples = () => {
     if (lastPageLoaded) {
       fetchSamples();
     }
-  }, [selectedYear, page, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, startDate, endDate, lastPageLoaded]);
+  }, [selectedYear, page, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedTechnicians, startDate, endDate, lastPageLoaded]);
+
+  const clearReturnPageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     const fetchTotalCount = async () => {
       try {
-        const countParams: Record<string, any> = { year: selectedYear, department_id: DEPARTMENT_IDS.Serology };
+        // Use Serology-specific count endpoint
+        const countParams: Record<string, any> = { year: selectedYear };
         
         // Include ALL active filters in total count (same as fetchSamples)
         if (debouncedSearch) countParams.search = debouncedSearch;
@@ -319,12 +405,15 @@ export const SerologySamples = () => {
         if (startDate) countParams.date_from = startDate;
         if (endDate) countParams.date_to = endDate;
         
-        const response = await apiClient.get('/samples/total-count', { params: countParams });
+        const response = await apiClient.get('/samples/serology/count', { params: countParams });
+        
+        if (!mounted) return;
+
         const total = response.data.total || 0;
         setTotalCount(total);
         
-        // FIXED: Only go to last page on INITIAL load (no search/filters active)
-        // When user searches or applies filters, stay on page 1 to show results from beginning
+        // Only go to last page on INITIAL load AND not returning from edit
+        // AND ensuring we actually have data to go to
         const hasActiveSearch = debouncedSearch && debouncedSearch.trim().length > 0;
         const hasActiveFilters = selectedCompanies.length > 0 || selectedFarms.length > 0 || 
           selectedFlocks.length > 0 || selectedAges.length > 0 || selectedSampleTypes.length > 0 ||
@@ -332,19 +421,29 @@ export const SerologySamples = () => {
           selectedCycles.length > 0 || selectedDiseases.length > 0 || selectedTechnicians.length > 0 || 
           startDate || endDate;
         
-        if (!hasActiveSearch && !hasActiveFilters && !isInitialPageSet) {
-          // No search/filters: go to last page to show newest records
+        if (!hasActiveSearch && !hasActiveFilters && !isInitialPageSet && !isReturningFromEdit) {
           const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-          console.log(`Serology: Initial load - going to last page ${lastPage}`);
           setPage(lastPage);
         }
-        // If search/filters are active, page stays at 1 (set by debounce/filter effects)
+        
+        // If returning from edit, we've already set the page in useState initializer
+        // We just need to clear the flag after a short delay
+        if (isReturningFromEdit) {
+          const timeoutId = setTimeout(() => {
+            if (mounted) {
+              localStorage.removeItem('serology_return_page');
+            }
+          }, 2000); // 2s delay to ensure all renders settle
+          clearReturnPageTimeoutRef.current = timeoutId;
+        }
+        
         setLastPageLoaded(true);
         
         if (!isInitialPageSet) {
           setIsInitialPageSet(true);
         }
       } catch (err) {
+        if (!mounted) return;
         console.error('Failed to fetch total count:', err);
         if (!isInitialPageSet) {
           setLastPageLoaded(true);
@@ -353,7 +452,15 @@ export const SerologySamples = () => {
       }
     };
     fetchTotalCount();
-  }, [selectedYear, isInitialPageSet, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedTechnicians, startDate, endDate]);
+    
+    // Cleanup: cancel timeout and set mounted to false
+    return () => {
+      mounted = false;
+      if (clearReturnPageTimeoutRef.current) {
+        clearTimeout(clearReturnPageTimeoutRef.current);
+      }
+    };
+  }, [selectedYear, isInitialPageSet, isReturningFromEdit, debouncedSearch, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, selectedSources, selectedStatuses, selectedHouses, selectedCycles, selectedDiseases, selectedTechnicians, startDate, endDate]);
 
   useEffect(() => {
     localStorage.setItem('serologySamples_page', String(page));
@@ -365,7 +472,6 @@ export const SerologySamples = () => {
       try {
         const params: Record<string, any> = {
           year: selectedYear,
-          department_id: DEPARTMENT_IDS.Serology,
           skip: (page - 1) * PAGE_SIZE,
           limit: PAGE_SIZE
         };
@@ -384,7 +490,7 @@ export const SerologySamples = () => {
         if (startDate) params.date_from = startDate;
         if (endDate) params.date_to = endDate;
 
-        const response = await apiClient.get('/samples/', { params });
+        const response = await apiClient.get('/samples/serology', { params });
         setSamples(response.data);
       } catch (err) {
         console.error('Auto-refresh failed:', err);
@@ -460,10 +566,21 @@ export const SerologySamples = () => {
       
       // Check if we're returning from edit/COA screen
       const returnUnitId = localStorage.getItem('serology_selected_unit_return');
+      const returnScroll = localStorage.getItem('serology_return_scroll');
+      
       if (returnUnitId) {
         targetRow = unitRows.find(row => row.unitId === parseInt(returnUnitId));
-        localStorage.removeItem('serology_selected_unit_return'); // Clear after use
-        console.log(`Serology: Restored selection for unit ${returnUnitId} after returning from edit/COA`);
+        if (targetRow) {
+          localStorage.removeItem('serology_selected_unit_return');
+          
+          // Restore scroll position after a short delay to ensure DOM is ready
+          if (returnScroll) {
+            setTimeout(() => {
+              window.scrollTo(0, parseInt(returnScroll));
+            }, 500);
+            localStorage.removeItem('serology_return_scroll');
+          }
+        }
       }
       
       // If not returning or unit not found, try last saved selection
@@ -485,60 +602,7 @@ export const SerologySamples = () => {
     }
   }, [unitRows, lastPageLoaded]);
 
-  // Close export dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target as Node)) {
-        setExportDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Filter options from backend
-  const [filterOptions, setFilterOptions] = useState<{
-    companies: string[];
-    farms: string[];
-    flocks: string[];
-    cycles: string[];
-    statuses: string[];
-    ages: string[];
-    sample_types: string[];
-    sources: string[];
-    houses: string[];
-    diseases: string[];
-    technicians: string[];
-  }>({
-    companies: [],
-    farms: [],
-    flocks: [],
-    cycles: [],
-    statuses: [],
-    ages: [],
-    sample_types: [],
-    sources: [],
-    houses: [],
-    diseases: [],
-    technicians: [],
-  });
-
-  // Fetch filter options from backend when year changes
-  useEffect(() => {
-    const fetchFilterOptions = async () => {
-      try {
-        const response = await apiClient.get('/samples/filter-options', {
-          params: { year: selectedYear, department_id: DEPARTMENT_IDS.Serology }
-        });
-        setFilterOptions(response.data);
-      } catch (err) {
-        console.error('Failed to fetch filter options:', err);
-      }
-    };
-    fetchFilterOptions();
-  }, [selectedYear]);
-
-  // Use backend filter options
+  // Derive unique filter values from filterOptions
   const uniqueCompanies = filterOptions.companies;
   const uniqueFarms = filterOptions.farms;
   const uniqueFlocks = filterOptions.flocks;
@@ -550,18 +614,11 @@ export const SerologySamples = () => {
     : ['in_progress', 'completed', 'need_approval', 'postponed', 'hold'];
   const uniqueHouses = filterOptions.houses;
   const uniqueCycles = filterOptions.cycles;
-
-  // Use serology-specific filter options from backend API
   const uniqueDiseases = filterOptions.diseases || [];
   const uniqueTechnicians = filterOptions.technicians || [];
 
-  // All filtering is now handled by the backend API
-  // filteredRows is just unitRows since all filtering happens server-side
-  // NOTE: Backend paginates by SAMPLES (100) but we display UNITS (may be >100)
-  // This is acceptable - pagination works correctly, some pages show 120-150 rows
-  const filteredRows = unitRows;
-
   // For backend pagination, we show the data as-is (already paginated by backend)
+  const filteredRows = unitRows;
 
   const clearFilters = () => {
     setGlobalSearch('');
@@ -588,15 +645,14 @@ export const SerologySamples = () => {
     return new Date(dateString).toLocaleDateString();
   };
 
-
-
-
-  const handleEdit = (sampleId: number) => {
-    // Save selected unit ID AND current page for when we return
-    if (selectedRow) {
-      localStorage.setItem('serology_selected_unit_return', String(selectedRow.unitId));
+  const handleEdit = (sampleId: number, unitId?: number) => {
+    // Save selected unit ID, current page, and scroll position for when we return
+    const targetUnitId = unitId || selectedRow?.unitId;
+    
+    if (targetUnitId) {
+      localStorage.setItem('serology_selected_unit_return', String(targetUnitId));
       localStorage.setItem('serology_return_page', String(page));
-      console.log(`Serology: Saving navigation state - unit ${selectedRow.unitId}, page ${page}`);
+      localStorage.setItem('serology_return_scroll', String(window.scrollY));
     }
     navigate(`/register-sample?edit=${sampleId}`);
   };
@@ -996,7 +1052,7 @@ export const SerologySamples = () => {
             hasWriteAccess={hasWriteAccess}
             isAdmin={isAdmin}
             coaStatus={selectedRow.coaStatus}
-            onEdit={() => handleEdit(selectedRow.sampleId)}
+            onEdit={() => handleEdit(selectedRow.sampleId, selectedRow.unitId)}
             onDelete={() => handleDelete(selectedRow.unitId, selectedRow.unitCode)}
             onStatusChange={() => setShowStatusModal(true)}
             onDeselect={() => setSelectedRow(null)}
@@ -1918,15 +1974,7 @@ export const SerologySamples = () => {
                     <button
                       onClick={() => {
                         const lastPage = Math.max(1, Math.ceil(totalCount / 100));
-                        console.log(`Serology: Going to last page: ${lastPage} (total: ${totalCount}, current page: ${page})`);
-                        console.log(`Serology: Calculation - Math.ceil(${totalCount} / 100) = ${Math.ceil(totalCount / 100)}`);
-                        
-                        // Ensure we have a valid page number and total count
-                        if (totalCount > 0 && lastPage > 0) {
-                          setPage(lastPage);
-                        } else {
-                          console.warn(`Serology: Invalid last page calculation - totalCount: ${totalCount}, lastPage: ${lastPage}`);
-                        }
+                        setPage(lastPage);
                       }}
                       disabled={page >= Math.ceil(totalCount / 100) || totalCount === 0}
                       className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"

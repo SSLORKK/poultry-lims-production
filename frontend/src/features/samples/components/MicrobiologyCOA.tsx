@@ -843,7 +843,19 @@ export function MicrobiologyCOA() {
           unit_id: parseInt(unitId!),
           ...sanitizedPayload,
         };
-        await saveApiClient.post('/microbiology-coa/', createPayload);
+        try {
+          await saveApiClient.post('/microbiology-coa/', createPayload);
+        } catch (createErr: any) {
+          // If COA already exists, fetch it and retry with PUT
+          if (createErr?.response?.status === 400 && 
+              createErr?.response?.data?.detail?.includes('already exists')) {
+            const existingCoa = await saveApiClient.get(`/microbiology-coa/${unitId}/`);
+            setCoaData(existingCoa.data);
+            await saveApiClient.put(`/microbiology-coa/${existingCoa.data.id}`, sanitizedPayload);
+          } else {
+            throw createErr;
+          }
+        }
       }
 
       // Save updates coa_status to 'need_approval' - 'completed' is set by Approve button
@@ -858,10 +870,14 @@ export function MicrobiologyCOA() {
         setError('Your session may have expired. Please refresh the page and try again.');
       } else if (err.response?.status === 400) {
         const backendError = err.response?.data?.detail;
-        if (typeof backendError === 'string') {
+        // Don't show "already exists" error to user since we handle it automatically
+        if (typeof backendError === 'string' && !backendError.includes('already exists')) {
           setError(`Data validation error: ${backendError}`);
         } else if (Array.isArray(backendError)) {
           setError('Validation errors:\n' + backendError.join('\n'));
+        } else if (typeof backendError === 'string' && backendError.includes('already exists')) {
+          // This shouldn't happen since we handle it above, but just in case
+          setError('COA save conflict. Please refresh the page and try again.');
         } else {
           setError('Data format is invalid. Please check all fields and try again.');
         }

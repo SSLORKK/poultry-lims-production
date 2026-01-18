@@ -386,13 +386,16 @@ class TestDataSeeder:
             else:  # 20% chance: 50-100 range
                 samples_number = random.randint(50, 100)
             
+            # Source should be a list (multi-select in UI)
+            selected_sources = [random.choice(self.sources)] if self.sources else None
+            
             unit = Unit(
                 sample_id=sample.id,
                 department_id=dept_id,
                 unit_code=self.get_unit_code(dept_code, dept_id, year),
                 house=selected_houses,  # REQUIRED: At least 1 house
                 age=random.choice(AGE_PATTERNS),  # Optional
-                source=random.choice(self.sources) if self.sources else None,  # Optional
+                source=selected_sources,  # Optional - must be a list
                 sample_type=selected_sample_types,  # REQUIRED: At least 1 sample type
                 samples_number=samples_number,  # Optional (parsed as int in API)
                 notes=None if random.random() > 0.3 else f"Performance test data - {dept_code}",  # Optional
@@ -576,8 +579,8 @@ def main():
         seeder.initialize_counters()
         
         print("\n[3/4] Seeding test data...")
-        # Optimized batch size for 100K records
-        seeder.seed_data(total_samples=100000, batch_size=500)
+        # Create 1000 samples for testing
+        seeder.seed_data(total_samples=1000, batch_size=100)
         
         print("\n[4/4] Cleanup and verification...")
         # Verify database integrity

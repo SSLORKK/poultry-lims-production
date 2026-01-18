@@ -143,6 +143,78 @@ def get_available_years(
     return {"years": years}
 
 
+@router.get("/serology", response_model=List[SampleResponse])
+def get_serology_samples(
+    skip: int = 0,
+    limit: int = 100,
+    year: Optional[int] = Query(None, description="Filter by year"),
+    search: Optional[str] = Query(None, description="Search term"),
+    company: Optional[List[str]] = Query(None, description="Filter by company"),
+    farm: Optional[List[str]] = Query(None, description="Filter by farm"),
+    flock: Optional[List[str]] = Query(None, description="Filter by flock"),
+    date_from: Optional[str] = Query(None, description="Filter by date from"),
+    date_to: Optional[str] = Query(None, description="Filter by date to"),
+    age: Optional[List[str]] = Query(None, description="Filter by age"),
+    sample_type: Optional[List[str]] = Query(None, description="Filter by sample type"),
+    source: Optional[List[str]] = Query(None, description="Filter by source"),
+    status: Optional[List[str]] = Query(None, description="Filter by status"),
+    house: Optional[List[str]] = Query(None, description="Filter by house"),
+    cycle: Optional[List[str]] = Query(None, description="Filter by cycle"),
+    diseases: Optional[List[str]] = Query(None, description="Filter by diseases"),
+    technicians: Optional[List[str]] = Query(None, description="Filter by technicians"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get Serology samples with department-specific optimized SQL query"""
+    from app.repositories.sample_repository import SampleRepository
+    
+    sample_repo = SampleRepository(db)
+    samples = sample_repo.get_serology_samples(
+        skip=skip, limit=limit, year=year, search=search,
+        company=company, farm=farm, flock=flock,
+        date_from=date_from, date_to=date_to,
+        age=age, sample_type=sample_type, source=source,
+        status=status, house=house, cycle=cycle,
+        diseases=diseases, technicians=technicians
+    )
+    return samples
+
+
+@router.get("/serology/count")
+def get_serology_count(
+    year: Optional[int] = Query(None, description="Filter by year"),
+    search: Optional[str] = Query(None, description="Search term"),
+    company: Optional[List[str]] = Query(None, description="Filter by company"),
+    farm: Optional[List[str]] = Query(None, description="Filter by farm"),
+    flock: Optional[List[str]] = Query(None, description="Filter by flock"),
+    date_from: Optional[str] = Query(None, description="Filter by date from"),
+    date_to: Optional[str] = Query(None, description="Filter by date to"),
+    age: Optional[List[str]] = Query(None, description="Filter by age"),
+    sample_type: Optional[List[str]] = Query(None, description="Filter by sample type"),
+    source: Optional[List[str]] = Query(None, description="Filter by source"),
+    status: Optional[List[str]] = Query(None, description="Filter by status"),
+    house: Optional[List[str]] = Query(None, description="Filter by house"),
+    cycle: Optional[List[str]] = Query(None, description="Filter by cycle"),
+    diseases: Optional[List[str]] = Query(None, description="Filter by diseases"),
+    technicians: Optional[List[str]] = Query(None, description="Filter by technicians"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get Serology samples count with department-specific optimized SQL query"""
+    from app.repositories.sample_repository import SampleRepository
+    
+    sample_repo = SampleRepository(db)
+    total = sample_repo.count_serology_samples(
+        year=year, search=search,
+        company=company, farm=farm, flock=flock,
+        date_from=date_from, date_to=date_to,
+        age=age, sample_type=sample_type, source=source,
+        status=status, house=house, cycle=cycle,
+        diseases=diseases, technicians=technicians
+    )
+    return {"total": total}
+
+
 @router.get("/total-count")
 def get_total_count(
     department_id: Optional[int] = Query(None, description="Filter by department ID"),
@@ -183,11 +255,11 @@ def get_total_count(
             (extraction_methods is not None and len(extraction_methods) > 0)
         )
         
-        # OPTIMIZATION 2: If no complex JSON filters, use fast count
+        # OPTIMIZATION 2: If no complex JSON filters, use fast count with SQL-level filtering
         if not has_complex_filters:
             query = db.query(func.count(distinct(Sample.id)))
             
-            # Apply basic filters first (fastest)
+            # Apply sample-level filters first (fastest)
             if year is not None:
                 query = query.filter(Sample.year == year)
             if date_from is not None:
@@ -203,48 +275,72 @@ def get_total_count(
             if cycle is not None and len(cycle) > 0:
                 query = query.filter(Sample.cycle.in_(cycle))
             
-            # Only apply department filter if no other unit filters present
-            if department_id is not None and not (age or sample_type or source or status or house):
-                # Use EXISTS subquery instead of JOIN
-                query = query.filter(
-                    Sample.units.any(Unit.department_id == department_id)
-                )
-                
-                # FIXED: Unit code search using EXISTS to match sample_repository.py
-                if search is not None and search.strip():
-                    search_term = f"%{search}%"
-                    query = query.filter(
-                        or_(
-                            # PRIORITY 1: Exact matches
-                            Sample.sample_code == search.strip(),
-                            Sample.units.any(Unit.unit_code == search.strip()),
-                            
-                            # PRIORITY 2: Starts with search
-                            Sample.sample_code.ilike(f"{search.strip()}%"),
-                            Sample.units.any(Unit.unit_code.ilike(f"{search.strip()}%")),
-                            
-                            # PRIORITY 3: Contains search
-                            Sample.sample_code.ilike(search_term),
-                            Sample.units.any(Unit.unit_code.ilike(search_term)),
-                            
-                            # PRIORITY 4: Other sample columns
-                            Sample.company.ilike(search_term),
-                            Sample.farm.ilike(search_term),
-                            Sample.flock.ilike(search_term),
-                            Sample.cycle.ilike(search_term),
-                            Sample.status.ilike(search_term),
-                            
-                            # PRIORITY 5: Unit text fields via EXISTS
-                            Sample.units.any(Unit.age.ilike(search_term)),
-                            Sample.units.any(Unit.notes.ilike(search_term)),
-                            Sample.units.any(Unit.coa_status.ilike(search_term)),
-                        )
-                    )
-                
-                # REMOVED: Unit column filters to avoid DISTINCT + JOIN conflicts
-                # These will be handled at application level
+            # FIXED: Apply ALL unit-level filters at SQL level using EXISTS subqueries
+            # This ensures correct count across ALL pages
             
-            # OPTIMIZATION 4: Set query timeout to 10 seconds
+            # Department filter
+            if department_id is not None:
+                query = query.filter(Sample.units.any(Unit.department_id == department_id))
+            
+            # Age filter
+            if age is not None and len(age) > 0:
+                query = query.filter(Sample.units.any(Unit.age.in_(age)))
+            
+            # Sample type filter (handles array fields)
+            if sample_type is not None and len(sample_type) > 0:
+                sample_type_conditions = []
+                for st in sample_type:
+                    sample_type_conditions.append(Unit.sample_type.contains([st]))
+                    sample_type_conditions.append(Unit.sample_type == st)
+                query = query.filter(Sample.units.any(or_(*sample_type_conditions)))
+            
+            # Source filter (handles array fields)
+            if source is not None and len(source) > 0:
+                source_conditions = []
+                for s in source:
+                    source_conditions.append(Unit.source.contains([s]))
+                    source_conditions.append(Unit.source == s)
+                query = query.filter(Sample.units.any(or_(*source_conditions)))
+            
+            # House filter (handles array fields)
+            if house is not None and len(house) > 0:
+                house_conditions = []
+                for h in house:
+                    house_conditions.append(Unit.house.contains([h]))
+                    house_conditions.append(Unit.house == h)
+                query = query.filter(Sample.units.any(or_(*house_conditions)))
+            
+            # Status filter - check both sample status and unit coa_status
+            if status is not None and len(status) > 0:
+                query = query.filter(
+                    or_(
+                        Sample.status.in_(status),
+                        Sample.units.any(Unit.coa_status.in_(status))
+                    )
+                )
+            
+            # Search filter using EXISTS
+            if search is not None and search.strip():
+                search_term = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        Sample.sample_code == search.strip(),
+                        Sample.units.any(Unit.unit_code == search.strip()),
+                        Sample.sample_code.ilike(f"{search.strip()}%"),
+                        Sample.units.any(Unit.unit_code.ilike(f"{search.strip()}%")),
+                        Sample.sample_code.ilike(search_term),
+                        Sample.units.any(Unit.unit_code.ilike(search_term)),
+                        Sample.company.ilike(search_term),
+                        Sample.farm.ilike(search_term),
+                        Sample.flock.ilike(search_term),
+                        Sample.cycle.ilike(search_term),
+                        Sample.status.ilike(search_term),
+                        Sample.units.any(Unit.age.ilike(search_term)),
+                        Sample.units.any(Unit.notes.ilike(search_term)),
+                        Sample.units.any(Unit.coa_status.ilike(search_term)),
+                    )
+                )
+            
             total = query.scalar() or 0
             
         else:
