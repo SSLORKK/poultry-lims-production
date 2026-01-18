@@ -83,6 +83,8 @@ def get_samples(
     kit_types: Optional[List[str]] = Query(None, description="Filter by kit types (PCR/Serology specific)"),
     technicians: Optional[List[str]] = Query(None, description="Filter by technicians (PCR/Serology/Microbiology specific)"),
     extraction_methods: Optional[List[str]] = Query(None, description="Filter by extraction methods (PCR specific)"),
+    pcr_result: Optional[List[str]] = Query(None, description="Filter by PCR result (Positive, Negative)"),
+    microbiology_result: Optional[List[str]] = Query(None, description="Filter by Microbiology result (Detected, Not Detected, etc)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -94,7 +96,8 @@ def get_samples(
     samples = sample_service.get_all_samples(skip=skip, limit=limit, department_id=department_id, year=year,
                                           search=search, company=company, farm=farm, flock=flock, date_from=date_from, date_to=date_to,
                                           age=age, sample_type=sample_type, source=source, status=status, house=house, cycle=cycle,
-                                          diseases=diseases, kit_types=kit_types, technicians=technicians, extraction_methods=extraction_methods)
+                                          diseases=diseases, kit_types=kit_types, technicians=technicians, extraction_methods=extraction_methods,
+                                          pcr_result=pcr_result, microbiology_result=microbiology_result)
     
     # Get user's database permissions to filter results
     permission_repo = PermissionRepository(db)
@@ -235,6 +238,8 @@ def get_total_count(
     kit_types: Optional[List[str]] = Query(None, description="Filter by kit types"),
     technicians: Optional[List[str]] = Query(None, description="Filter by technicians"),
     extraction_methods: Optional[List[str]] = Query(None, description="Filter by extraction methods"),
+    pcr_result: Optional[List[str]] = Query(None, description="Filter by PCR result (Positive, Negative)"),
+    microbiology_result: Optional[List[str]] = Query(None, description="Filter by Microbiology result (Detected, Not Detected, etc)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -252,7 +257,9 @@ def get_total_count(
             (diseases is not None and len(diseases) > 0) or
             (kit_types is not None and len(kit_types) > 0) or 
             (technicians is not None and len(technicians) > 0) or
-            (extraction_methods is not None and len(extraction_methods) > 0)
+            (extraction_methods is not None and len(extraction_methods) > 0) or
+            (pcr_result is not None and len(pcr_result) > 0) or
+            (microbiology_result is not None and len(microbiology_result) > 0)
         )
         
         # OPTIMIZATION 2: If no complex JSON filters, use fast count with SQL-level filtering
@@ -356,7 +363,8 @@ def get_total_count(
                 date_from=date_from, date_to=date_to, age=age,
                 sample_type=sample_type, source=source, status=status,
                 house=house, cycle=cycle, diseases=diseases, kit_types=kit_types,
-                technicians=technicians, extraction_methods=extraction_methods
+                technicians=technicians, extraction_methods=extraction_methods,
+                pcr_result=pcr_result, microbiology_result=microbiology_result
             )
             
             # FIXED: Get more accurate count for complex filters
@@ -368,7 +376,8 @@ def get_total_count(
                     date_from=date_from, date_to=date_to, age=age,
                     sample_type=sample_type, source=source, status=status,
                     house=house, cycle=cycle, diseases=diseases, kit_types=kit_types,
-                    technicians=technicians, extraction_methods=extraction_methods
+                    technicians=technicians, extraction_methods=extraction_methods,
+                    pcr_result=pcr_result, microbiology_result=microbiology_result
                 )
                 # Use actual count from larger sample, cap at 500 for performance
                 total = len(larger_test)

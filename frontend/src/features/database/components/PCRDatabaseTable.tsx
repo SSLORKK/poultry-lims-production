@@ -631,9 +631,104 @@ export function PCRDatabaseTable({
     }
   };
 
+  // Helper function to check if a value is positive (RED) or negative (GREEN)
+  const isPositiveValue = (val: string): boolean => {
+    if (!val) return false;
+    const upper = val.toUpperCase().trim();
+    if (upper === 'N/A' || upper === 'NA' || upper === '' || upper === '-') return false;
+    if (upper === 'NEG' || upper === 'NEG.' || upper === 'NEGATIVE') return false;
+    // POS, POSITIVE, or any numeric CT value = positive
+    if (upper === 'POS' || upper === 'POS.' || upper === 'POSITIVE') return true;
+    if (upper.startsWith('CT:')) return true;
+    if (!isNaN(parseFloat(val))) return true;
+    return false;
+  };
+
+  const isNegativeValue = (val: string): boolean => {
+    if (!val) return false;
+    const upper = val.toUpperCase().trim();
+    return upper === 'NEG' || upper === 'NEG.' || upper === 'NEGATIVE';
+  };
+
   const filteredByResults = useMemo(() => {
-    return units;
-  }, [units]);
+    // If no result filter is applied, return all units
+    if (!filters.pcrResults || filters.pcrResults.length === 0) {
+      return units;
+    }
+    
+    // If COA data is still loading, return all units (don't filter yet)
+    if (loading || Object.keys(coaResults).length === 0) {
+      return units;
+    }
+    
+    const wantPositive = filters.pcrResults.includes('Positive');
+    const wantNegative = filters.pcrResults.includes('Negative');
+    
+    // If both selected, return all (no filtering needed)
+    if (wantPositive && wantNegative) {
+      return units;
+    }
+    
+    return units.filter(unit => {
+      const coa = coaResults[unit.id];
+      if (!coa?.test_results) return false; // No COA data, exclude
+      
+      let hasPositive = false;
+      let hasNegative = false;
+      
+      // Check all test results - simple object structure: { disease: { sampleType: value } }
+      Object.entries(coa.test_results).forEach(([_, diseaseData]: [string, any]) => {
+        // Don't skip keys with ||| as they might be valid disease keys (Disease|||KitType)
+        if (!diseaseData || typeof diseaseData !== 'object') return;
+        
+        // Handle both array and object formats
+        const valuesToCheck: string[] = [];
+        
+        if (Array.isArray(diseaseData)) {
+          // Pool format: [{ houses, values: {...}, pos_control }]
+          diseaseData.forEach((pool: any) => {
+            if (pool.values && typeof pool.values === 'object') {
+              Object.entries(pool.values).forEach(([key, val]: [string, any]) => {
+                if (!key.toLowerCase().includes('control')) {
+                  valuesToCheck.push(String(val || ''));
+                }
+              });
+            }
+          });
+        } else {
+          // Simple format or Object with nested values
+          // Check if it has a 'values' property
+          const dataObj = diseaseData as any;
+          if (dataObj.values && typeof dataObj.values === 'object') {
+             // It's the { values: {...}, pos_control: ... } format
+             Object.entries(dataObj.values).forEach(([key, val]: [string, any]) => {
+                if (!key.toLowerCase().includes('control')) {
+                  valuesToCheck.push(String(val || ''));
+                }
+             });
+          } else {
+             // It's the simple { sampleType: value } format
+             Object.entries(diseaseData).forEach(([key, val]: [string, any]) => {
+                if (!key.toLowerCase().includes('control') && key !== 'values') {
+                  valuesToCheck.push(String(val || ''));
+                }
+             });
+          }
+        }
+        
+        // Check each value
+        valuesToCheck.forEach(val => {
+          if (isPositiveValue(val)) hasPositive = true;
+          if (isNegativeValue(val)) hasNegative = true;
+        });
+      });
+      
+      // Filter based on selection
+      if (wantPositive && !wantNegative) return hasPositive;
+      if (wantNegative && !wantPositive) return hasNegative;
+      return true;
+    });
+  }, [units, filters.pcrResults, coaResults, loading]);
 
   const expandedRows = useMemo(() => {
     const rows: Array<{
@@ -754,7 +849,8 @@ export function PCRDatabaseTable({
         if (upperValue === 'N/A' || upperValue === 'NA') continue;
 
         const isNegative = upperValue === 'NEG' || upperValue === 'NEG.' || upperValue === 'NEGATIVE';
-        const isPositive = !isNegative && !isNaN(parseFloat(specificValue));
+        const isPositive = upperValue === 'POS' || upperValue === 'POS.' || upperValue === 'POSITIVE' || 
+                          (!isNegative && !isNaN(parseFloat(specificValue)));
 
         if (resultsFilter === 'Positive' && !isPositive) continue;
         if (resultsFilter === 'Negative' && !isNegative) continue;
@@ -866,9 +962,18 @@ export function PCRDatabaseTable({
                 {diseases.map((disease) => {
                   const ctValue = getPoolCTValue(row.poolData, disease, row.sampleTypes);
                   if (!ctValue) return null;
-                  const isPositive = ctValue !== 'NEG.' && !ctValue.includes('NEG');
+                  
+                  // Use consistent helper functions for coloring
+                  const isPositive = isPositiveValue(ctValue);
+                  const isNegative = isNegativeValue(ctValue);
+                  
+                  // Default to green if negative, red if positive, gray if neither
+                  let colorClass = 'bg-gray-100 text-gray-700';
+                  if (isPositive) colorClass = 'bg-red-100 text-red-700';
+                  else if (isNegative) colorClass = 'bg-green-100 text-green-700';
+                  
                   return (
-                    <span key={disease} className={`px-2 py-1 rounded text-xs font-medium ${isPositive ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                    <span key={disease} className={`px-2 py-1 rounded text-xs font-medium ${colorClass}`}>
                       {disease}: {ctValue}
                     </span>
                   );

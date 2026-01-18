@@ -350,22 +350,30 @@ export function MicrobiologyDatabaseTable({
   const filteredDisplayUnits = useMemo(() => {
     if (selectedMicrobiologyResults.length === 0) return units;
     
+    // If COA data is still loading, return all units (don't filter yet)
+    if (loading || Object.keys(coaResults).length === 0) {
+      return units;
+    }
+    
     return units.filter(unit => {
       const unitResults = getUnitResultStatus(unit.id);
+      // If no results available for this unit, exclude it
+      if (unitResults.length === 0) return false;
+      
+      // Positive (RED) = Detected or Over Limit
+      // Negative (GREEN) = Not Detected or Within Limit
       return selectedMicrobiologyResults.some(selectedResult => {
-        if (selectedResult === 'Detected') {
-          return unitResults.includes('Detected');
-        } else if (selectedResult === 'Not Detected') {
-          return unitResults.includes('Not Detected');
-        } else if (selectedResult === 'Over Limit') {
-          return unitResults.includes('Over Limit');
-        } else if (selectedResult === 'Within Limit') {
-          return unitResults.includes('Within Limit');
+        if (selectedResult === 'Positive') {
+          // Positive = any RED result (Detected or Over Limit)
+          return unitResults.includes('Detected') || unitResults.includes('Over Limit');
+        } else if (selectedResult === 'Negative') {
+          // Negative = any GREEN result (Not Detected or Within Limit)
+          return unitResults.includes('Not Detected') || unitResults.includes('Within Limit');
         }
         return false;
       });
     });
-  }, [units, selectedMicrobiologyResults, coaResults]);
+  }, [units, selectedMicrobiologyResults, coaResults, loading]);
 
   const exportToExcel = async () => {
     setExportDropdownOpen(false);
@@ -475,11 +483,11 @@ export function MicrobiologyDatabaseTable({
             if (result) unitResults.push(result);
           });
           
+          // Positive (RED) = Detected or Over Limit
+          // Negative (GREEN) = Not Detected or Within Limit
           const matches = filters.microbiologyResults.some(selectedResult => {
-            if (selectedResult === 'Detected') return unitResults.includes('Detected');
-            if (selectedResult === 'Not Detected') return unitResults.includes('Not Detected');
-            if (selectedResult === 'Over Limit') return unitResults.includes('Over Limit');
-            if (selectedResult === 'Within Limit') return unitResults.includes('Within Limit');
+            if (selectedResult === 'Positive') return unitResults.includes('Detected') || unitResults.includes('Over Limit');
+            if (selectedResult === 'Negative') return unitResults.includes('Not Detected') || unitResults.includes('Within Limit');
             return false;
           });
           

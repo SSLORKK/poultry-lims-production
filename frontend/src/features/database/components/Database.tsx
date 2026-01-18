@@ -195,6 +195,31 @@ export default function Database() {
     localStorage.setItem('database_page', String(page));
   }, [page]);
 
+  // Reset page to 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [
+    activeTab, 
+    selectedYear,
+    resultsFilter, 
+    JSON.stringify(filters.diseases),
+    JSON.stringify(filters.ages),
+    filters.dateFrom,
+    filters.dateTo,
+    JSON.stringify(filters.companies),
+    JSON.stringify(filters.farms),
+    JSON.stringify(filters.flocks),
+    JSON.stringify(filters.sampleTypes),
+    JSON.stringify(filters.cycles),
+    JSON.stringify(filters.sources),
+    JSON.stringify(filters.serologyDiseases),
+    JSON.stringify(filters.serologyKitTypes),
+    JSON.stringify(filters.microbiologyDiseases),
+    JSON.stringify(filters.microbiologyResults),
+    JSON.stringify(filters.pcrDiseases),
+    JSON.stringify(filters.pcrResults)
+  ]);
+
   // Fetch all available filter options (unfiltered, only by department)
   const { data: filterOptions } = useQuery<{
     companies: string[];
@@ -218,12 +243,15 @@ export default function Database() {
   // Fetch filtered data for display
   // No filters = limit 1000 | Any filter = get ALL matching records (paginated)
   const { data: samples = [] } = useQuery<Sample[]>({
-    queryKey: ['samples', activeTab, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, selectedYear, page],
+    queryKey: ['samples', activeTab, selectedCompanies, selectedFarms, selectedFlocks, selectedAges, selectedSampleTypes, dateFrom, dateTo, selectedYear, page, selectedPCRResults, selectedMicrobiologyResults, selectedCycles, selectedSources, selectedPCRDiseases, selectedMicrobiologyDiseases, selectedSerologyDiseases, selectedSerologyKitTypes],
     queryFn: async () => {
-      // Check if any filters are applied
+      // Check if any filters are applied (including result filters)
       const hasFilters = selectedCompanies.length > 0 || selectedFarms.length > 0 || 
                          selectedFlocks.length > 0 || selectedAges.length > 0 || 
-                         selectedSampleTypes.length > 0 || dateFrom || dateTo;
+                         selectedSampleTypes.length > 0 || dateFrom || dateTo ||
+                         selectedPCRResults.length > 0 || selectedMicrobiologyResults.length > 0 ||
+                         selectedCycles.length > 0 || selectedSources.length > 0 ||
+                         selectedPCRDiseases.length > 0 || selectedMicrobiologyDiseases.length > 0;
       
       // Prepare filter parameters
       const params: any = {
@@ -260,6 +288,32 @@ export default function Database() {
         params.date_to = dateTo;
       }
 
+      if (filters.microbiologyResults.length > 0) {
+        params.microbiology_result = filters.microbiologyResults;
+      }
+      if (filters.pcrResults.length > 0) {
+        params.pcr_result = filters.pcrResults;
+      }
+      
+      // Add disease filters for each department
+      if (selectedPCRDiseases.length > 0) {
+        params.diseases = selectedPCRDiseases;
+      }
+      if (selectedMicrobiologyDiseases.length > 0) {
+        params.diseases = selectedMicrobiologyDiseases;
+      }
+      if (selectedSerologyDiseases.length > 0) {
+        params.diseases = selectedSerologyDiseases;
+      }
+      
+      // Add cycle and source filters
+      if (selectedCycles.length > 0) {
+        params.cycle = selectedCycles;
+      }
+      if (selectedSources.length > 0) {
+        params.source = selectedSources;
+      }
+
       const response = await apiClient.get('/samples/', { params });
 
       // After first load, set initialLoading to false
@@ -286,6 +340,14 @@ export default function Database() {
 
   const filteredUnits = useMemo(() => {
     let units = unitsBeforeAgeFilter;
+
+    // Apply age filter (common to all departments)
+    if (selectedAges.length > 0) {
+      units = units.filter(unit => {
+        const unitAge = unit.age || '';
+        return selectedAges.includes(unitAge);
+      });
+    }
 
     // Apply Serology-specific filters
     if (activeTab === 'Serology') {
@@ -349,7 +411,7 @@ export default function Database() {
       const bNum = parseInt(b.unit_code.replace(/\D/g, '')) || 0;
       return aNum - bNum;
     });
-  }, [unitsBeforeAgeFilter, activeTab, selectedCycles, selectedSources, selectedSerologyDiseases, selectedSerologyKitTypes, selectedMicrobiologyDiseases, selectedPCRDiseases]);
+  }, [unitsBeforeAgeFilter, activeTab, selectedAges, selectedCycles, selectedSources, selectedSerologyDiseases, selectedSerologyKitTypes, selectedMicrobiologyDiseases, selectedPCRDiseases]);
 
 
   // Reset to page 1 when filters change
@@ -417,8 +479,18 @@ export default function Database() {
       return <td className="px-4 py-2 border border-gray-300 text-center text-gray-400">-</td>;
     }
 
-    const upperValue = value.toUpperCase();
+    const upperValue = value.toUpperCase().trim();
+    
+    // Handle N/A explicitly
+    if (upperValue === 'N/A' || upperValue === 'NA' || upperValue === '-') {
+      return <td className="px-4 py-2 border border-gray-300 text-center text-gray-400">{value}</td>;
+    }
+
+    // Negative: NEG, NEG., NEGATIVE = GREEN
     const isNegative = upperValue === 'NEG' || upperValue === 'NEG.' || upperValue === 'NEGATIVE';
+    
+    // Everything else (POS, POS., POSITIVE, CT numeric values) = RED
+    // We treat anything not Negative/N/A as Positive/Red to catch all CT values
     const bgColor = isNegative ? 'bg-green-100' : 'bg-red-100';
     const textColor = isNegative ? 'text-green-800' : 'text-red-800';
 
@@ -512,8 +584,9 @@ export default function Database() {
     return Array.from(diseases).sort();
   }, [filteredUnits]);
 
-  // Result options for each department
-  const microbiologyResultOptions = ['Detected', 'Not Detected', 'Within Limit', 'Over Limit'];
+  // Result options for each department (Positive=RED, Negative=GREEN)
+  // Microbiology: Positive = Detected/Over Limit, Negative = Not Detected/Within Limit
+  const microbiologyResultOptions = ['Positive', 'Negative'];
   const pcrResultOptions = ['Positive', 'Negative'];
 
   // Count active filters
